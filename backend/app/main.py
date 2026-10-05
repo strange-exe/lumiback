@@ -3,8 +3,9 @@
 Run (dev):  uv run uvicorn --factory app.main:create_app --reload --loop asyncio:SelectorEventLoop
 """
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,20 +15,32 @@ from fastapi.responses import JSONResponse
 from app.api import auth, codes, contacts, sessions, ws
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
+from app.jobs import expiry
 from app.realtime import Hub
 from app.security.rate_limit import RateLimiter
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> FastAPI:
+    """`start_jobs=False` lets tests run the expiry sweep deterministically themselves."""
     settings = settings or load_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(settings.database_url.get_secret_value())
         app.state.sessionmaker = make_sessionmaker(engine)
+        sweeper = (
+            asyncio.create_task(expiry.run_forever(app.state.sessionmaker, app.state.hub))
+            if start_jobs
+            else None
+        )
+        app.state.sweeper = sweeper
         try:
             yield
         finally:
+            if sweeper is not None:
+                sweeper.cancel()
+                with suppress(asyncio.CancelledError):
+                    await sweeper
             await engine.dispose()
 
     app = FastAPI(

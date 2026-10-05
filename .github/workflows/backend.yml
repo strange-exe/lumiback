@@ -1,0 +1,45 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: outing_test
+          POSTGRES_PASSWORD: outing_test
+          POSTGRES_DB: outing_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U outing_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      # CI-only throwaway database; tests refuse any non-local or non-*_test URL.
+      TEST_DATABASE_URL: postgresql+psycopg://outing_test:outing_test@localhost:5432/outing_test
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest

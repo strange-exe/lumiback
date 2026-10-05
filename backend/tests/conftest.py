@@ -77,6 +77,7 @@ def settings(test_db_url: str) -> Settings:
 def client(settings: Settings, clean_db: Engine) -> TestClient:
     # psycopg async needs a selector loop (Windows default is Proactor).
     with TestClient(
-        create_app(settings), backend_options={"loop_factory": asyncio.SelectorEventLoop}
+        create_app(settings, start_jobs=False),
+        backend_options={"loop_factory": asyncio.SelectorEventLoop},
     ) as c:
         yield c
