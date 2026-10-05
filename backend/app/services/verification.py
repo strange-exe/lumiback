@@ -12,7 +12,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.email import Email, Mailer
+from app.email import Mailer
+from app.email_templates import verification_email
 from app.models import EmailVerification, User
 
 logger = logging.getLogger(__name__)
@@ -49,15 +50,11 @@ async def issue(session: AsyncSession, user: User, pepper: str, mailer: Mailer) 
     await session.commit()
     try:
         await mailer.send(
-            Email(
+            verification_email(
                 to=user.email,
-                subject="Your Outing verification code",
-                body=(
-                    f"Hi {user.name},\n\n"
-                    f"Your Outing verification code is {code}.\n"
-                    f"It expires in {int(CODE_TTL.total_seconds() // 60)} minutes.\n\n"
-                    "If you did not create an Outing account, you can ignore this email.\n"
-                ),
+                name=user.name,
+                code=code,
+                minutes=int(CODE_TTL.total_seconds() // 60),
             )
         )
     except Exception:

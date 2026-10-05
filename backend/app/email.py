@@ -17,7 +17,19 @@ logger = logging.getLogger(__name__)
 class Email:
     to: str
     subject: str
-    body: str
+    body: str  # plain text: always sent, and what tests and the console read
+    html: str | None = None  # optional rich version, sent as multipart/alternative
+
+
+def build_message(email: Email, sender: str) -> EmailMessage:
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = email.to
+    message["Subject"] = email.subject
+    message.set_content(email.body)
+    if email.html:
+        message.add_alternative(email.html, subtype="html")
+    return message
 
 
 class Mailer(Protocol):
@@ -52,11 +64,7 @@ class SmtpMailer:
         self._from = settings.email_from
 
     def _send_blocking(self, email: Email) -> None:
-        message = EmailMessage()
-        message["From"] = self._from
-        message["To"] = email.to
-        message["Subject"] = email.subject
-        message.set_content(email.body)
+        message = build_message(email, self._from)
         context = ssl.create_default_context()  # verifies the server certificate
         if self._port == 465:
             server: smtplib.SMTP = smtplib.SMTP_SSL(
