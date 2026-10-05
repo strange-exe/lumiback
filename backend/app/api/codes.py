@@ -38,7 +38,7 @@ async def redeem(
     try:
         # Checked before trying, so a locked-out client cannot test even a correct code.
         for scope, key, limit in keys:
-            limiter.check(scope, key, limit)
+            await limiter.check(scope, key, limit)
     except RateLimited as e:
         raise too_many(e) from None
 
@@ -51,8 +51,8 @@ async def redeem(
             guest_label=None if user else body.guest_label,
         )
     except svc.InvalidCode:
-        for scope, key, limit in keys:
-            limiter.hit(scope, key, limit)
+        for scope, key, _ in keys:
+            await limiter.record(scope, key)
         raise INVALID from None
     except svc.OwnSession:
         raise HTTPException(

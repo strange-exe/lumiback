@@ -55,9 +55,9 @@ def too_many(e: RateLimited) -> HTTPException:
     )
 
 
-def enforce(limiter: RateLimiter, scope: str, key: str, limit: Limit) -> None:
+async def enforce(limiter: RateLimiter, scope: str, key: str, limit: Limit) -> None:
     try:
-        limiter.hit(scope, key, limit)
+        await limiter.hit(scope, key, limit)
     except RateLimited as e:
         raise too_many(e) from None
 

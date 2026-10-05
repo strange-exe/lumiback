@@ -8,26 +8,9 @@ import jwt
 import pytest
 from sqlalchemy import text
 
-from app.security.rate_limit import RateLimiter
 from app.security.tokens import create_access_token
 from tests.conftest import FAKE_SECRET
 from tests.helpers import PASSWORD, auth_header, login, register
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self.t = 1000.0
-
-    def __call__(self) -> float:
-        return self.t
-
-
-@pytest.fixture
-def clock(client) -> FakeClock:
-    fake = FakeClock()
-    client.app.state.limiter = RateLimiter(clock=fake)
-    return fake
-
 
 # ---------- registration ----------
 
@@ -124,7 +107,7 @@ def test_email_locked_after_five_failures_even_with_correct_password(client, clo
     assert locked.status_code == 429
     assert "Retry-After" in locked.headers
 
-    clock.t += 15 * 60 + 1  # window passes
+    clock.advance(15 * 60 + 1)  # window passes
     assert (
         client.post(
             "/auth/login", json={"email": "a@example.com", "password": PASSWORD}

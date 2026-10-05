@@ -46,7 +46,7 @@ async def invite(
     limiter: LimiterDep,
 ) -> OutgoingContact:
     """Invite an email. The response is the same whether or not that account exists."""
-    enforce(limiter, "contacts:invite", str(me.id), INVITES_PER_USER)
+    await enforce(limiter, "contacts:invite", str(me.id), INVITES_PER_USER)
     email = body.email.lower()
     if not email_allowed(email, settings):
         domains = ", ".join(f"@{d}" for d in settings.allowed_email_domains)

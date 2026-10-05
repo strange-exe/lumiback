@@ -6,19 +6,10 @@ import hmac
 import pytest
 from sqlalchemy import text
 
-from app.security.rate_limit import RateLimiter
 from tests.conftest import FAKE_SECRET
 from tests.helpers import befriend, share_with, signup
 
 PEPPER = FAKE_SECRET[::-1]
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self.t = 1000.0
-
-    def __call__(self) -> float:
-        return self.t
 
 
 @pytest.fixture
@@ -111,9 +102,7 @@ def test_guest_must_give_a_label(client, riya, live):
 # ---------- A6: brute force ----------
 
 
-def test_failed_redeems_lock_out_the_ip_even_for_a_valid_code(client, riya, live):
-    clock = FakeClock()
-    client.app.state.limiter = RateLimiter(clock=clock)
+def test_failed_redeems_lock_out_the_ip_even_for_a_valid_code(client, clock, riya, live):
     code = new_code(client, riya, live["id"])
     for _ in range(5):
         assert redeem_as_guest(client, "AAAAA-AAAAA").status_code == 400
@@ -121,7 +110,7 @@ def test_failed_redeems_lock_out_the_ip_even_for_a_valid_code(client, riya, live
     assert locked.status_code == 429
     assert int(locked.headers["Retry-After"]) > 0
 
-    clock.t += 601
+    clock.advance(601)
     assert redeem_as_guest(client, code).status_code == 200
 
 

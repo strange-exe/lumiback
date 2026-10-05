@@ -29,6 +29,9 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = make_engine(settings.database_url.get_secret_value())
         app.state.sessionmaker = make_sessionmaker(engine)
+        app.state.limiter = RateLimiter(
+            app.state.sessionmaker, settings.code_pepper.get_secret_value()
+        )
         sweeper = (
             asyncio.create_task(expiry.run_forever(app.state.sessionmaker, app.state.hub))
             if start_jobs
@@ -54,7 +57,6 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         openapi_url=None if settings.is_production else "/openapi.json",
     )
     app.state.settings = settings
-    app.state.limiter = RateLimiter()
     app.state.hub = Hub()
     app.state.mailer = make_mailer(settings)
 

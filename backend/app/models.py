@@ -125,6 +125,22 @@ class User(Base):
         return self.email_verified_at is not None
 
 
+class RateLimitHit(Base):
+    """One rate-limited attempt. key_hash = HMAC(pepper, scope:key); no readable personal data."""
+
+    __tablename__ = "rate_limit_hits"
+    __table_args__ = (
+        hash_len_check("key_hash"),
+        Index("ix_rate_limit_hits_lookup", "scope", "key_hash", "hit_at"),
+        Index("ix_rate_limit_hits_hit_at", "hit_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(32))
+    key_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    hit_at: Mapped[datetime]
+
+
 class EmailVerification(Base):
     """A 6-digit code sent to the user's inbox. Only the newest one per user is kept.
 

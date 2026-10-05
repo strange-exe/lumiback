@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from app.config import Settings, TestDbSettings
 from app.email import MemoryMailer
 from app.main import create_app
 from app.models import Base
+from app.security.rate_limit import RateLimiter
 
 BACKEND = Path(__file__).resolve().parents[1]
 FAKE_SECRET = "t3st-only-" + "x7Kq9Zp2" * 5
@@ -73,6 +75,29 @@ def settings(test_db_url: str) -> Settings:
         app_env="development",
         allowed_email_domains="example.com,geu.ac.in",
     )
+
+
+class FakeClock:
+    """Controllable time for the rate limiter."""
+
+    def __init__(self) -> None:
+        self.now = datetime.now(UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
+
+@pytest.fixture
+def clock(client: TestClient) -> FakeClock:
+    """Swap in a rate limiter driven by a fake clock (same database, same pepper)."""
+    fake = FakeClock()
+    client.app.state.limiter = RateLimiter(
+        client.app.state.sessionmaker, FAKE_SECRET[::-1], clock=fake
+    )
+    return fake
 
 
 @pytest.fixture

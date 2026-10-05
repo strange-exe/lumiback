@@ -71,7 +71,7 @@ async def register(
 ) -> UserOut:
     if not verification.email_allowed(body.email, settings):
         raise _domain_error(settings)
-    enforce(limiter, "register:ip", client_ip(request), REGISTER_PER_IP)
+    await enforce(limiter, "register:ip", client_ip(request), REGISTER_PER_IP)
     user = User(
         name=body.name,
         email=body.email,
@@ -102,7 +102,7 @@ async def verify_email(
     """Proves the student controls the inbox. Each code allows 5 tries, then must be resent."""
     ip = client_ip(request)
     try:
-        limiter.check("verify:ip", ip, VERIFY_FAILURES_PER_IP)
+        await limiter.check("verify:ip", ip, VERIFY_FAILURES_PER_IP)
     except RateLimited as e:
         raise too_many(e) from None
     try:
@@ -110,7 +110,7 @@ async def verify_email(
             session, body.email, body.code, settings.code_pepper.get_secret_value()
         )
     except verification.VerificationFailed:
-        limiter.hit("verify:ip", ip, VERIFY_FAILURES_PER_IP)
+        await limiter.record("verify:ip", ip)
         raise INVALID_CODE from None
     return UserOut.model_validate(user)
 
@@ -126,8 +126,8 @@ async def resend_verification(
 ) -> Response:
     """Always 202: the response never says whether the account exists or is verified."""
     email = body.email.lower()
-    enforce(limiter, "resend:ip", client_ip(request), RESEND_PER_IP)
-    enforce(limiter, "resend:email", email, RESEND_PER_EMAIL)
+    await enforce(limiter, "resend:ip", client_ip(request), RESEND_PER_IP)
+    await enforce(limiter, "resend:email", email, RESEND_PER_EMAIL)
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is not None and not user.email_verified:
         await verification.issue(session, user, settings.code_pepper.get_secret_value(), mailer)
@@ -143,20 +143,20 @@ async def login(
     limiter: LimiterDep,
 ) -> TokenOut:
     email = body.email.lower()
-    enforce(limiter, "login:ip", client_ip(request), LOGIN_PER_IP)
+    await enforce(limiter, "login:ip", client_ip(request), LOGIN_PER_IP)
     try:
         # Checked before verifying, so a locked email stays locked even with the right password.
-        limiter.check("login:email", email, LOGIN_FAILURES_PER_EMAIL)
+        await limiter.check("login:email", email, LOGIN_FAILURES_PER_EMAIL)
     except RateLimited as e:
         raise too_many(e) from None
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not verify_password(user.password_hash if user else None, body.password):
-        limiter.hit("login:email", email, LOGIN_FAILURES_PER_EMAIL)
+        await limiter.record("login:email", email)
         raise INVALID_LOGIN
     assert user is not None
 
-    limiter.reset("login:email", email)
+    await limiter.reset("login:email", email)
     if not user.email_verified:
         raise NOT_VERIFIED  # only revealed after the correct password
     if needs_rehash(user.password_hash):
@@ -174,7 +174,7 @@ async def refresh(
     settings: SettingsDep,
     limiter: LimiterDep,
 ) -> TokenOut:
-    enforce(limiter, "refresh:ip", client_ip(request), REFRESH_PER_IP)
+    await enforce(limiter, "refresh:ip", client_ip(request), REFRESH_PER_IP)
     try:
         user_id, successor = await refresh_tokens.rotate(session, body.refresh_token)
     except InvalidToken:

@@ -176,7 +176,7 @@ async def create_code(
     """A single-use join code, valid ~10 minutes. Whoever redeems it still needs approval."""
     if not is_live(share, datetime.now(UTC)):
         raise SESSION_ENDED
-    enforce(limiter, "codes:create", str(share.sharer_id), CODES_PER_SHARER)
+    await enforce(limiter, "codes:create", str(share.sharer_id), CODES_PER_SHARER)
     code, expires_at = await code_svc.create(
         session, share, settings.code_pepper.get_secret_value()
     )
@@ -204,7 +204,7 @@ async def put_location(
     body: LocationIn, share: OwnSession, session: SessionDep, hub: HubDep, limiter: LimiterDep
 ) -> Response:
     """Sharer's device reports its latest position. Only the latest is kept."""
-    enforce(limiter, "location:session", str(share.id), LOCATION_UPDATES_PER_SESSION)
+    await enforce(limiter, "location:session", str(share.id), LOCATION_UPDATES_PER_SESSION)
     try:
         await loc_svc.upsert(session, share.id, body)
     except loc_svc.SessionNotLive:

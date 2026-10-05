@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Location, RefreshToken, SessionStatus, ShareCode, ShareSession
 from app.realtime import AccessChanged, Hub
+from app.security.rate_limit import delete_old_hits
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class SweepResult:
     expired_sessions: list[uuid.UUID]
     deleted_codes: int
     deleted_refresh_tokens: int
+    deleted_rate_limit_hits: int
 
 
 async def sweep(sessionmaker: async_sessionmaker[AsyncSession], hub: Hub) -> SweepResult:
@@ -53,11 +55,12 @@ async def sweep(sessionmaker: async_sessionmaker[AsyncSession], hub: Hub) -> Swe
         tokens = await session.execute(
             delete(RefreshToken).where(RefreshToken.expires_at < now - KEEP_DEAD_REFRESH_TOKENS)
         )
+        hits = await delete_old_hits(session, now)
         await session.commit()
 
     for session_id in expired:  # after commit, so subscribers re-check committed state
         await hub.publish(AccessChanged(session_id))
-    return SweepResult(expired, codes.rowcount, tokens.rowcount)
+    return SweepResult(expired, codes.rowcount, tokens.rowcount, hits)
 
 
 async def run_forever(
