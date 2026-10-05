@@ -3,7 +3,7 @@
 Campus outing log with consent-based location sharing for Graphic Era University students.
 
 - **Backend:** FastAPI, PostgreSQL (Supabase), WebSockets
-- **Web:** Next.js *(planned)*
+- **Web:** Next.js 16, Tailwind CSS v4 (see `apps/web/README.md`)
 - **Mobile:** React Native + Expo *(planned)*
 
 ## Principles
@@ -50,3 +50,13 @@ uv run uvicorn --factory app.main:create_app --reload --loop asyncio:SelectorEve
 
 `--loop asyncio:SelectorEventLoop` is required on Windows (psycopg's async driver does not support
 the default Proactor loop). It is harmless elsewhere.
+
+## Web setup
+
+```bash
+cd apps/web
+cp .env.example .env.local        # BACKEND_URL of the API
+npm install
+npm run dev
+npm run test:e2e                  # Playwright against the API on the local test database
+```

@@ -1,0 +1,51 @@
+import type { ReactNode } from "react";
+
+import { ReturnButton, UpdateReturnForm } from "@/features/outings/components/OutingControls";
+import { ReturnArc } from "@/features/outings/components/ReturnArc";
+import { clockParts, formatMinutes } from "@/features/outings/time";
+import type { Outing } from "@/lib/types";
+
+/** Shown while the student is out: where, the return arc, when they're due, and "I'm back". */
+export function OutView({ outing, serverNow }: { outing: Outing; serverNow: string }): ReactNode {
+  const overdue = outing.status === "overdue";
+  const due = clockParts(outing.expected_return_at);
+
+  return (
+    <section aria-labelledby="out-heading" className="flex flex-col gap-6">
+      <div>
+        <p className="font-display text-lg text-stone">
+          {overdue ? "Still out at" : "You're out at"}
+        </p>
+        <h1 id="out-heading" className="font-display text-title text-pine">
+          {outing.destination ?? "Your outing"}
+        </h1>
+      </div>
+
+      <ReturnArc
+        leftAt={outing.left_at}
+        expectedAt={outing.expected_return_at}
+        overdue={overdue}
+        serverNow={serverNow}
+      />
+
+      <div className="text-center">
+        <p className="text-sm text-stone">Back by</p>
+        <p className="font-display text-hero tabular-nums text-ink md:text-[3.8rem]">
+          {due.time} <span className="text-2xl">{due.period}</span>
+        </p>
+        {overdue && (
+          <p
+            role="status"
+            className="mx-auto mt-3 max-w-xs rounded-control bg-ember-soft px-4 py-3 text-ember"
+          >
+            You&apos;re {formatMinutes(outing.late_minutes)} past your return time. Update it or
+            mark yourself back.
+          </p>
+        )}
+      </div>
+
+      <ReturnButton />
+      <UpdateReturnForm />
+    </section>
+  );
+}

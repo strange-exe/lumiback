@@ -1,0 +1,80 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/web/**", "backend/**", ".github/workflows/web.yml"]
+  pull_request:
+    paths: ["apps/web/**", "backend/**", ".github/workflows/web.yml"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/web
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BACKEND_URL: http://127.0.0.1:8100 # required at build time; never contacted here
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: outing_test
+          POSTGRES_PASSWORD: outing_test
+          POSTGRES_DB: outing_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U outing_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://outing_test:outing_test@localhost:5432/outing_test
+      CORS_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Generate throwaway API secrets for this run
+        run: |
+          echo "JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> "$GITHUB_ENV"
+          echo "CODE_PEPPER=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> "$GITHUB_ENV"
+      - name: Prepare the API and test database
+        working-directory: backend
+        run: |
+          uv sync --locked
+          uv run alembic -x db=test upgrade head
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-results
+          path: apps/web/test-results
+          retention-days: 7

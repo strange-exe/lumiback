@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/* "Dusk Courtyard": one dominant pine, one lantern accent, warm neutrals. */
+:root {
+  --page: #f4efe6;
+  --surface: #fbf8f2;
+  --ink: #1b2422;
+  --stone: #5c605a;
+  --line: #e3dccf;
+  --pine: #234e46;
+  --on-pine: #f4efe6;
+  --pine-soft: #dbe7e2;
+  --lantern: #e59a3a;
+  --lantern-glow: #f7d9a8;
+  --lantern-soft: #f8e6cc;
+  --ember: #ad432c;
+  --ember-soft: #f5ded6;
+  --sage: #3f7253;
+  --sage-soft: #dce9e0;
+  --clay-shadow: #c9bfae;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #121a18;
+    --surface: #1a2421;
+    --ink: #ede7dc;
+    --stone: #a9aea6;
+    --line: #2d3935;
+    --pine: #8fc1b5;
+    --on-pine: #0f1f1b;
+    --pine-soft: #1f3530;
+    --lantern: #f0a94b;
+    --lantern-glow: #ffd99c;
+    --lantern-soft: #3a2c19;
+    --ember: #ee927a;
+    --ember-soft: #3a211b;
+    --sage: #93c4a3;
+    --sage-soft: #1d3326;
+    --clay-shadow: #0b100f;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-stone: var(--stone);
+  --color-line: var(--line);
+  --color-pine: var(--pine);
+  --color-on-pine: var(--on-pine);
+  --color-pine-soft: var(--pine-soft);
+  --color-lantern: var(--lantern);
+  --color-lantern-glow: var(--lantern-glow);
+  --color-lantern-soft: var(--lantern-soft);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-atkinson), system-ui, sans-serif;
+
+  /* 1.25 type scale from 16px */
+  --text-hero: 3.0625rem;
+  --text-hero--line-height: 1;
+  --text-title: 1.9375rem;
+  --text-title--line-height: 1.15;
+
+  --radius-control: 14px;
+  --radius-sheet: 24px;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fraunces with its softest corners: warm, not formal. */
+.font-display {
+  font-variation-settings: "SOFT" 100;
+}
+
+:focus-visible {
+  outline: 3px solid var(--lantern);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* The lantern lights when you go out; the only decorative motion in the app. */
+@keyframes lantern-light {
+  from {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.lantern-lit {
+  animation: lantern-light 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: 50% 80%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
