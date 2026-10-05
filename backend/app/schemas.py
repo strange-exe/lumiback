@@ -149,6 +149,26 @@ class WatchingOut(BaseModel):
     ends_at: datetime
 
 
+class CodeOut(BaseModel):
+    code: str  # shown once; only its HMAC is stored
+    expires_at: datetime
+
+
+GuestLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class RedeemIn(Input):
+    code: str = Field(min_length=1, max_length=20)
+    guest_label: GuestLabel | None = None  # required when not logged in
+
+
+class RedeemOut(BaseModel):
+    session_id: uuid.UUID
+    viewer_id: uuid.UUID
+    status: str
+    guest_token: str | None = None  # guests only, shown once; send as X-Guest-Token
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -11,17 +11,32 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
 
-from app.api.deps import CurrentUser, HubDep, SessionDep
+from app.api.deps import (
+    CurrentUser,
+    HubDep,
+    LimiterDep,
+    PrincipalDep,
+    SessionDep,
+    SettingsDep,
+    enforce,
+)
 from app.models import SessionStatus, ShareSession, ShareViewer, User, ViewerStatus
 from app.realtime import AccessChanged
-from app.schemas import SessionCreateIn, SessionOut, SharerRef, WatchingOut
+from app.schemas import CodeOut, SessionCreateIn, SessionOut, SharerRef, WatchingOut
+from app.security.rate_limit import Limit
+from app.services import codes as code_svc
 from app.services import sessions as svc
-from app.services.authz import Role, resolve_user_access
+from app.services.authz import Role, is_live, resolve_access, resolve_user_access
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="Session not found")
 ACCESS_ENDED = HTTPException(status.HTTP_403_FORBIDDEN, detail="Your access to this session ended")
+AWAITING_APPROVAL = HTTPException(
+    status.HTTP_403_FORBIDDEN, detail="Waiting for the sharer to approve you"
+)
+SESSION_ENDED = HTTPException(status.HTTP_409_CONFLICT, detail="This session has ended")
+CODES_PER_SHARER = Limit(max_hits=10, window_seconds=3600)
 RECENT = timedelta(hours=24)
 
 
@@ -95,9 +110,9 @@ def _watching(share: ShareSession, sharer: User) -> WatchingOut:
 
 @router.get("/{session_id}")
 async def get_session(
-    session_id: uuid.UUID, me: CurrentUser, session: SessionDep
+    session_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
 ) -> SessionOut | WatchingOut:
-    access = await resolve_user_access(session, session_id, me.id)
+    access = await resolve_access(session, session_id, principal)
     match access.role:
         case Role.SHARER:
             assert access.share is not None
@@ -107,6 +122,8 @@ async def get_session(
             sharer = await session.get(User, access.share.sharer_id)
             assert sharer is not None
             return _watching(access.share, sharer)
+        case Role.PENDING:
+            raise AWAITING_APPROVAL
         case Role.FORMER_VIEWER:
             raise ACCESS_ENDED
         case _:
@@ -132,4 +149,31 @@ async def revoke_viewer(
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Viewer not found")
     else:
         await hub.publish(AccessChanged(share.id))
+    return await svc.sharer_view(session, share)
+
+
+@router.post("/{session_id}/codes", status_code=status.HTTP_201_CREATED)
+async def create_code(
+    share: OwnSession, session: SessionDep, settings: SettingsDep, limiter: LimiterDep
+) -> CodeOut:
+    """A single-use join code, valid ~10 minutes. Whoever redeems it still needs approval."""
+    if not is_live(share, datetime.now(UTC)):
+        raise SESSION_ENDED
+    enforce(limiter, "codes:create", str(share.sharer_id), CODES_PER_SHARER)
+    code, expires_at = await code_svc.create(
+        session, share, settings.code_pepper.get_secret_value()
+    )
+    return CodeOut(code=code, expires_at=expires_at)
+
+
+@router.post("/{session_id}/viewers/{viewer_id}/approve")
+async def approve_viewer(
+    viewer_id: uuid.UUID, share: OwnSession, session: SessionDep, hub: HubDep
+) -> SessionOut:
+    """The sharer's confirmation on their own device: the second side of consent."""
+    if not is_live(share, datetime.now(UTC)):
+        raise SESSION_ENDED
+    if not await code_svc.approve(session, share.id, viewer_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No pending viewer with that id")
+    await hub.publish(AccessChanged(share.id))
     return await svc.sharer_view(session, share)

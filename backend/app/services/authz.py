@@ -30,6 +30,7 @@ def can_view(share: ShareSession, viewer: ShareViewer, now: datetime) -> bool:
 class Role(enum.Enum):
     SHARER = "sharer"
     VIEWER = "viewer"  # currently allowed to view
+    PENDING = "pending"  # joined with a code, waiting for the sharer's approval -> 403
     FORMER_VIEWER = "former_viewer"  # knew about the session, but no access now -> 403
     NONE = "none"  # no relation -> 404 (do not reveal that the session exists)
 
@@ -39,6 +40,27 @@ class Access:
     role: Role
     share: ShareSession | None = None
     viewer: ShareViewer | None = None
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Who is asking: a logged-in user, or a guest holding a guest token (hash)."""
+
+    user_id: uuid.UUID | None = None
+    guest_token_hash: bytes | None = None
+
+    def __post_init__(self) -> None:
+        if (self.user_id is None) == (self.guest_token_hash is None):
+            raise ValueError("a principal is exactly one of user or guest")
+
+
+async def resolve_access(
+    session: AsyncSession, session_id: uuid.UUID, principal: Principal
+) -> Access:
+    if principal.user_id is not None:
+        return await resolve_user_access(session, session_id, principal.user_id)
+    assert principal.guest_token_hash is not None
+    return await resolve_guest_access(session, session_id, principal.guest_token_hash)
 
 
 async def resolve_user_access(
@@ -81,6 +103,9 @@ async def resolve_guest_access(
 def _classify(share: ShareSession | None, viewer: ShareViewer | None) -> Access:
     if share is None or viewer is None:
         return Access(Role.NONE)
-    if can_view(share, viewer, datetime.now(UTC)):
+    now = datetime.now(UTC)
+    if can_view(share, viewer, now):
         return Access(Role.VIEWER, share, viewer)
+    if viewer.status == ViewerStatus.PENDING and is_live(share, now):
+        return Access(Role.PENDING, share, viewer)
     return Access(Role.FORMER_VIEWER, share, viewer)

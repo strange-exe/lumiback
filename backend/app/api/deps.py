@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +10,10 @@ from app.config import Settings
 from app.db import get_session
 from app.models import User
 from app.realtime import Hub
+from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
+from app.services.authz import Principal
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -63,13 +65,15 @@ UNAUTHORIZED = HTTPException(
 _bearer = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+async def get_optional_user(
     session: SessionDep,
     settings: SettingsDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-) -> User:
+) -> User | None:
+    """None when no bearer token is sent; 401 when one is sent but invalid (never silently
+    downgrade a bad token to anonymous)."""
     if credentials is None:
-        raise UNAUTHORIZED
+        return None
     try:
         claims = decode_access_token(
             credentials.credentials, settings.jwt_secret.get_secret_value()
@@ -82,4 +86,31 @@ async def get_current_user(
     return user
 
 
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+
+
+async def get_current_user(user: OptionalUser) -> User:
+    if user is None:
+        raise UNAUTHORIZED
+    return user
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+GUEST_TOKEN_HEADER = "X-Guest-Token"  # noqa: S105 - header name, not a secret
+
+
+async def get_principal(
+    user: OptionalUser,
+    guest_token: Annotated[str | None, Header(alias=GUEST_TOKEN_HEADER, max_length=200)] = None,
+) -> Principal:
+    """A logged-in user, or a guest identified by the token issued when they redeemed a code.
+    Guest tokens travel in a header, never in the URL (URLs end up in logs and history)."""
+    if user is not None:
+        return Principal(user_id=user.id)
+    if guest_token:
+        return Principal(guest_token_hash=hash_guest_token(guest_token))
+    raise UNAUTHORIZED
+
+
+PrincipalDep = Annotated[Principal, Depends(get_principal)]
