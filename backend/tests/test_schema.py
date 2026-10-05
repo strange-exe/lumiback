@@ -51,13 +51,27 @@ BAD_WRITES = [
         "uq_users_email",
     ),
     # contacts
-    ("INSERT INTO contacts (owner_id, contact_user_id) VALUES (:a, :a)", "ck_contacts_not_self"),
     (
-        "INSERT INTO contacts (owner_id, contact_user_id, status) VALUES (:a, :b, 'accepted')",
+        "INSERT INTO contacts (owner_id, contact_email, contact_user_id, status, accepted_at) "
+        "VALUES (:a, 'a@example.com', :a, 'accepted', now())",
+        "ck_contacts_not_self",
+    ),
+    (
+        "INSERT INTO contacts (owner_id, contact_email, contact_user_id, status) "
+        "VALUES (:a, 'b@example.com', :b, 'accepted')",
         "ck_contacts_accepted_at_matches_status",
     ),
     (
-        "INSERT INTO contacts (owner_id, contact_user_id, status) VALUES (:a, :b, 'friend')",
+        "INSERT INTO contacts (owner_id, contact_email, status, accepted_at) "
+        "VALUES (:a, 'b@example.com', 'accepted', now())",
+        "ck_contacts_accepted_has_user",
+    ),
+    (
+        "INSERT INTO contacts (owner_id, contact_email) VALUES (:a, 'B@example.com')",
+        "ck_contacts_email_lowercase",
+    ),
+    (
+        "INSERT INTO contacts (owner_id, contact_email, status) VALUES (:a, 'b@x.com', 'friend')",
         "ck_contacts_contact_status",
     ),
     # share_sessions
@@ -128,11 +142,9 @@ def test_bad_write_is_rejected(db, ids, sql, constraint):
 
 
 def test_duplicate_contact_and_viewer_rejected(db, ids):
-    db.execute(text("INSERT INTO contacts (owner_id, contact_user_id) VALUES (:a, :b)"), ids)
-    assert (
-        violates(db, "INSERT INTO contacts (owner_id, contact_user_id) VALUES (:a, :b)", ids)
-        == "uq_contacts_owner_id_contact_user_id"
-    )
+    invite = "INSERT INTO contacts (owner_id, contact_email) VALUES (:a, 'b@example.com')"
+    db.execute(text(invite), ids)
+    assert violates(db, invite, ids) == "uq_contacts_owner_id_contact_email"
     db.execute(text("INSERT INTO share_viewers (session_id, viewer_user_id) VALUES (:s, :b)"), ids)
     assert (
         violates(db, "INSERT INTO share_viewers (session_id, viewer_user_id) VALUES (:s, :b)", ids)
@@ -150,8 +162,8 @@ def test_only_one_latest_location_per_session(db, ids):
 def test_valid_rows_are_accepted(db, ids):
     db.execute(
         text(
-            "INSERT INTO contacts (owner_id, contact_user_id, status, accepted_at) "
-            "VALUES (:a, :b, 'accepted', now())"
+            "INSERT INTO contacts (owner_id, contact_email, contact_user_id, status, accepted_at) "
+            "VALUES (:a, 'b@example.com', :b, 'accepted', now())"
         ),
         ids,
     )

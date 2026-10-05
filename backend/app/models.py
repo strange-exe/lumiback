@@ -136,20 +136,31 @@ class RefreshToken(Base):
 
 
 class Contact(Base):
-    """owner_id lets contact_user_id see them (once accepted). Only the owner can create it."""
+    """owner_id invites an email; once that user accepts, owner may choose them as a viewer.
+
+    Invitations are keyed by email, not user, so an invite looks identical whether or not the
+    account exists (no account enumeration). contact_user_id is set only on acceptance.
+    Only the owner can create a contact; nobody can add themselves to someone else's list.
+    """
 
     __tablename__ = "contacts"
     __table_args__ = (
+        UniqueConstraint("owner_id", "contact_email"),
         UniqueConstraint("owner_id", "contact_user_id"),
         CheckConstraint("owner_id <> contact_user_id", name="not_self"),
+        CheckConstraint("contact_email = lower(contact_email)", name="email_lowercase"),
         CheckConstraint(
             "(status = 'accepted') = (accepted_at IS NOT NULL)", name="accepted_at_matches_status"
+        ),
+        CheckConstraint(
+            "(status = 'accepted') = (contact_user_id IS NOT NULL)", name="accepted_has_user"
         ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    contact_user_id: Mapped[uuid.UUID] = mapped_column(
+    contact_email: Mapped[str] = mapped_column(String(254), index=True)
+    contact_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[ContactStatus] = mapped_column(

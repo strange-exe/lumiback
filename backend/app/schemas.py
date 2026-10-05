@@ -49,6 +49,44 @@ class TokenOut(BaseModel):
     refresh_token: str
 
 
+class ContactInviteIn(Input):
+    email: EmailStr
+
+
+class Person(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str
+
+
+class OutgoingContact(BaseModel):
+    """Someone I invited. `person` is only known once they accept (no enumeration)."""
+
+    id: uuid.UUID
+    email: str
+    status: str
+    person: Person | None
+    created_at: datetime
+    accepted_at: datetime | None
+
+
+class IncomingContact(BaseModel):
+    """Someone who invited me to be able to see them."""
+
+    id: uuid.UUID
+    owner: Person
+    status: str
+    created_at: datetime
+    accepted_at: datetime | None
+
+
+class ContactsOut(BaseModel):
+    outgoing: list[OutgoingContact]
+    incoming: list[IncomingContact]
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

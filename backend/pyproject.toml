@@ -26,6 +26,7 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+filterwarnings = ["error"]
 
 [tool.ruff]
 line-length = 100
