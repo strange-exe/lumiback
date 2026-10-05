@@ -1,0 +1,35 @@
+# Secrets — never commit. Use .env.example as the template.
+.env
+.env.*
+!.env.example
+config.json
+*.bundle
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Next.js / Expo
+node_modules/
+.next/
+out/
+dist/
+.expo/
+*.tsbuildinfo
+npm-debug.log*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local tooling / notes
+.claude/
