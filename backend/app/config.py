@@ -73,6 +73,31 @@ class Settings(BaseSettings):
         return self.app_env == "production"
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+class TestDbSettings(BaseSettings):
+    """TEST_DATABASE_URL for tests and `alembic -x db=test`. Tests DROP and recreate its schema,
+    so it must point at a local database whose name ends in `_test` — never Supabase."""
+
+    __test__ = False  # not a pytest test class
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    test_database_url: SecretStr
+
+    @field_validator("test_database_url")
+    @classmethod
+    def _local_test_db_only(cls, v: SecretStr) -> SecretStr:
+        parts = urlsplit(v.get_secret_value())
+        if parts.scheme not in ALLOWED_DB_SCHEMES:
+            raise ValueError(f"scheme must be one of {sorted(ALLOWED_DB_SCHEMES)}")
+        if parts.hostname not in LOCAL_HOSTS:
+            raise ValueError("must point at a local database (localhost)")
+        if not parts.path.rstrip("/").endswith("_test"):
+            raise ValueError("database name must end with '_test'")
+        return v
+
+
 class ConfigError(SystemExit):
     """Raised at startup when settings are invalid. Exits the process with a clear message."""
 

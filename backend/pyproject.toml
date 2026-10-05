@@ -7,13 +7,16 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic-settings>=2.7",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "sqlalchemy[asyncio]>=2.0.36",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.28",
     "ruff>=0.8",
+    "httpx2>=2.13.1",
 ]
 
 [tool.pytest.ini_options]
@@ -28,3 +31,7 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
 ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+# Test SQL is assembled from constants in the test file itself.
+"tests/**" = ["S608"]
