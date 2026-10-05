@@ -11,9 +11,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, contacts
+from app.api import auth, contacts, sessions
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
+from app.realtime import Hub
 from app.security.rate_limit import RateLimiter
 
 
@@ -40,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.limiter = RateLimiter()
+    app.state.hub = Hub()
 
     app.add_middleware(
         CORSMiddleware,
@@ -62,5 +64,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(contacts.router)
+    app.include_router(sessions.router)
 
     return app

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db import get_session
 from app.models import User
+from app.realtime import Hub
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
 
@@ -23,8 +24,13 @@ def get_limiter(request: Request) -> RateLimiter:
     return request.app.state.limiter
 
 
+def get_hub(request: Request) -> Hub:
+    return request.app.state.hub
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
+HubDep = Annotated[Hub, Depends(get_hub)]
 
 
 def client_ip(request: Request) -> str:

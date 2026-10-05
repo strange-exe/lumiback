@@ -12,8 +12,9 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
-from app.api.deps import CurrentUser, LimiterDep, SessionDep, enforce
+from app.api.deps import CurrentUser, HubDep, LimiterDep, SessionDep, enforce
 from app.models import Contact, ContactStatus, User
+from app.realtime import AccessChanged
 from app.schemas import ContactInviteIn, ContactsOut, IncomingContact, OutgoingContact, Person
 from app.security.rate_limit import Limit
 from app.services.viewers import revoke_user_from_sharer
@@ -132,7 +133,9 @@ async def accept(contact_id: uuid.UUID, me: CurrentUser, session: SessionDep) ->
 
 
 @router.delete("/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove(contact_id: uuid.UUID, me: CurrentUser, session: SessionDep) -> Response:
+async def remove(
+    contact_id: uuid.UUID, me: CurrentUser, session: SessionDep, hub: HubDep
+) -> Response:
     """Owner removes a contact, or the invitee declines / leaves. Revokes live access."""
     removed = (
         await session.execute(
@@ -150,7 +153,10 @@ async def remove(contact_id: uuid.UUID, me: CurrentUser, session: SessionDep) ->
     ).first()
     if removed is None:
         raise NOT_FOUND
+    affected: list[uuid.UUID] = []
     if removed.contact_user_id is not None:
-        await revoke_user_from_sharer(session, removed.owner_id, removed.contact_user_id)
+        affected = await revoke_user_from_sharer(session, removed.owner_id, removed.contact_user_id)
     await session.commit()
+    for session_id in affected:
+        await hub.publish(AccessChanged(session_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

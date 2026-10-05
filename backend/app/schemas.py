@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
 
@@ -85,6 +85,68 @@ class IncomingContact(BaseModel):
 class ContactsOut(BaseModel):
     outgoing: list[OutgoingContact]
     incoming: list[IncomingContact]
+
+
+MAX_MINUTES = {"manual": 8 * 60, "tab_live": 4 * 60}
+
+
+class SessionCreateIn(Input):
+    """`outing` and `pairing` sessions are created by their own flows (M4, M5), not here."""
+
+    source: Literal["manual", "tab_live"]
+    duration_minutes: int = Field(default=60, ge=5)
+    viewer_user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _check(self) -> "SessionCreateIn":
+        cap = MAX_MINUTES[self.source]
+        if self.duration_minutes > cap:
+            raise ValueError(f"{self.source} sessions last at most {cap} minutes")
+        if self.source == "manual" and not self.viewer_user_ids:
+            raise ValueError("choose at least one contact to share with")
+        if self.source == "tab_live" and self.viewer_user_ids:
+            raise ValueError("tab_live viewers join with a code, not by id")
+        if len(set(self.viewer_user_ids)) != len(self.viewer_user_ids):
+            raise ValueError("viewer_user_ids contains duplicates")
+        return self
+
+
+class ViewerOut(BaseModel):
+    id: uuid.UUID
+    kind: Literal["user", "guest"]
+    name: str
+    status: str
+    requested_at: datetime
+    granted_at: datetime | None
+    revoked_at: datetime | None
+
+
+class SessionOut(BaseModel):
+    """The sharer's full view of their own session."""
+
+    id: uuid.UUID
+    source: str
+    ends_when: str
+    status: str  # effective: an active session past ends_at reads "ended"
+    ends_at: datetime
+    created_at: datetime
+    ended_at: datetime | None
+    ended_reason: str | None
+    viewers: list[ViewerOut]
+
+
+class SharerRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class WatchingOut(BaseModel):
+    """A viewer's view of a session shared with them (no other viewers, no history)."""
+
+    id: uuid.UUID
+    sharer: SharerRef
+    source: str
+    ends_at: datetime
 
 
 class UserOut(BaseModel):
