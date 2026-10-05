@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from app.security.passwords import MAX_LENGTH, password_problem
 
@@ -147,6 +155,34 @@ class WatchingOut(BaseModel):
     sharer: SharerRef
     source: str
     ends_at: datetime
+
+
+class LocationIn(Input):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(ge=0, le=100_000)
+    recorded_at: AwareDatetime  # device time with offset; naive timestamps are rejected
+
+
+class LocationOut(BaseModel):
+    lat: float
+    lng: float
+    accuracy_m: float
+    recorded_at: datetime
+    stale: bool  # no fresh update recently: show "paused", not a live dot
+
+
+class SessionLocationOut(BaseModel):
+    session_id: uuid.UUID
+    location: LocationOut | None  # None until the sharer's first update
+
+
+class AccessLogEntry(BaseModel):
+    viewer_id: uuid.UUID
+    viewer_name: str
+    kind: Literal["user", "guest"]
+    channel: str
+    viewed_at: datetime
 
 
 class CodeOut(BaseModel):

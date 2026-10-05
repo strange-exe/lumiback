@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import or_, select
 
 from app.api.deps import (
@@ -20,11 +20,28 @@ from app.api.deps import (
     SettingsDep,
     enforce,
 )
-from app.models import SessionStatus, ShareSession, ShareViewer, User, ViewerStatus
-from app.realtime import AccessChanged
-from app.schemas import CodeOut, SessionCreateIn, SessionOut, SharerRef, WatchingOut
+from app.models import (
+    AccessChannel,
+    SessionStatus,
+    ShareSession,
+    ShareViewer,
+    User,
+    ViewerStatus,
+)
+from app.realtime import AccessChanged, LocationUpdated
+from app.schemas import (
+    AccessLogEntry,
+    CodeOut,
+    LocationIn,
+    SessionCreateIn,
+    SessionLocationOut,
+    SessionOut,
+    SharerRef,
+    WatchingOut,
+)
 from app.security.rate_limit import Limit
 from app.services import codes as code_svc
+from app.services import locations as loc_svc
 from app.services import sessions as svc
 from app.services.authz import Role, is_live, resolve_access, resolve_user_access
 
@@ -177,3 +194,53 @@ async def approve_viewer(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No pending viewer with that id")
     await hub.publish(AccessChanged(share.id))
     return await svc.sharer_view(session, share)
+
+
+LOCATION_UPDATES_PER_SESSION = Limit(max_hits=120, window_seconds=60)
+
+
+@router.put("/{session_id}/location", status_code=status.HTTP_204_NO_CONTENT)
+async def put_location(
+    body: LocationIn, share: OwnSession, session: SessionDep, hub: HubDep, limiter: LimiterDep
+) -> Response:
+    """Sharer's device reports its latest position. Only the latest is kept."""
+    enforce(limiter, "location:session", str(share.id), LOCATION_UPDATES_PER_SESSION)
+    try:
+        await loc_svc.upsert(session, share.id, body)
+    except loc_svc.SessionNotLive:
+        raise SESSION_ENDED from None
+    except loc_svc.FutureTimestamp:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="recorded_at is in the future"
+        ) from None
+    await hub.publish(LocationUpdated(share.id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{session_id}/location")
+async def get_location(
+    session_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> SessionLocationOut:
+    """Viewers read the latest position through can_view; every read is logged for the sharer."""
+    access = await resolve_access(session, session_id, principal)
+    match access.role:
+        case Role.SHARER:
+            pass  # sharers reading their own location are not logged
+        case Role.VIEWER:
+            assert access.viewer is not None
+            await loc_svc.log_access(session, session_id, access.viewer.id, AccessChannel.HTTP)
+        case Role.PENDING:
+            raise AWAITING_APPROVAL
+        case Role.FORMER_VIEWER:
+            raise ACCESS_ENDED
+        case _:
+            raise NOT_FOUND
+    return SessionLocationOut(
+        session_id=session_id, location=await loc_svc.latest(session, session_id)
+    )
+
+
+@router.get("/{session_id}/access-log")
+async def get_access_log(share: OwnSession, session: SessionDep) -> list[AccessLogEntry]:
+    """Who looked at my location, and when (most recent first)."""
+    return await loc_svc.access_log(session, share.id)
