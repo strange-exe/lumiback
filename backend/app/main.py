@@ -6,11 +6,15 @@ Run (dev):  uv run uvicorn --factory app.main:create_app --reload --loop asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api import auth
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
+from app.security.rate_limit import RateLimiter
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None if settings.is_production else "/openapi.json",
     )
     app.state.settings = settings
+    app.state.limiter = RateLimiter()
 
     app.add_middleware(
         CORSMiddleware,
@@ -44,8 +49,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default 422 echoes the submitted values ("input"), which would send passwords
+        # and tokens back into client logs. Return only where and why validation failed.
+        errors = [{k: e[k] for k in ("type", "loc", "msg") if k in e} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    app.include_router(auth.router)
 
     return app

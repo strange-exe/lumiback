@@ -1,16 +1,20 @@
+import asyncio
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.pool import NullPool
 
-from app.config import TestDbSettings
+from app.config import Settings, TestDbSettings
+from app.main import create_app
 from app.models import Base
 
 BACKEND = Path(__file__).resolve().parents[1]
+FAKE_SECRET = "t3st-only-" + "x7Kq9Zp2" * 5
 
 
 def alembic_config(url: str) -> Config:
@@ -42,11 +46,37 @@ def migrated_engine(test_db_url: str) -> Engine:
 
 
 @pytest.fixture
-def db(migrated_engine: Engine) -> Connection:
-    """A connection for one test; all tables are emptied afterwards."""
-    with migrated_engine.connect() as conn:
-        yield conn
-        conn.rollback()
+def clean_db(migrated_engine: Engine) -> Engine:
+    """Empties every table after the test."""
+    yield migrated_engine
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     with migrated_engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture
+def db(clean_db: Engine) -> Connection:
+    with clean_db.connect() as conn:
+        yield conn
+        conn.rollback()
+
+
+@pytest.fixture
+def settings(test_db_url: str) -> Settings:
+    return Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        database_url=test_db_url,
+        jwt_secret=FAKE_SECRET,
+        code_pepper=FAKE_SECRET[::-1],
+        cors_origins="http://localhost:3000",
+        app_env="development",
+    )
+
+
+@pytest.fixture
+def client(settings: Settings, clean_db: Engine) -> TestClient:
+    # psycopg async needs a selector loop (Windows default is Proactor).
+    with TestClient(
+        create_app(settings), backend_options={"loop_factory": asyncio.SelectorEventLoop}
+    ) as c:
+        yield c
