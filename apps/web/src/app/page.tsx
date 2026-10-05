@@ -20,7 +20,7 @@ export default async function Landing({ searchParams }: PageProps): Promise<Reac
   return (
     <main className="mx-auto grid min-h-dvh max-w-5xl content-center gap-x-16 gap-y-6 px-5 py-8 md:grid-cols-[1.1fr_1fr] md:grid-rows-[auto_auto]">
       <section className="flex flex-col gap-3 md:self-end">
-        <p className="text-sm font-bold tracking-wide text-pine">Outing · Graphic Era hostels</p>
+        <p className="text-sm font-bold tracking-wide text-pine">Lumiback · Graphic Era hostels</p>
         <h1 className="font-display text-title text-ink md:text-hero md:leading-[1.05]">
           Head out. <span className="text-pine">Get back safe.</span>
         </h1>

@@ -51,13 +51,13 @@ def _frame(*, preheader: str, title: str, body_html: str) -> str:
 <table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" style="background:{MIST};">
 <tr><td align="center" style="padding:32px 16px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-    <tr><td class="pine" style="padding:0 4px 16px;font-family:{SERIF};font-size:22px;color:{PINE};"><span style="color:{LANTERN};font-size:14px;vertical-align:3px;">&#9679;</span>&nbsp;Outing</td></tr>
+    <tr><td class="pine" style="padding:0 4px 16px;font-family:{SERIF};font-size:22px;color:{PINE};"><span style="color:{LANTERN};font-size:14px;vertical-align:3px;">&#9679;</span>&nbsp;Lumiback</td></tr>
     <tr><td class="card" style="background:{SURFACE};border:1px solid {LINE};border-radius:16px;padding:32px 28px;">
 {body_html}
     </td></tr>
     <tr><td class="stone" style="padding:20px 4px 0;font-family:{SANS};font-size:12px;line-height:18px;color:{STONE};">
-      Outing &middot; for Graphic Era hostel students<br>
-      You're receiving this because this address was used to create an Outing account.
+      Lumiback &middot; for Graphic Era hostel students<br>
+      You're receiving this because this address was used to create a Lumiback account.
     </td></tr>
   </table>
 </td></tr>
@@ -70,15 +70,15 @@ def verification_email(*, to: str, name: str, code: str, minutes: int) -> Email:
     first = name.split()[0] if name.split() else "there"
     text = (
         f"Hi {first},\n\n"
-        f"Your Outing verification code is {code}.\n"
+        f"Your Lumiback verification code is {code}.\n"
         f"It expires in {minutes} minutes.\n\n"
-        "If you did not create an Outing account, you can ignore this email. "
+        "If you did not create a Lumiback account, you can ignore this email. "
         "Nobody can use the account without this code.\n"
     )
     body = f"""
       <p class="stone" style="margin:0 0 4px;font-family:{SERIF};font-size:17px;color:{STONE};">Hi {escape(first)},</p>
       <h1 class="ink" style="margin:0 0 20px;font-family:{SERIF};font-size:26px;line-height:32px;font-weight:normal;color:{INK};">Confirm your university email</h1>
-      <p class="ink" style="margin:0 0 16px;font-family:{SANS};font-size:15px;line-height:22px;color:{INK};">Enter this code in Outing to finish creating your account:</p>
+      <p class="ink" style="margin:0 0 16px;font-family:{SANS};font-size:15px;line-height:22px;color:{INK};">Enter this code in Lumiback to finish creating your account:</p>
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr>
         <td class="code" align="center" style="background:{PINE_SOFT};border-radius:12px;padding:18px 8px;font-family:{MONO};font-size:34px;line-height:40px;letter-spacing:10px;font-weight:bold;color:{PINE};">{code}</td>
       </tr></table>
@@ -87,11 +87,11 @@ def verification_email(*, to: str, name: str, code: str, minutes: int) -> Email:
       <p class="stone" style="margin:0;font-family:{SANS};font-size:13px;line-height:19px;color:{STONE};">Didn't create an account? You can ignore this email. Nobody can use the account without this code.</p>"""
     return Email(
         to=to,
-        subject=f"{code} is your Outing code",
+        subject=f"{code} is your Lumiback code",
         body=text,
         html=_frame(
             preheader=f"Your code expires in {minutes} minutes.",
-            title="Your Outing code",
+            title="Your Lumiback code",
             body_html=body,
         ),
     )

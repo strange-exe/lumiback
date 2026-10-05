@@ -19,7 +19,7 @@ const atkinson = Atkinson_Hyperlegible({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Outing", template: "%s · Outing" },
+  title: { default: "Lumiback", template: "%s · Lumiback" },
   description:
     "Log your trips out of the hostel and let the people you choose know you're back safe. For Graphic Era University students.",
 };

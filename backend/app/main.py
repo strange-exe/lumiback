@@ -48,7 +48,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
             await engine.dispose()
 
     app = FastAPI(
-        title="Outing API",
+        title="Lumiback API",
         version="0.1.0",
         lifespan=lifespan,
         # Interactive docs only outside production.

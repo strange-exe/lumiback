@@ -10,8 +10,8 @@ def make(name: str = "Riya Sharma") -> Email:
 
 def test_code_is_in_subject_text_and_html():
     email = make()
-    assert email.subject == "048291 is your Outing code"  # readable from the notification
-    assert "Your Outing verification code is 048291." in email.body
+    assert email.subject == "048291 is your Lumiback code"  # readable from the notification
+    assert "Your Lumiback verification code is 048291." in email.body
     assert email.html is not None and ">048291</td>" in email.html
     assert "expires in 15 minutes" in email.body and "expires in 15 minutes" in email.html
 
@@ -41,12 +41,12 @@ def test_no_links_or_remote_images():
 
 
 def test_message_is_multipart_with_text_first():
-    message = build_message(make(), "Outing <no-reply@outing.example.com>")
+    message = build_message(make(), "Lumiback <no-reply@outing.example.com>")
     assert message.get_content_type() == "multipart/alternative"
     parts = [part.get_content_type() for part in message.iter_parts()]
     assert parts == ["text/plain", "text/html"]  # clients show the last part they support
-    assert message["Subject"] == "048291 is your Outing code"
-    assert message["From"] == "Outing <no-reply@outing.example.com>"
+    assert message["Subject"] == "048291 is your Lumiback code"
+    assert message["From"] == "Lumiback <no-reply@outing.example.com>"
 
 
 def test_text_only_email_stays_single_part():

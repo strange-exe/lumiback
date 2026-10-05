@@ -17,7 +17,7 @@ VALID_ENV = {
     "SMTP_HOST": "smtp.example.com",
     "SMTP_USERNAME": "mailer",
     "SMTP_PASSWORD": "fake-smtp-password",
-    "EMAIL_FROM": "Outing <no-reply@example.com>",
+    "EMAIL_FROM": "Lumiback <no-reply@example.com>",
 }
 OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT"]
 

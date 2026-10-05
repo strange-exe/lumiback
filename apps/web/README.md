@@ -1,4 +1,4 @@
-# Outing web
+# Lumiback web
 
 Next.js 16 (App Router) + Tailwind CSS v4. Mobile-first student app: sign in, check out,
 the return arc, "I'm back", and history.

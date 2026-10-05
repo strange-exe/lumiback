@@ -1,4 +1,4 @@
-# Outing
+# Lumiback
 
 Campus outing log with consent-based location sharing for Graphic Era University students.
 
