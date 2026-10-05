@@ -1,7 +1,7 @@
 """Request/response models. Inputs forbid unknown fields so typos fail loudly."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -11,6 +11,7 @@ from pydantic import (
     EmailStr,
     Field,
     StringConstraints,
+    field_serializer,
     model_validator,
 )
 
@@ -224,3 +225,56 @@ class UserOut(BaseModel):
     hostel: str | None
     email_verified: bool
     created_at: datetime
+
+
+# ---------- outings ----------
+
+# India Standard Time has no daylight saving, so a fixed offset is exact (and needs no tz database).
+IST = timezone(timedelta(hours=5, minutes=30), "IST")
+Destination = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Purpose = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class OutingCreateIn(Input):
+    destination: Destination | None = None
+    purpose: Purpose | None = None
+    expected_return_at: AwareDatetime  # any offset; naive timestamps are rejected
+
+
+class OutingExtendIn(Input):
+    expected_return_at: AwareDatetime
+
+
+class OutingOut(BaseModel):
+    """Times are returned in IST (+05:30). Status is derived, never stored."""
+
+    id: uuid.UUID
+    destination: str | None
+    purpose: str | None
+    left_at: datetime
+    expected_return_at: datetime
+    returned_at: datetime | None
+    status: Literal["out", "overdue", "returned"]
+    late_minutes: int  # past expected return: when returned, or so far if overdue
+    duration_minutes: int | None  # once returned
+
+    @field_serializer("left_at", "expected_return_at", "returned_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class OutingPage(BaseModel):
+    items: list[OutingOut]
+    next_before: datetime | None  # pass as ?before= for the next page
+
+    @field_serializer("next_before")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class OutingSummary(BaseModel):
+    total: int
+    returned: int
+    returned_late: int
+    on_time_rate: float | None  # share of returned outings back by the expected time
+    currently: Literal["in", "out", "overdue"]

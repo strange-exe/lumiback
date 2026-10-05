@@ -30,10 +30,12 @@ and enabled only by the student. There is no covert mode.
 | Sessions | `POST /sessions` `GET /sessions/mine` `GET /sessions/watching` `GET /sessions/{id}` `POST /sessions/{id}/stop` |
 | Viewers | `POST /sessions/{id}/codes` `POST /codes/redeem` `POST /sessions/{id}/viewers/{vid}/approve` `POST /sessions/{id}/viewers/{vid}/revoke` |
 | Location | `PUT /sessions/{id}/location` `GET /sessions/{id}/location` `GET /sessions/{id}/access-log` |
+| Outings | `POST /outings` `GET /outings/current` `PATCH /outings/current` `POST /outings/current/return` `GET /outings` `GET /outings/summary` |
 | Live | `WS /ws`: authenticate in the first message, then subscribe to session ids |
 
 Access tokens last 15 minutes; refresh tokens rotate on every use. Guests send their token in the
-`X-Guest-Token` header. Interactive docs are served at `/docs` when `APP_ENV=development`.
+`X-Guest-Token` header. Outing times are returned in IST (`+05:30`); outing status (out, overdue,
+returned) is computed when read. Interactive docs are served at `/docs` when `APP_ENV=development`.
 
 ## Backend setup
 

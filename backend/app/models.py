@@ -125,6 +125,37 @@ class User(Base):
         return self.email_verified_at is not None
 
 
+class Outing(Base):
+    """A student's trip out of the hostel. Status (out / overdue / returned) is derived from
+    the timestamps when read, never stored, so it cannot go stale."""
+
+    __tablename__ = "outings"
+    __table_args__ = (
+        CheckConstraint("expected_return_at > left_at", name="expected_after_leaving"),
+        CheckConstraint(
+            "returned_at IS NULL OR returned_at >= left_at", name="returned_after_leaving"
+        ),
+        # At most one open outing per student, enforced by the database (no double check-out,
+        # even with two simultaneous requests).
+        Index(
+            "uq_outings_one_open_per_student",
+            "student_id",
+            unique=True,
+            postgresql_where=text("returned_at IS NULL"),
+        ),
+        Index("ix_outings_student_left", "student_id", "left_at"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    destination: Mapped[str | None] = mapped_column(String(100))
+    purpose: Mapped[str | None] = mapped_column(String(200))
+    left_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    expected_return_at: Mapped[datetime]
+    returned_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = created_at()
+
+
 class RateLimitHit(Base):
     """One rate-limited attempt. key_hash = HMAC(pepper, scope:key); no readable personal data."""
 

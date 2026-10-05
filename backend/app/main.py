@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, codes, contacts, sessions, ws
+from app.api import auth, codes, contacts, outings, sessions, ws
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
 from app.email import make_mailer
@@ -84,5 +84,6 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(sessions.router)
     app.include_router(codes.router)
     app.include_router(ws.router)
+    app.include_router(outings.router)
 
     return app
