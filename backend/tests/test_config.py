@@ -12,13 +12,20 @@ VALID_ENV = {
     "JWT_SECRET": STRONG,
     "CODE_PEPPER": STRONG[::-1],
     "CORS_ORIGINS": "http://localhost:3000, https://outing.example.com/",
+    # A valid production setup must deliver real email.
+    "EMAIL_BACKEND": "smtp",
+    "SMTP_HOST": "smtp.example.com",
+    "SMTP_USERNAME": "mailer",
+    "SMTP_PASSWORD": "fake-smtp-password",
+    "EMAIL_FROM": "Outing <no-reply@example.com>",
 }
+OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT"]
 
 
 @pytest.fixture
 def env(monkeypatch):
     """Isolated environment: wipe related vars, set valid ones, never read backend/.env."""
-    for key in [*VALID_ENV, "APP_ENV"]:
+    for key in [*VALID_ENV, *OPTIONAL]:
         monkeypatch.delenv(key, raising=False)
     for key, value in VALID_ENV.items():
         monkeypatch.setenv(key, value)
@@ -108,3 +115,41 @@ def test_docs_hidden_in_production(env):
     assert TestClient(create_app(load())).get("/docs").status_code == 404
     env.setenv("APP_ENV", "development")
     assert TestClient(create_app(load())).get("/docs").status_code == 200
+
+
+# ---------- email delivery and allowed domains ----------
+
+
+def test_console_email_is_refused_in_production(env):
+    env.setenv("EMAIL_BACKEND", "console")
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "EMAIL_BACKEND=console" in str(exc.value)
+    env.setenv("APP_ENV", "development")
+    assert load().email_backend == "console"
+
+
+@pytest.mark.parametrize("key", ["SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"])
+def test_smtp_requires_all_settings(env, key):
+    env.delenv(key)
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert key in str(exc.value)
+    assert "fake-smtp-password" not in str(exc.value)
+
+
+def test_university_domain_is_the_default(env):
+    assert load().allowed_email_domains == ["geu.ac.in"]
+
+
+def test_allowed_domains_are_normalized(env):
+    env.setenv("ALLOWED_EMAIL_DOMAINS", "@GEU.ac.in, example.com")
+    assert load().allowed_email_domains == ["geu.ac.in", "example.com"]
+
+
+@pytest.mark.parametrize("domains", ["", "geu", "someone@geu.ac.in", "geu.ac.in/x"])
+def test_malformed_domains_refused(env, domains):
+    env.setenv("ALLOWED_EMAIL_DOMAINS", domains)
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "ALLOWED_EMAIL_DOMAINS" in str(exc.value)

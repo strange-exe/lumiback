@@ -117,6 +117,34 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text)
     roll_no: Mapped[str | None] = mapped_column(String(32))
     hostel: Mapped[str | None] = mapped_column(String(64))
+    email_verified_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = created_at()
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+
+class EmailVerification(Base):
+    """A 6-digit code sent to the user's inbox. Only the newest one per user is kept.
+
+    Six digits is a small space, so the code is stored as HMAC(CODE_PEPPER, user_id:code),
+    expires quickly, and is destroyed after a few wrong attempts.
+    """
+
+    __tablename__ = "email_verifications"
+    __table_args__ = (
+        hash_len_check("code_hash"),
+        CheckConstraint("attempts >= 0", name="attempts_non_negative"),
+        CheckConstraint("expires_at > created_at", name="expires_after_create"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary)
+    attempts: Mapped[int] = mapped_column(server_default=text("0"))
+    expires_at: Mapped[datetime]
     created_at: Mapped[datetime] = created_at()
 
 

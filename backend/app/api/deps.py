@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import get_session
+from app.email import Mailer
 from app.models import User
 from app.realtime import Hub
 from app.security.codes import hash_guest_token
@@ -26,6 +27,10 @@ def get_limiter(request: Request) -> RateLimiter:
     return request.app.state.limiter
 
 
+def get_mailer(request: Request) -> Mailer:
+    return request.app.state.mailer
+
+
 def get_hub(request: Request) -> Hub:
     return request.app.state.hub
 
@@ -33,6 +38,7 @@ def get_hub(request: Request) -> Hub:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 HubDep = Annotated[Hub, Depends(get_hub)]
+MailerDep = Annotated[Mailer, Depends(get_mailer)]
 
 
 def client_ip(request: Request) -> str:
@@ -83,6 +89,8 @@ async def get_optional_user(
     user = await session.get(User, claims.user_id)
     if user is None:  # account deleted after the token was issued
         raise UNAUTHORIZED
+    if not user.email_verified:  # login already refuses these; defense in depth
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Email not verified")
     return user
 
 

@@ -12,11 +12,12 @@ from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
-from app.api.deps import CurrentUser, HubDep, LimiterDep, SessionDep, enforce
+from app.api.deps import CurrentUser, HubDep, LimiterDep, SessionDep, SettingsDep, enforce
 from app.models import Contact, ContactStatus, User
 from app.realtime import AccessChanged
 from app.schemas import ContactInviteIn, ContactsOut, IncomingContact, OutgoingContact, Person
 from app.security.rate_limit import Limit
+from app.services.verification import email_allowed
 from app.services.viewers import revoke_user_from_sharer
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -38,11 +39,20 @@ def _outgoing(contact: Contact, person: User | None) -> OutgoingContact:
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
 async def invite(
-    body: ContactInviteIn, me: CurrentUser, session: SessionDep, limiter: LimiterDep
+    body: ContactInviteIn,
+    me: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
 ) -> OutgoingContact:
     """Invite an email. The response is the same whether or not that account exists."""
     enforce(limiter, "contacts:invite", str(me.id), INVITES_PER_USER)
     email = body.email.lower()
+    if not email_allowed(email, settings):
+        domains = ", ".join(f"@{d}" for d in settings.allowed_email_domains)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Contacts must use {domains} addresses"
+        )
     if email == me.email:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="You cannot add yourself")
 

@@ -10,7 +10,7 @@ import json
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, ValidationError, field_validator
+from pydantic import SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_BYTES = 32
@@ -27,6 +27,43 @@ class Settings(BaseSettings):
     code_pepper: SecretStr
     cors_origins: Annotated[list[str], NoDecode]
     app_env: Literal["development", "production"] = "production"
+
+    # Only addresses at these domains may register (and be invited as contacts).
+    allowed_email_domains: Annotated[list[str], NoDecode] = ["geu.ac.in"]
+
+    # "console" logs emails instead of sending them: development only.
+    email_backend: Literal["console", "smtp"] = "console"
+    smtp_host: str | None = None
+    smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit TLS
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    email_from: str | None = None
+
+    @field_validator("allowed_email_domains", mode="before")
+    @classmethod
+    def _parse_domains(cls, v: object) -> list[str]:
+        items = v if isinstance(v, list) else str(v).split(",")
+        domains = [str(d).strip().lower().lstrip("@") for d in items if str(d).strip()]
+        if not domains:
+            raise ValueError("at least one domain is required")
+        for d in domains:
+            if "." not in d or "@" in d or "/" in d or " " in d:
+                raise ValueError(f"'{d}' is not a domain like geu.ac.in")
+        return domains
+
+    @model_validator(mode="after")
+    def _email_delivery(self) -> "Settings":
+        if self.email_backend == "console" and self.app_env == "production":
+            raise ValueError("EMAIL_BACKEND=console is not allowed in production; configure SMTP")
+        if self.email_backend == "smtp":
+            missing = [
+                name.upper()
+                for name in ("smtp_host", "smtp_username", "smtp_password", "email_from")
+                if not getattr(self, name)
+            ]
+            if missing:
+                raise ValueError(f"EMAIL_BACKEND=smtp requires {', '.join(missing)}")
+        return self
 
     @field_validator("jwt_secret", "code_pepper")
     @classmethod
@@ -109,7 +146,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         # Rebuild the message ourselves: pydantic's default text includes input values,
         # which would print secrets into logs.
         lines = [
-            f"  - {'.'.join(str(p) for p in err['loc']).upper()}: {err['msg']}"
+            f"  - {'.'.join(str(p) for p in err['loc']).upper() or 'SETTINGS'}: {err['msg']}"
             for err in e.errors(include_input=False, include_url=False, include_context=False)
         ]
         raise ConfigError("Refusing to start: invalid configuration\n" + "\n".join(lines)) from None

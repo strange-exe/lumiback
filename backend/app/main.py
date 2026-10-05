@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app.api import auth, codes, contacts, sessions, ws
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
+from app.email import make_mailer
 from app.jobs import expiry
 from app.realtime import Hub
 from app.security.rate_limit import RateLimiter
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.state.settings = settings
     app.state.limiter = RateLimiter()
     app.state.hub = Hub()
+    app.state.mailer = make_mailer(settings)
 
     app.add_middleware(
         CORSMiddleware,

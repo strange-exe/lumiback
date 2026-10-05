@@ -46,6 +46,15 @@ class LoginIn(Input):
     password: str = Field(max_length=1024)
 
 
+class EmailIn(Input):
+    email: EmailStr
+
+
+class VerifyEmailIn(Input):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+
+
 class RefreshIn(Input):
     refresh_token: str = Field(min_length=1, max_length=200)
 
@@ -213,4 +222,5 @@ class UserOut(BaseModel):
     email: str
     roll_no: str | None
     hostel: str | None
+    email_verified: bool
     created_at: datetime

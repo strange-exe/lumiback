@@ -1,14 +1,33 @@
 """Small helpers shared by API tests."""
 
+import re
+
 from fastapi.testclient import TestClient
 
 PASSWORD = "correct-horse-battery"
 
 
-def register(client: TestClient, email: str, name: str = "Test User") -> dict:
+def last_code(client: TestClient, email: str) -> str:
+    """The most recent verification code emailed to this address."""
+    sent = [m for m in client.app.state.mailer.outbox if m.to == email.lower()]
+    assert sent, f"no email sent to {email}"
+    match = re.search(r"code is (\d{6})", sent[-1].body)
+    assert match, sent[-1].body
+    return match.group(1)
+
+
+def verify(client: TestClient, email: str) -> dict:
+    r = client.post("/auth/verify-email", json={"email": email, "code": last_code(client, email)})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def register(
+    client: TestClient, email: str, name: str = "Test User", *, verified: bool = True
+) -> dict:
     r = client.post("/auth/register", json={"name": name, "email": email, "password": PASSWORD})
     assert r.status_code == 201, r.text
-    return r.json()
+    return verify(client, email) if verified else r.json()
 
 
 def login(client: TestClient, email: str, password: str = PASSWORD) -> dict:

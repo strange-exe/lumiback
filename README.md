@@ -19,12 +19,13 @@ and enabled only by the student. There is no covert mode.
 | Data minimization | Only the latest location is stored, and it is deleted when the session ends |
 | Transparency | Every viewer read is recorded in an access log visible only to the sharer |
 | Codes | Single-use, ~10 minutes, ~50 bits, stored as HMAC, attempts rate-limited |
+| Real students | Only verified `@geu.ac.in` addresses can register or be added as contacts |
 
 ## API overview
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/register` `POST /auth/login` `POST /auth/refresh` `POST /auth/logout` `GET /auth/me` |
+| Auth | `POST /auth/register` `POST /auth/verify-email` `POST /auth/resend-verification` `POST /auth/login` `POST /auth/refresh` `POST /auth/logout` `GET /auth/me` |
 | Contacts | `POST /contacts` `GET /contacts` `POST /contacts/{id}/accept` `DELETE /contacts/{id}` |
 | Sessions | `POST /sessions` `GET /sessions/mine` `GET /sessions/watching` `GET /sessions/{id}` `POST /sessions/{id}/stop` |
 | Viewers | `POST /sessions/{id}/codes` `POST /codes/redeem` `POST /sessions/{id}/viewers/{vid}/approve` `POST /sessions/{id}/viewers/{vid}/revoke` |

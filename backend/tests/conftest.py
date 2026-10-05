@@ -10,6 +10,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, TestDbSettings
+from app.email import MemoryMailer
 from app.main import create_app
 from app.models import Base
 
@@ -70,14 +71,14 @@ def settings(test_db_url: str) -> Settings:
         code_pepper=FAKE_SECRET[::-1],
         cors_origins="http://localhost:3000",
         app_env="development",
+        allowed_email_domains="example.com,geu.ac.in",
     )
 
 
 @pytest.fixture
 def client(settings: Settings, clean_db: Engine) -> TestClient:
     # psycopg async needs a selector loop (Windows default is Proactor).
-    with TestClient(
-        create_app(settings, start_jobs=False),
-        backend_options={"loop_factory": asyncio.SelectorEventLoop},
-    ) as c:
+    app = create_app(settings, start_jobs=False)
+    app.state.mailer = MemoryMailer()  # tests read verification codes from here
+    with TestClient(app, backend_options={"loop_factory": asyncio.SelectorEventLoop}) as c:
         yield c
