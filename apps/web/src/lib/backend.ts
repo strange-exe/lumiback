@@ -2,6 +2,7 @@ import "server-only";
 
 import { headers } from "next/headers";
 
+import { clientIpFrom } from "@/lib/client-ip";
 import { BACKEND_URL } from "@/lib/config";
 
 export class ApiError extends Error {
@@ -17,6 +18,8 @@ interface CallOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   token?: string | null;
+  /** A code-joined guest's token (header only: never in a URL, which ends up in logs). */
+  guestToken?: string | null;
   /** Real client IP, so the backend's per-IP limits apply per student, not per web server. */
   clientIp?: string | null;
 }
@@ -39,6 +42,7 @@ export async function callBackend<T>(path: string, options: CallOptions = {}): P
   const requestHeaders: Record<string, string> = { Accept: "application/json" };
   if (options.body !== undefined) requestHeaders["Content-Type"] = "application/json";
   if (options.token) requestHeaders.Authorization = `Bearer ${options.token}`;
+  if (options.guestToken) requestHeaders["X-Guest-Token"] = options.guestToken;
   if (options.clientIp) requestHeaders["X-Forwarded-For"] = options.clientIp;
 
   const response = await fetch(`${BACKEND_URL}${path}`, {
@@ -54,9 +58,7 @@ export async function callBackend<T>(path: string, options: CallOptions = {}): P
   return payload as T;
 }
 
-/** The visitor's IP as seen by our edge (first X-Forwarded-For hop), for Server Actions/Components. */
+/** The visitor's IP as set by our edge proxy, for Server Actions/Components. */
 export async function visitorIp(): Promise<string | null> {
-  const incoming = await headers();
-  const forwarded = incoming.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || incoming.get("x-real-ip") || null;
+  return clientIpFrom(await headers());
 }

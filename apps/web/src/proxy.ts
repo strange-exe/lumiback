@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { clientIpFrom } from "@/lib/client-ip";
 import { BACKEND_URL } from "@/lib/config";
 import {
   ACCESS_COOKIE,
@@ -57,7 +58,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const refresh = request.cookies.get(REFRESH_COOKIE)?.value;
   if (access || !refresh) return NextResponse.next();
 
-  const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const clientIp = clientIpFrom(request.headers);
   const tokens = await refreshOnce(refresh, clientIp);
 
   // Downstream pages and actions must see the updated cookies on THIS request...
