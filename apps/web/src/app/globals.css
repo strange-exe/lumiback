@@ -116,3 +116,78 @@ body {
     transition: none !important;
   }
 }
+
+/* ---------- live map (Leaflet) ---------- */
+
+.live-map.leaflet-container {
+  font-family: var(--font-body);
+  background: var(--surface); /* not Leaflet's grey: shows while tiles load */
+}
+
+/* Calm the standard OSM colours to sit with the page; dark mode re-lights them, not just dims. */
+.live-tiles {
+  filter: saturate(0.45) sepia(0.12) brightness(1.03);
+}
+
+@media (prefers-color-scheme: dark) {
+  .live-tiles {
+    filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9);
+  }
+}
+
+.live-map.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--stone);
+  font-size: 11px;
+}
+
+.live-map.leaflet-container .leaflet-control-attribution a,
+.live-map.leaflet-container .leaflet-bar a {
+  color: var(--pine);
+}
+
+.live-map.leaflet-container .leaflet-bar a {
+  background: var(--surface);
+  border-color: var(--line);
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+}
+
+/* The person: a lantern-coloured dot with a soft halo. Greys out when the share is paused. */
+.live-dot {
+  border-radius: 9999px;
+  background: var(--lantern);
+  border: 3px solid var(--surface);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--lantern) 30%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+  animation: live-halo 2.4s ease-out infinite;
+}
+
+.live-dot.is-paused {
+  background: var(--stone);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  animation: none;
+}
+
+.live-accuracy {
+  fill: var(--pine);
+  fill-opacity: 0.12;
+  stroke: var(--pine);
+  stroke-opacity: 0.45;
+  stroke-width: 1.5;
+}
+
+@keyframes live-halo {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--lantern) 45%, transparent),
+      0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  100% {
+    box-shadow:
+      0 0 0 14px color-mix(in srgb, var(--lantern) 0%, transparent),
+      0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}

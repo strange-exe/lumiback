@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 
+import { shareApi } from "@/features/share/api";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
-import { clearTokens, refreshToken, storeTokens } from "@/lib/session";
+import { accessToken, clearTokens, refreshToken, storeTokens } from "@/lib/session";
 import type { FormState, TokenPair } from "@/lib/types";
 
 function text(form: FormData, key: string): string {
@@ -89,6 +90,16 @@ export async function resendCode(_: FormState, form: FormData): Promise<FormStat
 }
 
 export async function signOut(): Promise<void> {
+  const access = await accessToken();
+  if (access) {
+    // Signing out of the device you're sharing from ends the share: nobody is left to stop it.
+    const live = await shareApi.activeTabShare(access).catch(() => null);
+    if (live) {
+      await callBackend(`/sessions/${live.id}/stop`, { method: "POST", token: access }).catch(
+        () => undefined,
+      );
+    }
+  }
   const token = await refreshToken();
   if (token) {
     // Revoke on the server too; a failure here must not keep the student signed in locally.

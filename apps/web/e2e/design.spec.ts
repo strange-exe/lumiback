@@ -1,7 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-import { checkOut, ensureIn, watchForErrors } from "./helpers";
+import {
+  allowLocation,
+  checkOut,
+  ensureIn,
+  newJoinCode,
+  startSharing,
+  stopSharing,
+  stubMapTiles,
+  watchForErrors,
+} from "./helpers";
 
 /** DESIGN.md §6: desktop + mobile, light + dark, with screenshots for review. */
 const VIEWPORTS = [
@@ -19,6 +28,7 @@ interface Screen {
   prepare: (page: Page) => Promise<void>;
   /** The one thing that must be visible without scrolling. */
   primary: (page: Page) => ReturnType<Page["getByRole"] | Page["getByText"]>;
+  cleanup?: (page: Page) => Promise<void>;
 }
 
 const SCREENS: Screen[] = [
@@ -61,6 +71,37 @@ const SCREENS: Screen[] = [
     },
     primary: (page) => page.getByRole("heading", { name: "Your outings" }),
   },
+  {
+    name: "share-start",
+    auth: true,
+    prepare: stopSharing,
+    primary: (page) => page.getByRole("button", { name: "Start sharing" }),
+  },
+  {
+    name: "share-live",
+    auth: true,
+    prepare: async (page) => {
+      await allowLocation(page.context());
+      await startSharing(page);
+    },
+    primary: (page) => page.getByRole("heading", { name: "You're sharing your location" }),
+    cleanup: stopSharing,
+  },
+  {
+    name: "join",
+    auth: false,
+    prepare: async (page) => void (await page.goto("/join")),
+    primary: (page) => page.getByRole("button", { name: "Ask to follow along" }),
+  },
+  {
+    name: "watch-unavailable",
+    auth: false,
+    prepare: async (page) => {
+      await page.goto("/watch/00000000-0000-4000-8000-000000000000");
+      await expect(page.getByRole("heading", { name: "This share isn't available" })).toBeVisible();
+    },
+    primary: (page) => page.getByRole("link", { name: "Enter a new code" }),
+  },
 ];
 
 for (const viewport of VIEWPORTS) {
@@ -70,6 +111,7 @@ for (const viewport of VIEWPORTS) {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.emulateMedia({ colorScheme: scheme });
         if (!screen.auth) await page.context().clearCookies(); // public pages: signed out
+        if (process.env.CI) await stubMapTiles(page.context()); // real tiles locally, for review
         const errors = watchForErrors(page);
 
         await screen.prepare(page);
@@ -91,10 +133,46 @@ for (const viewport of VIEWPORTS) {
           path: `${SHOTS}/${screen.name}-${viewport.name}-${scheme}.png`,
           fullPage: true,
         });
+        await screen.cleanup?.(page);
         expect(errors, "console errors / failed requests").toEqual([]);
       });
     }
   }
+}
+
+/** The guest's live view needs a second browser, so it gets its own check (mobile, both themes). */
+for (const scheme of SCHEMES) {
+  test(`watch-live · mobile · ${scheme}`, async ({ page, browser }) => {
+    await allowLocation(page.context());
+    if (process.env.CI) await stubMapTiles(page.context());
+    await startSharing(page);
+    const code = await newJoinCode(page);
+
+    const guestContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+      viewport: { width: 390, height: 844 },
+      colorScheme: scheme,
+    });
+    if (process.env.CI) await stubMapTiles(guestContext);
+    const guest = await guestContext.newPage();
+    const errors = watchForErrors(guest);
+    await guest.goto("/join");
+    await guest.getByLabel("Join code").fill(code);
+    await guest.getByLabel("Your name").fill("Mom");
+    await guest.getByRole("button", { name: "Ask to follow along" }).click();
+    await page.getByRole("button", { name: "Approve Mom (guest)" }).click({ timeout: 10_000 });
+    await expect(guest.getByText(/^Live · updated/)).toBeVisible();
+    await guest.waitForLoadState("networkidle");
+
+    await expect(guest.getByRole("region", { name: /^Map/ })).toBeInViewport();
+    const axe = await new AxeBuilder({ page: guest }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(axe.violations.map((v) => v.id)).toEqual([]);
+    await guest.screenshot({ path: `${SHOTS}/watch-live-mobile-${scheme}.png`, fullPage: true });
+
+    await stopSharing(page);
+    await guestContext.close();
+    expect(errors).toEqual([]);
+  });
 }
 
 test("reduced motion: the lantern does not animate", async ({ page }) => {

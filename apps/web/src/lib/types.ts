@@ -45,6 +45,62 @@ export interface OutingSummary {
   currently: "in" | "out" | "overdue";
 }
 
+// ---------- live sharing ----------
+
+export type ViewerStatus = "pending" | "granted" | "revoked";
+
+export interface Viewer {
+  id: string;
+  kind: "user" | "guest";
+  name: string;
+  status: ViewerStatus;
+  requested_at: string;
+  granted_at: string | null;
+  revoked_at: string | null;
+}
+
+/** The sharer's own view of a session. `status` is effective: past ends_at reads "ended". */
+export interface ShareSession {
+  id: string;
+  source: "manual" | "tab_live" | "outing" | "pairing";
+  ends_when: string;
+  status: "active" | "ended" | "revoked";
+  ends_at: string;
+  created_at: string;
+  ended_at: string | null;
+  ended_reason: string | null;
+  viewers: Viewer[];
+}
+
+/** A session someone shared with me. */
+export interface Watching {
+  id: string;
+  sharer: { id: string; name: string };
+  source: string;
+  ends_at: string;
+}
+
+export interface LiveLocation {
+  lat: number;
+  lng: number;
+  accuracy_m: number;
+  recorded_at: string;
+  stale: boolean;
+}
+
+export interface JoinCode {
+  /** Shown once; only its HMAC is stored. */
+  code: string;
+  expires_at: string;
+}
+
+export interface Redeemed {
+  session_id: string;
+  viewer_id: string;
+  status: ViewerStatus;
+  guest_token: string | null;
+}
+
 /** Result shape for Server Actions used with useActionState. */
 export interface FormState {
   error: string | null;

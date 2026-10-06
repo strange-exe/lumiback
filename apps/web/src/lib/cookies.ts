@@ -13,3 +13,13 @@ export const COOKIE_BASE = {
   sameSite: "lax", // not sent on cross-site POSTs; Server Actions also check Origin
   path: "/",
 } as const;
+
+/**
+ * A guest's proof of having joined one session with a code. One cookie per session, so joining
+ * a second share never replaces the first. httpOnly like the login cookies: page scripts never
+ * see it. Outlives the longest share (8 h); the backend decides when access actually ends.
+ */
+export function guestCookie(sessionId: string): string {
+  return `outing_guest_${sessionId}`;
+}
+export const GUEST_MAX_AGE = 9 * 60 * 60;
