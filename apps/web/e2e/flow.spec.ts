@@ -70,3 +70,13 @@ test("running late: update the return time", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Robbers Cave" })).toBeVisible();
   await ensureIn(page);
 });
+
+test("the server never renders clock-dependent text that hydration could disagree with", async ({
+  page,
+}) => {
+  await ensureIn(page);
+  const html = await (await page.request.get("/home")).text();
+  expect(html).toContain("When will you be back?");
+  expect(html).not.toMatch(/Back by/); // computed from the browser's clock after mount
+  await expect(page.getByText(/^Back by/)).toBeVisible();
+});

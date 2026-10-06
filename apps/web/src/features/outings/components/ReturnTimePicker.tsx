@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { expectedReturn, formatTime } from "@/features/outings/time";
+import { useNow } from "@/lib/use-now";
 
 const QUICK = [
   { value: "60", label: "+1 h" },
@@ -15,7 +16,10 @@ const QUICK = [
 export function ReturnTimePicker({ legend }: { legend: string }): ReactNode {
   const [quick, setQuick] = useState<string>("120");
   const [time, setTime] = useState("");
-  const preview = expectedReturn(quick === "custom" ? time : quick);
+  // From the browser's clock after mount, never during server rendering: "+2 h" rendered at
+  // 8:46:59 on the server and 8:47:00 in the browser would be a hydration mismatch.
+  const now = useNow(15_000);
+  const preview = now ? expectedReturn(quick === "custom" ? time : quick, new Date(now)) : null;
 
   return (
     <fieldset className="flex flex-col gap-3">
@@ -52,7 +56,9 @@ export function ReturnTimePicker({ legend }: { legend: string }): ReactNode {
         </label>
       )}
       <p className="text-sm text-stone" aria-live="polite">
-        {preview ? (
+        {now === 0 ? (
+          <span aria-hidden="true">&nbsp;</span>
+        ) : preview ? (
           <>
             Back by{" "}
             <span className="font-display text-base tabular-nums text-ink">
