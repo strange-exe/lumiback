@@ -68,7 +68,7 @@ npm run test:e2e                  # Playwright against the API on the local test
 browser only ever talks to the web app; the web app talks to the API server-side.
 
 1. **Render:** New → Blueprint → this repository. When asked, fill in `DATABASE_URL` (Supabase
-   session pooler), `SMTP_PASSWORD` (Resend key) and, for the web app, `BACKEND_URL` (the API's
+   session pooler), `RESEND_API_KEY` and, for the web app, `BACKEND_URL` (the API's
    `https://…onrender.com` address; set it after the API's first deploy if needed) and
    `EDGE_SECRET` (generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
    Put both services in the same region as the Supabase database.
@@ -88,6 +88,9 @@ to wake. The 750 free instance hours per month are shared by both services, so k
 awake around the clock leaves almost nothing for the other. If you use a pinger, schedule it for
 peak hours only (e.g. 16:00–23:00 IST, about 430 hours a month for both), and hit the API's
 `/health` at least once a day so the Supabase project never counts as inactive.
+
+Email goes through Resend's HTTPS API, not SMTP: Render's free plan blocks outbound traffic on
+SMTP ports (25, 465, 587).
 
 Each service must run as a single instance: live updates and token-refresh de-duplication are
 in-process. Moving off the free plan or to another host needs no code changes.

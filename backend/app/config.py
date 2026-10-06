@@ -31,8 +31,10 @@ class Settings(BaseSettings):
     # Only addresses at these domains may register (and be invited as contacts).
     allowed_email_domains: Annotated[list[str], NoDecode] = ["geu.ac.in"]
 
-    # "console" logs emails instead of sending them: development only.
-    email_backend: Literal["console", "smtp"] = "console"
+    # "console" logs emails instead of sending them: development only. "resend" sends over
+    # HTTPS (works where SMTP ports are blocked, e.g. Render's free plan); "smtp" anywhere else.
+    email_backend: Literal["console", "smtp", "resend"] = "console"
+    resend_api_key: SecretStr | None = None
     smtp_host: str | None = None
     smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit TLS
     smtp_username: str | None = None
@@ -70,6 +72,10 @@ class Settings(BaseSettings):
             ]
             if missing:
                 raise ValueError(f"EMAIL_BACKEND=smtp requires {', '.join(missing)}")
+        if self.email_backend == "resend":
+            missing = [n.upper() for n in ("resend_api_key", "email_from") if not getattr(self, n)]
+            if missing:
+                raise ValueError(f"EMAIL_BACKEND=resend requires {', '.join(missing)}")
         return self
 
     @field_validator("jwt_secret", "code_pepper", "internal_api_secret")

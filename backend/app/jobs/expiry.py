@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
+from app.services import verification
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class SweepResult:
     deleted_codes: int
     deleted_refresh_tokens: int
     deleted_rate_limit_hits: int
+    deleted_pending_signups: int = 0
 
 
 async def sweep(sessionmaker: async_sessionmaker[AsyncSession], hub: Hub) -> SweepResult:
@@ -83,11 +85,12 @@ async def sweep(sessionmaker: async_sessionmaker[AsyncSession], hub: Hub) -> Swe
             delete(RefreshToken).where(RefreshToken.expires_at < now - KEEP_DEAD_REFRESH_TOKENS)
         )
         hits = await delete_old_hits(session, now)
+        pending = await verification.delete_expired(session, now)  # unverified sign-ups
         await session.commit()
 
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
-    return SweepResult(expired, closed_tabs, codes.rowcount, tokens.rowcount, hits)
+    return SweepResult(expired, closed_tabs, codes.rowcount, tokens.rowcount, hits, pending)
 
 
 async def run_forever(

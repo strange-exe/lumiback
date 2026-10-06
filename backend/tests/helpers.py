@@ -25,8 +25,9 @@ def verify(client: TestClient, email: str) -> dict:
 def register(
     client: TestClient, email: str, name: str = "Test User", *, verified: bool = True
 ) -> dict:
+    """Sign up and (by default) verify. The account exists only after verification."""
     r = client.post("/auth/register", json={"name": name, "email": email, "password": PASSWORD})
-    assert r.status_code == 201, r.text
+    assert r.status_code == 202, r.text
     return verify(client, email) if verified else r.json()
 
 

@@ -1,8 +1,15 @@
 """Verification email: content, escaping, and the MIME structure actually sent."""
 
+import asyncio
+import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
-from app.email import Email, build_message
+import httpx
+import pytest
+from pydantic import SecretStr
+
+from app.email import Email, ResendMailer, build_message
 from app.email_templates import ist_stamp, verification_email
 
 REQUESTED = datetime(2026, 10, 6, 17, 11, tzinfo=UTC)  # 10:41 PM IST
@@ -65,3 +72,37 @@ def test_html_email_is_multipart_with_text_first():
 def test_text_only_email_stays_single_part():
     message = build_message(Email(to="a@geu.ac.in", subject="s", body="hello"), "x@y.z")
     assert message.get_content_type() == "text/plain"
+
+
+def _resend_mailer(handler) -> ResendMailer:
+    settings = SimpleNamespace(
+        resend_api_key=SecretStr("re_test_key"), email_from="Lumiback <no-reply@example.com>"
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return ResendMailer(settings, client=client)  # type: ignore[arg-type]
+
+
+def test_resend_mailer_posts_the_email_over_https():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers["authorization"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": "abc"})
+
+    asyncio.run(_resend_mailer(handler).send(make()))
+    assert seen["url"] == "https://api.resend.com/emails"
+    assert seen["auth"] == "Bearer re_test_key"
+    assert seen["body"]["to"] == ["riya@geu.ac.in"]
+    assert seen["body"]["subject"] == "048291 is your Lumiback code"
+    assert "048291" in seen["body"]["text"]
+    assert "html" not in seen["body"]  # codes go out as plain text
+
+
+def test_resend_mailer_raises_when_resend_refuses():
+    def refuse(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"message": "domain not verified"})
+
+    with pytest.raises(RuntimeError, match="403"):
+        asyncio.run(_resend_mailer(refuse).send(make()))

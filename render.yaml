@@ -41,15 +41,9 @@ services:
         value: https://lumiback.abhinesh.codes
       - key: ALLOWED_EMAIL_DOMAINS
         value: geu.ac.in
-      - key: EMAIL_BACKEND
-        value: smtp
-      - key: SMTP_HOST
-        value: smtp.resend.com
-      - key: SMTP_PORT
-        value: "465"
-      - key: SMTP_USERNAME
+      - key: EMAIL_BACKEND # HTTPS API: Render's free plan blocks outbound SMTP ports
         value: resend
-      - key: SMTP_PASSWORD # the Resend API key
+      - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
         value: Lumiback <no-reply@lumiback.abhinesh.codes>

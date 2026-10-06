@@ -32,7 +32,6 @@ class RegisterIn(Input):
     email: EmailStr
     password: str = Field(max_length=MAX_LENGTH)  # never stripped or altered
     roll_no: Annotated[OptionalShort, StringConstraints(max_length=32)] | None = None
-    hostel: OptionalShort | None = None
 
     @model_validator(mode="after")
     def _normalize_and_check(self) -> "RegisterIn":
@@ -40,6 +39,13 @@ class RegisterIn(Input):
         if problem := password_problem(self.password, email=self.email, name=self.name):
             raise ValueError(f"password {problem}")
         return self
+
+
+class RegisteredOut(BaseModel):
+    """A sign-up waiting for its code. There is no account (and no id) until it is verified."""
+
+    email: str
+    code_expires_in_minutes: int
 
 
 class LoginIn(Input):

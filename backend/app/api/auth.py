@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     CurrentUser,
@@ -22,6 +21,7 @@ from app.schemas import (
     EmailIn,
     LoginIn,
     RefreshIn,
+    RegisteredOut,
     RegisterIn,
     TokenOut,
     UserOut,
@@ -64,7 +64,13 @@ def _domain_error(settings: SettingsDep) -> HTTPException:
     )
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+EMAIL_NOT_SENT = HTTPException(
+    status.HTTP_503_SERVICE_UNAVAILABLE,
+    detail="We couldn't send the email just now. Please try again in a minute.",
+)
+
+
+@router.post("/register", status_code=status.HTTP_202_ACCEPTED)
 async def register(
     body: RegisterIn,
     request: Request,
@@ -72,27 +78,22 @@ async def register(
     settings: SettingsDep,
     limiter: LimiterDep,
     mailer: MailerDep,
-) -> UserOut:
+) -> RegisteredOut:
+    """Starts a sign-up and emails a code. The account is created only when the code is entered
+    (POST /auth/verify-email); until then nothing about this person is kept beyond 15 minutes."""
     if not verification.email_allowed(body.email, settings):
         raise _domain_error(settings)
     await enforce(limiter, "register:ip", client_ip(request), REGISTER_PER_IP)
-    user = User(
-        name=body.name,
-        email=body.email,
-        password_hash=hash_password(body.password),
-        roll_no=body.roll_no,
-        hostel=body.hostel,
-    )
-    session.add(user)
     try:
-        await session.commit()
-    except IntegrityError:
+        await verification.start(session, body, settings.code_pepper.get_secret_value(), mailer)
+    except verification.AlreadyRegistered:
         # Registration necessarily reveals that an email exists; the per-IP limit above
         # keeps that from being usable as a bulk lookup.
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Email already registered") from None
-    await session.refresh(user)
-    await verification.issue(session, user, settings.code_pepper.get_secret_value(), mailer)
-    return UserOut.model_validate(user)
+    except verification.EmailNotSent:
+        raise EMAIL_NOT_SENT from None
+    minutes = int(verification.CODE_TTL.total_seconds() // 60)
+    return RegisteredOut(email=body.email, code_expires_in_minutes=minutes)
 
 
 @router.post("/verify-email")
@@ -103,7 +104,8 @@ async def verify_email(
     settings: SettingsDep,
     limiter: LimiterDep,
 ) -> UserOut:
-    """Proves the student controls the inbox. Each code allows 5 tries, then must be resent."""
+    """Proves the student controls the inbox and creates the account. Each code allows 5 tries,
+    then a new one must be requested. Only a correct code ever returns account details."""
     ip = client_ip(request)
     try:
         await limiter.check("verify:ip", ip, VERIFY_FAILURES_PER_IP)
@@ -128,13 +130,14 @@ async def resend_verification(
     limiter: LimiterDep,
     mailer: MailerDep,
 ) -> Response:
-    """Always 202: the response never says whether the account exists or is verified."""
+    """202 whether or not a sign-up is pending: the response never says which emails exist."""
     email = body.email.lower()
     await enforce(limiter, "resend:ip", client_ip(request), RESEND_PER_IP)
     await enforce(limiter, "resend:email", email, RESEND_PER_EMAIL)
-    user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if user is not None and not user.email_verified:
-        await verification.issue(session, user, settings.code_pepper.get_secret_value(), mailer)
+    try:
+        await verification.resend(session, email, settings.code_pepper.get_secret_value(), mailer)
+    except verification.EmailNotSent:
+        raise EMAIL_NOT_SENT from None
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 

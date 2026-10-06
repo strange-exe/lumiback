@@ -1,4 +1,6 @@
-"""Outgoing email. SMTP works with any provider (Resend, Brevo, Google Workspace, SES, ...)."""
+"""Outgoing email: Resend's HTTPS API, or SMTP with any provider (Brevo, Workspace, SES, ...).
+
+Prefer the HTTPS API on hosts that block outbound SMTP ports (Render's free plan does)."""
 
 import asyncio
 import logging
@@ -7,6 +9,8 @@ import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Protocol
+
+import httpx
 
 from app.config import Settings
 
@@ -81,5 +85,42 @@ class SmtpMailer:
         await asyncio.to_thread(self._send_blocking, email)
 
 
+class ResendMailer:
+    """Resend's REST API over HTTPS (port 443). Raises on any non-success answer."""
+
+    URL = "https://api.resend.com/emails"
+
+    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None) -> None:
+        assert settings.resend_api_key and settings.email_from
+        self._key = settings.resend_api_key
+        self._from = settings.email_from
+        self._client = client  # injectable for tests
+
+    async def send(self, email: Email) -> None:
+        payload = {
+            "from": self._from,
+            "to": [email.to],
+            "subject": email.subject,
+            "text": email.body,
+        }
+        if email.html:
+            payload["html"] = email.html
+        headers = {"Authorization": f"Bearer {self._key.get_secret_value()}"}
+        if self._client is not None:
+            response = await self._client.post(self.URL, json=payload, headers=headers)
+        else:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(self.URL, json=payload, headers=headers)
+        if not response.is_success:
+            # Resend's error body names the problem (bad key, unverified domain); no secrets in it.
+            raise RuntimeError(f"Resend answered {response.status_code}: {response.text[:300]}")
+
+
 def make_mailer(settings: Settings) -> Mailer:
-    return SmtpMailer(settings) if settings.email_backend == "smtp" else ConsoleMailer()
+    match settings.email_backend:
+        case "smtp":
+            return SmtpMailer(settings)
+        case "resend":
+            return ResendMailer(settings)
+        case _:
+            return ConsoleMailer()
