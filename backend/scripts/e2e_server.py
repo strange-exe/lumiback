@@ -3,8 +3,9 @@
     uv run python scripts/e2e_server.py [--reset] [--seed]
 
 Uses TEST_DATABASE_URL (must be localhost and end in _test, see TestDbSettings) so end-to-end
-tests never touch the real database. --reset empties every table; --seed then adds one verified
-demo student (e2e@geu.ac.in) so tests can sign in without reading an email.
+tests never touch the real database. --reset empties every table; --seed then adds two verified
+demo students (e2e@geu.ac.in, and e2e-delete@geu.ac.in for the account-deletion test) so
+tests can sign in without reading an email.
 """
 
 import argparse
@@ -22,6 +23,7 @@ from app.models import Base  # noqa: E402
 from app.security.passwords import hash_password  # noqa: E402
 
 E2E_EMAIL = "e2e@geu.ac.in"
+DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase this one
 E2E_PASSWORD = "lantern-at-dusk-2029"  # noqa: S105 - test-only, local *_test database
 
 
@@ -37,6 +39,13 @@ def reset_and_seed(url: str, seed: bool) -> None:
                     "VALUES ('Riya Sharma', :email, :hash, 'Hostel 3', now())"
                 ),
                 {"email": E2E_EMAIL, "hash": hash_password(E2E_PASSWORD)},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO users (name, email, password_hash, email_verified_at) "
+                    "VALUES ('Kabir Mehta', :email, :hash, now())"
+                ),
+                {"email": DELETABLE_EMAIL, "hash": hash_password(E2E_PASSWORD)},
             )
     engine.dispose()
 

@@ -1,11 +1,12 @@
-"""Authentication: register, verify email, login, refresh, logout, me."""
+"""Authentication: register, verify email, login, refresh, logout, me, delete account."""
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     CurrentUser,
+    HubDep,
     LimiterDep,
     MailerDep,
     SessionDep,
@@ -14,8 +15,10 @@ from app.api.deps import (
     enforce,
     too_many,
 )
-from app.models import User
+from app.models import SessionStatus, ShareSession, ShareViewer, User
+from app.realtime import AccessChanged
 from app.schemas import (
+    DeleteAccountIn,
     EmailIn,
     LoginIn,
     RefreshIn,
@@ -38,6 +41,7 @@ REFRESH_PER_IP = Limit(max_hits=30, window_seconds=60)
 VERIFY_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 RESEND_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
 RESEND_PER_IP = Limit(max_hits=10, window_seconds=3600)
+DELETE_FAILURES_PER_USER = Limit(max_hits=5, window_seconds=3600)
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -194,3 +198,42 @@ async def logout(body: RefreshIn, session: SessionDep) -> Response:
 @router.get("/me")
 async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
+
+
+@router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    body: DeleteAccountIn,
+    user: CurrentUser,
+    session: SessionDep,
+    limiter: LimiterDep,
+    hub: HubDep,
+) -> Response:
+    """Permanently delete the account and everything tied to it (every foreign key cascades):
+    outings, shares and their locations, viewers, contacts, codes, tokens, the access log."""
+    try:
+        await limiter.check("delete:user", str(user.id), DELETE_FAILURES_PER_USER)
+    except RateLimited as e:
+        raise too_many(e) from None
+    if not verify_password(user.password_hash, body.password):
+        await limiter.record("delete:user", str(user.id))
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="That password isn't right")
+
+    # Live shares this account is part of: as the sharer, or watching someone else's.
+    affected = list(
+        (
+            await session.execute(
+                select(ShareSession.id)
+                .outerjoin(ShareViewer, ShareViewer.session_id == ShareSession.id)
+                .where(
+                    ShareSession.status == SessionStatus.ACTIVE,
+                    or_(ShareSession.sharer_id == user.id, ShareViewer.viewer_user_id == user.id),
+                )
+                .distinct()
+            )
+        ).scalars()
+    )
+    await session.delete(user)
+    await session.commit()
+    for session_id in affected:  # after commit: open streams re-check and end
+        await hub.publish(AccessChanged(session_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

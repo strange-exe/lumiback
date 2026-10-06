@@ -56,6 +56,10 @@ class VerifyEmailIn(Input):
     code: str = Field(pattern=r"^\d{6}$")
 
 
+class DeleteAccountIn(Input):
+    password: str = Field(max_length=1024)  # re-entered: a stolen session alone cannot delete
+
+
 class RefreshIn(Input):
     refresh_token: str = Field(min_length=1, max_length=200)
 
