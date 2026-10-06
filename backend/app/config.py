@@ -10,7 +10,7 @@ import json
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, ValidationError, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_BYTES = 32
@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     smtp_password: SecretStr | None = None
     email_from: str | None = None
 
+    # Shared with the web server, which sends the visitor's IP in X-Client-IP alongside this
+    # secret. Without it, a header any caller can set would decide who gets rate-limited.
+    internal_api_secret: SecretStr | None = None
+    # Reverse proxies in front of this API that APPEND the caller's address to X-Forwarded-For
+    # (Render: 1). Only entries they appended are trusted; anything further left is client-made.
+    proxy_hops: int = Field(default=0, ge=0, le=3)
+
     @field_validator("allowed_email_domains", mode="before")
     @classmethod
     def _parse_domains(cls, v: object) -> list[str]:
@@ -65,10 +72,12 @@ class Settings(BaseSettings):
                 raise ValueError(f"EMAIL_BACKEND=smtp requires {', '.join(missing)}")
         return self
 
-    @field_validator("jwt_secret", "code_pepper")
+    @field_validator("jwt_secret", "code_pepper", "internal_api_secret")
     @classmethod
-    def _strong_secret(cls, v: SecretStr) -> SecretStr:
+    def _strong_secret(cls, v: SecretStr | None) -> SecretStr | None:
         # Messages describe the problem only; the value must never appear in them.
+        if v is None:  # only internal_api_secret is optional
+            return v
         raw = v.get_secret_value()
         if len(raw.encode("utf-8")) < MIN_SECRET_BYTES:
             raise ValueError(f"must be at least {MIN_SECRET_BYTES} bytes")

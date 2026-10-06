@@ -1,5 +1,7 @@
 """Shared request dependencies: DB session, settings, rate limiting, current user."""
 
+import hmac
+import ipaddress
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -41,9 +43,36 @@ HubDep = Annotated[Hub, Depends(get_hub)]
 MailerDep = Annotated[Mailer, Depends(get_mailer)]
 
 
+CLIENT_IP_HEADER = "X-Client-IP"
+INTERNAL_AUTH_HEADER = "X-Internal-Auth"
+
+
+def _ip(value: str | None) -> str | None:
+    try:
+        return str(ipaddress.ip_address((value or "").strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request: Request) -> str:
-    # Behind a reverse proxy, run uvicorn with --proxy-headers and a strict --forwarded-allow-ips
-    # so this is the real client address, not the proxy's.
+    """The caller's IP for per-IP rate limits, from sources a client cannot forge:
+
+    1. The web server's X-Client-IP, only when it carries the shared INTERNAL_API_SECRET.
+    2. The entry our own proxy (PROXY_HOPS deep) appended to X-Forwarded-For. Entries to its
+       left came from the client and are ignored.
+    3. The TCP peer.
+    """
+    settings = request.app.state.settings
+    secret = settings.internal_api_secret
+    if secret is not None:
+        sent = request.headers.get(INTERNAL_AUTH_HEADER, "")
+        if hmac.compare_digest(sent.encode(), secret.get_secret_value().encode()):
+            if ip := _ip(request.headers.get(CLIENT_IP_HEADER)):
+                return ip
+    if settings.proxy_hops:
+        hops = [h for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+        if len(hops) >= settings.proxy_hops and (ip := _ip(hops[-settings.proxy_hops])):
+            return ip
     return request.client.host if request.client else "unknown"
 
 

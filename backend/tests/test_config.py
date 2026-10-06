@@ -106,7 +106,7 @@ def test_cors_allows_only_listed_origins(env):
     client = TestClient(create_app(load()))
     ok = client.get("/health", headers={"Origin": "http://localhost:3000"})
     bad = client.get("/health", headers={"Origin": "https://evil.example"})
-    assert ok.json() == {"status": "ok"}
+    # No lifespan here (no database), so /health answers 503; only the CORS headers matter.
     assert ok.headers.get("access-control-allow-origin") == "http://localhost:3000"
     assert "access-control-allow-origin" not in bad.headers
 

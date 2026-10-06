@@ -60,3 +60,34 @@ npm install
 npm run dev
 npm run test:e2e                  # Playwright against the API on the local test database
 ```
+
+## Deploying (Render + Cloudflare)
+
+`render.yaml` describes two free Render web services: `lumiback-api` (FastAPI) and
+`lumiback-web` (Next.js). Cloudflare serves `lumiback.abhinesh.codes` in front of the web app. The
+browser only ever talks to the web app; the web app talks to the API server-side.
+
+1. **Render:** New → Blueprint → this repository. When asked, fill in `DATABASE_URL` (Supabase
+   session pooler), `SMTP_PASSWORD` (Resend key) and, for the web app, `BACKEND_URL` (the API's
+   `https://…onrender.com` address; set it after the API's first deploy if needed) and
+   `EDGE_SECRET` (generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+   Put both services in the same region as the Supabase database.
+2. **Custom domain:** in `lumiback-web` → Settings → Custom Domains, add
+   `lumiback.abhinesh.codes`. In Cloudflare DNS, add `CNAME lumiback → <web>.onrender.com`
+   as **DNS only** (grey cloud) until Render shows the domain as verified, then switch it to
+   **Proxied**. Set SSL/TLS mode to **Full (strict)**.
+3. **Edge secret:** Cloudflare → Rules → Transform Rules → Modify Request Header, for hostname
+   `lumiback.abhinesh.codes`: set static header `X-Edge-Auth` to the same `EDGE_SECRET`.
+   Without it the web app ignores `CF-Connecting-IP` (anyone could forge it on the onrender.com
+   address), and rate limits fall back to the web server's address.
+4. **Check:** `https://<api>.onrender.com/health` returns `{"status":"ok"}` (it queries the
+   database), sign-up emails arrive, and a live share works between two browsers.
+
+**Free-tier limits.** Free services sleep after 15 minutes without traffic and take about a minute
+to wake. The 750 free instance hours per month are shared by both services, so keeping either one
+awake around the clock leaves almost nothing for the other. If you use a pinger, schedule it for
+peak hours only (e.g. 16:00–23:00 IST, about 430 hours a month for both), and hit the API's
+`/health` at least once a day so the Supabase project never counts as inactive.
+
+Each service must run as a single instance: live updates and token-refresh de-duplication are
+in-process. Moving off the free plan or to another host needs no code changes.

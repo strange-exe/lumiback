@@ -1,0 +1,81 @@
+# Render Blueprint: the API and the web app as two web services, with Cloudflare in front of the
+# web app (lumiback.abhinesh.codes). Step-by-step setup: README.md -> "Deploying".
+#
+# Both run as ONE instance each: live updates fan out in-process (app/realtime.py), and the web
+# app de-duplicates token refreshes in memory (src/proxy.ts). Scaling out needs a shared hub first.
+# Region: put both services next to the Supabase database; every API request talks to it.
+
+services:
+  - type: web
+    name: lumiback-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildFilter:
+      paths: ["backend/**"]
+    # uv installs the locked dependencies and its own Python inside the project directory, so
+    # the build output is exactly what runs (no reliance on the host's Python version).
+    buildCommand: >-
+      pip install --quiet uv &&
+      UV_PYTHON_INSTALL_DIR=.uv-python UV_PYTHON_PREFERENCE=only-managed
+      uv sync --frozen --no-dev
+    # Migrations run before the server starts; safe with a single instance.
+    startCommand: >-
+      .venv/bin/alembic upgrade head &&
+      exec .venv/bin/uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL # Supabase session pooler, postgresql+psycopg:// scheme
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CODE_PEPPER
+        generateValue: true
+      - key: INTERNAL_API_SECRET # shared with the web app below
+        generateValue: true
+      - key: PROXY_HOPS # Render's load balancer appends the caller's IP to X-Forwarded-For
+        value: "1"
+      - key: CORS_ORIGINS
+        value: https://lumiback.abhinesh.codes
+      - key: ALLOWED_EMAIL_DOMAINS
+        value: geu.ac.in
+      - key: EMAIL_BACKEND
+        value: smtp
+      - key: SMTP_HOST
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USERNAME
+        value: resend
+      - key: SMTP_PASSWORD # the Resend API key
+        sync: false
+      - key: EMAIL_FROM
+        value: Lumiback <no-reply@lumiback.abhinesh.codes>
+
+  - type: web
+    name: lumiback-web
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: apps/web
+    buildFilter:
+      paths: ["apps/web/**"]
+    buildCommand: npm ci --ignore-scripts && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: BACKEND_URL # the API's https://lumiback-api-XXXX.onrender.com address
+        sync: false
+      - key: INTERNAL_API_SECRET
+        fromService:
+          type: web
+          name: lumiback-api
+          envVarKey: INTERNAL_API_SECRET
+      - key: CLIENT_IP_HEADER # set by Cloudflare on every request
+        value: cf-connecting-ip
+      - key: EDGE_SECRET # also set in the Cloudflare rule that adds X-Edge-Auth
+        sync: false

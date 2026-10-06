@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { clientIpFrom } from "@/lib/client-ip";
-import { BACKEND_URL } from "@/lib/config";
+import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
+import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
 import {
   ACCESS_COOKIE,
   ACCESS_MAX_AGE,
@@ -33,7 +33,7 @@ function refreshOnce(token: string, clientIp: string | null): Promise<TokenPair 
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(clientIp ? { "X-Forwarded-For": clientIp } : {}),
+      ...visitorHeaders(clientIp, INTERNAL_API_SECRET),
     },
     body: JSON.stringify({ refresh_token: token }),
     cache: "no-store",
@@ -58,7 +58,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const refresh = request.cookies.get(REFRESH_COOKIE)?.value;
   if (access || !refresh) return NextResponse.next();
 
-  const clientIp = clientIpFrom(request.headers);
+  const clientIp = clientIpFrom(request.headers, IP_TRUST);
   const tokens = await refreshOnce(refresh, clientIp);
 
   // Downstream pages and actions must see the updated cookies on THIS request...

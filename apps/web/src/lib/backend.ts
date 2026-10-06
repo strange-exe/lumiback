@@ -2,8 +2,8 @@ import "server-only";
 
 import { headers } from "next/headers";
 
-import { clientIpFrom } from "@/lib/client-ip";
-import { BACKEND_URL } from "@/lib/config";
+import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
+import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
 
 export class ApiError extends Error {
   constructor(
@@ -43,7 +43,7 @@ export async function callBackend<T>(path: string, options: CallOptions = {}): P
   if (options.body !== undefined) requestHeaders["Content-Type"] = "application/json";
   if (options.token) requestHeaders.Authorization = `Bearer ${options.token}`;
   if (options.guestToken) requestHeaders["X-Guest-Token"] = options.guestToken;
-  if (options.clientIp) requestHeaders["X-Forwarded-For"] = options.clientIp;
+  Object.assign(requestHeaders, visitorHeaders(options.clientIp ?? null, INTERNAL_API_SECRET));
 
   const response = await fetch(`${BACKEND_URL}${path}`, {
     method: options.method ?? "GET",
@@ -60,5 +60,5 @@ export async function callBackend<T>(path: string, options: CallOptions = {}): P
 
 /** The visitor's IP as set by our edge proxy, for Server Actions/Components. */
 export async function visitorIp(): Promise<string | null> {
-  return clientIpFrom(await headers());
+  return clientIpFrom(await headers(), IP_TRUST);
 }

@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api import auth, codes, contacts, outings, sessions, ws
 from app.config import Settings, load_settings
@@ -76,8 +77,15 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         return JSONResponse(status_code=422, content={"detail": errors})
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health(request: Request) -> JSONResponse:
+        """For the host's health check and an uptime pinger. Touches the database, so a ping
+        also counts as activity there (free Postgres tiers pause idle projects)."""
+        try:
+            async with request.app.state.sessionmaker() as db:
+                await db.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse(status_code=503, content={"status": "database unavailable"})
+        return JSONResponse(content={"status": "ok"})
 
     app.include_router(auth.router)
     app.include_router(contacts.router)
