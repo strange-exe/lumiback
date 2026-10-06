@@ -39,4 +39,3 @@ ignore = ["S101"]  # assert is fine in tests
 [tool.ruff.lint.per-file-ignores]
 # Test SQL is assembled from constants in the test file itself.
 "tests/**" = ["S105", "S106", "S608"]  # fake credentials and constant SQL in tests
-"app/email_templates.py" = ["E501"]  # inline-styled email HTML reads better unwrapped
