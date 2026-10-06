@@ -14,18 +14,17 @@ services:
     rootDir: backend
     buildFilter:
       paths: ["backend/**"]
-    # uv installs the locked dependencies and its own Python inside the project directory, so
-    # the build output is exactly what runs (no reliance on the host's Python version).
-    buildCommand: >-
-      pip install --quiet uv &&
-      UV_PYTHON_INSTALL_DIR=.uv-python UV_PYTHON_PREFERENCE=only-managed
-      uv sync --frozen --no-dev
+    # Render provides uv (because of uv.lock) and its own Python (PYTHON_VERSION below); it does
+    # not allow uv-managed Pythons. Installs exactly the locked runtime dependencies into .venv.
+    buildCommand: uv sync --frozen --no-dev
     # Migrations run before the server starts; safe with a single instance.
     startCommand: >-
       .venv/bin/alembic upgrade head &&
       exec .venv/bin/uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION # fully qualified, as Render requires (pyproject: >=3.13)
+        value: "3.13.5"
       - key: APP_ENV
         value: production
       - key: DATABASE_URL # Supabase session pooler, postgresql+psycopg:// scheme
