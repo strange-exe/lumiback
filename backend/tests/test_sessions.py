@@ -216,3 +216,19 @@ def test_removing_contact_notifies_live_subscribers(client, people):
     assert client.delete(f"/contacts/{contact_id}", headers=arjun_h).status_code == 204
     assert seen == [AccessChanged(uuid.UUID(s["id"]))]
     assert client.get(f"/sessions/{s['id']}", headers=arjun_h).status_code == 403
+
+
+def test_stop_records_a_closed_tab_as_the_reason(client, people):
+    """The share page sends this when its tab closes (navigator.sendBeacon)."""
+    riya_h = people["riya"][1]
+    s = client.post("/sessions", json={"source": "tab_live"}, headers=riya_h).json()
+    r = client.post(f"/sessions/{s['id']}/stop", json={"reason": "tab_closed"}, headers=riya_h)
+    assert r.status_code == 200
+    assert (r.json()["status"], r.json()["ended_reason"]) == ("revoked", "tab_closed")
+
+
+def test_stop_rejects_made_up_reasons(client, people):
+    riya_h = people["riya"][1]
+    s = client.post("/sessions", json={"source": "tab_live"}, headers=riya_h).json()
+    r = client.post(f"/sessions/{s['id']}/stop", json={"reason": "expired"}, headers=riya_h)
+    assert r.status_code == 422

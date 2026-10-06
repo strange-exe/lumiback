@@ -37,6 +37,7 @@ from app.schemas import (
     SessionLocationOut,
     SessionOut,
     SharerRef,
+    StopIn,
     WatchingOut,
 )
 from app.security.rate_limit import Limit
@@ -148,9 +149,12 @@ async def get_session(
 
 
 @router.post("/{session_id}/stop")
-async def stop_session(share: OwnSession, session: SessionDep, hub: HubDep) -> SessionOut:
+async def stop_session(
+    share: OwnSession, session: SessionDep, hub: HubDep, body: StopIn | None = None
+) -> SessionOut:
     """One-tap stop: ends the session, deletes the location, cuts off every viewer."""
-    if await svc.end(session, share.id, status=SessionStatus.REVOKED, reason="stopped_by_sharer"):
+    reason = (body or StopIn()).reason
+    if await svc.end(session, share.id, status=SessionStatus.REVOKED, reason=reason):
         await hub.publish(AccessChanged(share.id))
     await session.refresh(share)
     return await svc.sharer_view(session, share)

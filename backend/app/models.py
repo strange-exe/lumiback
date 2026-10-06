@@ -270,6 +270,8 @@ class ShareSession(Base):
     ended_reason: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = created_at()
     ended_at: Mapped[datetime | None]
+    # Last check-in from the sharer's device (server time); tab-live ends when it goes quiet.
+    sharer_seen_at: Mapped[datetime | None]
 
 
 class ShareViewer(Base):

@@ -110,3 +110,91 @@ def test_app_runs_the_sweeper_in_the_background_and_stops_it(settings, clean_db)
         task = app.state.sweeper
         assert task is not None and not task.done()
     assert task.cancelled() or task.done()
+
+
+def tab_live(client, sharer):
+    r = client.post(
+        "/sessions", json={"source": "tab_live", "duration_minutes": 60}, headers=sharer
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def quiet_for(db, session_id, minutes):
+    """The sharer's tab last checked in `minutes` ago (and the session started before that)."""
+    db.execute(
+        text(
+            "UPDATE share_sessions SET created_at = now() - make_interval(mins => :m + 1), "
+            "sharer_seen_at = now() - make_interval(mins => :m) WHERE id = :s"
+        ),
+        {"s": session_id, "m": minutes},
+    )
+    db.commit()
+
+
+def test_location_updates_record_when_the_sharer_last_checked_in(client, db):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    s = tab_live(client, riya)
+    seen = text("SELECT sharer_seen_at FROM share_sessions WHERE id = :s")
+    assert db.execute(seen, {"s": s["id"]}).scalar_one() is None
+
+    old_fix = {"lat": 30.3, "lng": 78.0, "accuracy_m": 5, "recorded_at": "2026-01-01T00:00:00Z"}
+    assert (
+        client.put(f"/sessions/{s['id']}/location", json=old_fix, headers=riya).status_code == 204
+    )
+    first = db.execute(seen, {"s": s["id"]}).scalar_one()
+    # Server time, not the device's recorded_at: a wrong phone clock cannot keep a share alive.
+    assert first is not None and abs((first - datetime.now(UTC)).total_seconds()) < 60
+
+
+def test_sweep_ends_tab_live_sessions_whose_tab_went_quiet(client, db):
+    riya, _, manual = setup_share(client)
+    quiet = tab_live(client, riya)
+    fresh = tab_live(client, riya)
+    client.put(
+        f"/sessions/{quiet['id']}/location",
+        json={
+            "lat": 30.3,
+            "lng": 78.0,
+            "accuracy_m": 5,
+            "recorded_at": datetime.now(UTC).isoformat(),
+        },
+        headers=riya,
+    )
+    quiet_for(db, quiet["id"], 6)
+    quiet_for(db, fresh["id"], 2)
+    quiet_for(db, manual["id"], 30)  # manual shares last for their chosen duration regardless
+
+    seen: list = []
+
+    async def spy(event):
+        seen.append(event)
+
+    client.app.state.hub.subscribe(uuid.UUID(quiet["id"]), spy)
+    result = run_sweep(client)
+
+    assert result.closed_tabs == [uuid.UUID(quiet["id"])]
+    assert result.expired_sessions == []
+    row = db.execute(
+        text("SELECT status, ended_reason FROM share_sessions WHERE id = :s"), {"s": quiet["id"]}
+    ).one()
+    assert tuple(row) == ("ended", "tab_closed")
+    locations = text("SELECT count(*) FROM locations WHERE session_id = :s")
+    assert db.execute(locations, {"s": quiet["id"]}).scalar_one() == 0
+    assert seen == [AccessChanged(uuid.UUID(quiet["id"]))]
+    for still_live in (fresh, manual):
+        assert (
+            client.get(f"/sessions/{still_live['id']}", headers=riya).json()["status"] == "active"
+        )
+
+
+def test_tab_that_never_checked_in_ends_after_the_idle_window(client, db):
+    """Opened the share, never granted location permission, walked away."""
+    _, riya = signup(client, "riya@example.com", "Riya")
+    s = tab_live(client, riya)
+    db.execute(
+        text("UPDATE share_sessions SET created_at = now() - interval '6 minutes' WHERE id = :s"),
+        {"s": s["id"]},
+    )
+    db.commit()
+    assert run_sweep(client).closed_tabs == [uuid.UUID(s["id"])]

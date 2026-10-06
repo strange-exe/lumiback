@@ -6,7 +6,7 @@ Only one row per session is ever kept (upsert). It is deleted when the session e
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,18 +37,20 @@ async def upsert(session: AsyncSession, share_id: uuid.UUID, body: LocationIn) -
     now = datetime.now(UTC)
     if body.recorded_at > now + MAX_CLOCK_SKEW:
         raise FutureTimestamp
-    # FOR SHARE serializes this write against `stop` (which UPDATEs the same row): either this
-    # location is written first and stop deletes it, or stop wins and we see the session ended.
-    # Without the lock, a location could be stored for a session that was just stopped.
+    # Recording the check-in UPDATEs the session row, which locks it against `stop` (an UPDATE of
+    # the same row): either this location is written first and stop deletes it, or stop wins and
+    # the WHERE no longer matches. Without the lock, a location could outlive a stopped session.
+    # (An exclusive lock from the start: two writers upgrading FOR SHARE locks would deadlock.)
     live = (
         await session.execute(
-            select(ShareSession.id)
+            update(ShareSession)
             .where(
                 ShareSession.id == share_id,
                 ShareSession.status == SessionStatus.ACTIVE,
                 ShareSession.ends_at > now,
             )
-            .with_for_update(read=True)
+            .values(sharer_seen_at=now)
+            .returning(ShareSession.id)
         )
     ).scalar_one_or_none()
     if live is None:

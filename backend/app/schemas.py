@@ -129,6 +129,12 @@ class SessionCreateIn(Input):
         return self
 
 
+class StopIn(Input):
+    """Why the sharer's device ended the session: a tap, or the share tab closing."""
+
+    reason: Literal["stopped_by_sharer", "tab_closed"] = "stopped_by_sharer"
+
+
 class ViewerOut(BaseModel):
     id: uuid.UUID
     kind: Literal["user", "guest"]
