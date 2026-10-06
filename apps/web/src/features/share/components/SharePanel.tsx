@@ -1,5 +1,6 @@
 "use client";
 
+import { DeviceMobile } from "@phosphor-icons/react";
 import { useState, useTransition, type ReactNode } from "react";
 
 import { Lantern } from "@/components/illustrations/Lantern";
@@ -103,7 +104,7 @@ function StartShare(): ReactNode {
 }
 
 function LiveShare(): ReactNode {
-  const { session, fix, sentAt, problem, stop, retry } = useShare();
+  const { session, fix, sentAt, problem, screenAwake, stop, retry } = useShare();
   const now = useNow(5_000);
   const [stopping, startStop] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +133,16 @@ function LiveShare(): ReactNode {
           Until {formatTime(session.ends_at)} at the latest, or until you close this tab.
         </p>
       </div>
+
+      <p className="flex gap-3 rounded-control bg-lantern-soft px-4 py-3 text-sm leading-relaxed text-ink">
+        <DeviceMobile size={20} weight="duotone" aria-hidden="true" className="mt-0.5 shrink-0" />
+        <span>
+          {screenAwake
+            ? "Your screen will stay on while you share. "
+            : "Keep this tab open with your screen on. "}
+          Locking your phone or switching apps pauses sharing, and it ends after 5 minutes away.
+        </span>
+      </p>
 
       {problem && (
         <div role="alert" className="flex flex-col gap-3 rounded-control bg-ember-soft p-4">

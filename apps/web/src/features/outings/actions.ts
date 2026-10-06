@@ -22,13 +22,16 @@ function choiceFrom(form: FormData): string {
   return typeof custom === "string" ? custom : "";
 }
 
-async function run(call: () => Promise<unknown>): Promise<FormState> {
+async function run(
+  call: () => Promise<unknown>,
+  fields?: Record<string, string>,
+): Promise<FormState> {
   try {
     await call();
   } catch (error) {
     if (error instanceof ApiError) {
       if (error.status === 401) redirect("/");
-      return { error: error.detail };
+      return { error: error.detail, fields };
     }
     throw error;
   }
@@ -40,17 +43,20 @@ async function run(call: () => Promise<unknown>): Promise<FormState> {
 export async function checkOut(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const expected = expectedReturn(choiceFrom(form));
-  if (!expected) return { error: "Choose when you'll be back." };
   const destination = form.get("destination");
-  return run(() =>
-    callBackend("/outings", {
-      method: "POST",
-      token,
-      body: {
-        expected_return_at: expected.toISOString(),
-        destination: typeof destination === "string" && destination.trim() ? destination : null,
-      },
-    }),
+  const fields = { destination: typeof destination === "string" ? destination : "" };
+  if (!expected) return { error: "Choose when you'll be back.", fields };
+  return run(
+    () =>
+      callBackend("/outings", {
+        method: "POST",
+        token,
+        body: {
+          expected_return_at: expected.toISOString(),
+          destination: typeof destination === "string" && destination.trim() ? destination : null,
+        },
+      }),
+    fields,
   );
 }
 

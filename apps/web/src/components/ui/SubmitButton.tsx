@@ -3,12 +3,14 @@
 import type { ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
-type Variant = "primary" | "secondary" | "quiet";
+type Variant = "primary" | "secondary" | "quiet" | "danger";
 
 const STYLES: Record<Variant, string> = {
   primary:
     "bg-pine text-on-pine font-bold shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-110 active:translate-y-px",
-  secondary: "bg-surface text-pine font-bold ring-1 ring-line hover:ring-pine/40",
+  secondary:
+    "bg-surface text-pine font-bold ring-1 ring-line hover:ring-pine/40 active:scale-[0.98]",
+  danger: "bg-ember text-surface font-bold hover:brightness-110 active:translate-y-px",
   quiet: "text-pine underline-offset-4 hover:underline",
 };
 

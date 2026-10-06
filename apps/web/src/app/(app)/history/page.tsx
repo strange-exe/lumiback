@@ -34,7 +34,8 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
     );
   }
 
-  const onTime = summary.on_time_rate === null ? "—" : `${Math.round(summary.on_time_rate * 100)}%`;
+  const onTime =
+    summary.on_time_rate === null ? "None yet" : `${Math.round(summary.on_time_rate * 100)}%`;
 
   return (
     <section aria-labelledby="history-heading" className="flex flex-col gap-6">

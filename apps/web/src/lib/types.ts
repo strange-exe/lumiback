@@ -105,4 +105,10 @@ export interface Redeemed {
 export interface FormState {
   error: string | null;
   notice?: string | null;
+  /**
+   * What the student typed, handed back after an error. React resets a form once its action
+   * finishes; inputs use these as default values so nothing has to be typed twice.
+   * Never includes passwords.
+   */
+  fields?: Record<string, string>;
 }

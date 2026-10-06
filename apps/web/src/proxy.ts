@@ -89,5 +89,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|icon.svg|.*\\.(?:svg|png|ico|webp|avif)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|icon.svg|.*\\.(?:svg|png|ico|webp|avif|webmanifest)$).*)",
+  ],
 };

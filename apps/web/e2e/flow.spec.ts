@@ -21,6 +21,9 @@ test.describe("signed out", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     const form = page.getByRole("region", { name: "Sign in" });
     await expect(form.getByRole("alert")).toHaveText("Invalid email or password");
+    // The form resets after its action; only the password should need typing again.
+    await expect(form.getByLabel("University email")).toHaveValue(STUDENT.email);
+    await expect(form.getByLabel("Password")).toHaveValue("");
   });
 
   test("tokens live only in httpOnly cookies", async ({ page, context }) => {

@@ -60,8 +60,8 @@
   --color-sage: var(--sage);
   --color-sage-soft: var(--sage-soft);
 
-  --font-display: var(--font-fraunces), Georgia, serif;
-  --font-body: var(--font-atkinson), system-ui, sans-serif;
+  --font-display: var(--font-geist), system-ui, sans-serif;
+  --font-body: var(--font-geist), system-ui, sans-serif;
 
   /* 1.25 type scale from 16px */
   --text-hero: 3.0625rem;
@@ -80,9 +80,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Fraunces with its softest corners: warm, not formal. */
+/* Display type: semibold and slightly tight, so headings read crisp rather than loud. */
 .font-display {
-  font-variation-settings: "SOFT" 100;
+  font-weight: 600;
+  letter-spacing: -0.022em;
 }
 
 :focus-visible {

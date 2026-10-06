@@ -32,6 +32,8 @@ interface ShareContextValue {
   problem: string | null;
   /** Why the last share ended, for a one-line notice. */
   endedReason: string | null;
+  /** The browser agreed to keep the screen on while sharing (Screen Wake Lock). */
+  screenAwake: boolean;
   start(minutes: number): Promise<string | null>;
   stop(): Promise<string | null>;
   /** Replace the session after an approve/remove (the action returns the fresh view). */
@@ -110,6 +112,7 @@ export function ShareProvider({
   const [problem, setProblem] = useState<string | null>(null);
   const [endedReason, setEndedReason] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0); // bump to restart location tracking
+  const [screenAwake, setScreenAwake] = useState(false);
   const lastSent = useRef(0);
   const sending = useRef(false);
 
@@ -190,6 +193,37 @@ export function ShareProvider({
     return () => window.clearInterval(poll);
   }, [sessionId, refresh]);
 
+  // Keep the screen on while sharing: a locked phone pauses the page, and with it the share.
+  // Browsers drop the lock whenever the tab is hidden, so take it again on return.
+  useEffect(() => {
+    if (!sessionId || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = async (): Promise<void> => {
+      if (document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      try {
+        const next = await navigator.wakeLock.request("screen");
+        if (cancelled) {
+          void next.release();
+          return;
+        }
+        lock = next;
+        setScreenAwake(true);
+        next.addEventListener("release", () => setScreenAwake(false));
+      } catch {
+        setScreenAwake(false); // battery saver, or the browser said no
+      }
+    };
+    void acquire();
+    const onVisibility = (): void => void acquire();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      void lock?.release();
+    };
+  }, [sessionId]);
+
   // Closing the tab ends the share. sendBeacon is delivered even as the page unloads.
   useEffect(() => {
     if (!sessionId) return;
@@ -259,8 +293,20 @@ export function ShareProvider({
   }, []);
 
   const value = useMemo<ShareContextValue>(
-    () => ({ session, starting, fix, sentAt, problem, endedReason, start, stop, update, retry }),
-    [session, starting, fix, sentAt, problem, endedReason, start, stop, update, retry],
+    () => ({
+      session,
+      starting,
+      fix,
+      sentAt,
+      problem,
+      endedReason,
+      screenAwake,
+      start,
+      stop,
+      update,
+      retry,
+    }),
+    [session, starting, fix, sentAt, problem, endedReason, screenAwake, start, stop, update, retry],
   );
   return <ShareContext.Provider value={value}>{children}</ShareContext.Provider>;
 }

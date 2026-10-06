@@ -19,10 +19,11 @@ function text(form: FormData, key: string): string {
  */
 export async function joinWithCode(_: FormState, form: FormData): Promise<FormState> {
   const code = text(form, "code");
-  if (!code) return { error: "Enter the code you were sent." };
-  const token = await accessToken();
   const name = text(form, "name");
-  if (!token && !name) return { error: "Enter your name so they know who's asking." };
+  const fields = { code, name };
+  if (!code) return { error: "Enter the code you were sent.", fields };
+  const token = await accessToken();
+  if (!token && !name) return { error: "Enter your name so they know who's asking.", fields };
 
   let joined: Redeemed;
   try {
@@ -38,9 +39,10 @@ export async function joinWithCode(_: FormState, form: FormData): Promise<FormSt
       return {
         error:
           "That code didn't work. Codes work once and expire after 10 minutes, so ask for a new one.",
+        fields,
       };
     }
-    return { error: error.detail };
+    return { error: error.detail, fields };
   }
 
   if (joined.guest_token) {

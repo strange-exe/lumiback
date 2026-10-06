@@ -18,6 +18,7 @@ export function CheckOutForm(): ReactNode {
       <Field
         label="Where to? (optional)"
         name="destination"
+        defaultValue={state.fields?.destination}
         placeholder="Clock Tower market"
         maxLength={100}
         autoComplete="off"

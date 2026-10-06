@@ -29,6 +29,7 @@ export function JoinForm({ signedInAs }: { signedInAs: string | null }): ReactNo
       <Field
         label="Join code"
         name="code"
+        defaultValue={state.fields?.code}
         autoComplete="off"
         autoCapitalize="characters"
         spellCheck={false}
@@ -44,6 +45,7 @@ export function JoinForm({ signedInAs }: { signedInAs: string | null }): ReactNo
         <Field
           label="Your name"
           name="name"
+          defaultValue={state.fields?.name}
           autoComplete="name"
           maxLength={40}
           required

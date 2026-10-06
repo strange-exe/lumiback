@@ -1,27 +1,29 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, Fraunces } from "next/font/google";
+import { Geist } from "next/font/google";
 import type { ReactNode } from "react";
+
+import { shareApi } from "@/features/share/api";
+import { LiveBar } from "@/features/share/components/LiveBar";
+import { ShareProvider } from "@/features/share/ShareProvider";
+import { accessToken } from "@/lib/session";
 
 import "./globals.css";
 
-const fraunces = Fraunces({
+// One family for everything: Geist is a variable font, so every weight is a single file.
+const geist = Geist({
   subsets: ["latin"],
-  axes: ["SOFT"], // the soft corners are the character; optical sizing cost ~2x the bytes
-  variable: "--font-fraunces",
-  display: "swap",
-});
-
-const atkinson = Atkinson_Hyperlegible({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  variable: "--font-atkinson",
+  variable: "--font-geist",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: { default: "Lumiback", template: "%s · Lumiback" },
   description:
-    "Log your trips out of the hostel and let the people you choose know you're back safe. For Graphic Era University students.",
+    "Log where you're going and when you'll be back. Share your live location only with people you approve.",
+  applicationName: "Lumiback",
+  // Installed on iOS: open full-screen with the page colour behind the status bar.
+  appleWebApp: { capable: true, title: "Lumiback", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -31,10 +33,25 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: ReactNode }): ReactNode {
+/**
+ * The share engine sits at the root so a running share keeps reporting on every page, including
+ * public ones like /privacy or /watch reached from inside the app. Signed out: no API call.
+ */
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}): Promise<ReactNode> {
+  const token = await accessToken();
+  const liveShare = token ? await shareApi.activeTabShare(token).catch(() => null) : null;
   return (
-    <html lang="en-IN" className={`${fraunces.variable} ${atkinson.variable}`}>
-      <body className="min-h-dvh">{children}</body>
+    <html lang="en-IN" className={geist.variable}>
+      <body className="min-h-dvh">
+        <ShareProvider initial={liveShare}>
+          <LiveBar />
+          {children}
+        </ShareProvider>
+      </body>
     </html>
   );
 }

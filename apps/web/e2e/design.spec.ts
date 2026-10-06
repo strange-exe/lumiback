@@ -72,6 +72,18 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("heading", { name: "Your outings" }),
   },
   {
+    name: "account",
+    auth: true,
+    prepare: async (page) => void (await page.goto("/account")),
+    primary: (page) => page.getByRole("heading", { name: "Account" }),
+  },
+  {
+    name: "privacy",
+    auth: false,
+    prepare: async (page) => void (await page.goto("/privacy")),
+    primary: (page) => page.getByRole("heading", { name: "Privacy", level: 1 }),
+  },
+  {
     name: "share-start",
     auth: true,
     prepare: stopSharing,

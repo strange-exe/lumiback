@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Clay, ClayDefs } from "@/components/illustrations/ClayShading";
 
-/** The hostel gate at dusk, in clay: doors open, a path leading out, a lantern on the arch. */
+/** A campus gate at dusk, in clay: doors open, a path leading out, a lantern on the arch. */
 export function Gate({ className }: { className?: string }): ReactNode {
   const id = "gate";
   return (

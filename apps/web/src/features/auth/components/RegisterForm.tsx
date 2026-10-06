@@ -14,14 +14,22 @@ export function RegisterForm(): ReactNode {
   const [state, action] = useActionState(register, INITIAL);
   return (
     <form action={action} className="flex flex-col gap-4" noValidate>
-      <Field label="Full name" name="name" autoComplete="name" placeholder="Riya Sharma" required />
+      <Field
+        label="Full name"
+        name="name"
+        autoComplete="name"
+        placeholder="Abhinesh Gangwar"
+        defaultValue={state.fields?.name}
+        required
+      />
       <Field
         label="University email"
         name="email"
         type="email"
         autoComplete="email"
         inputMode="email"
-        placeholder="riya.sharma@geu.ac.in"
+        placeholder="abhinesh.gangwar@geu.ac.in"
+        defaultValue={state.fields?.email}
         hint="We'll send a 6-digit code to confirm it's yours."
         required
       />
@@ -33,12 +41,21 @@ export function RegisterForm(): ReactNode {
         hint="At least 10 characters. Avoid your name or email."
         required
       />
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Roll no. (optional)" name="roll_no" placeholder="2312345678" />
-        <Field label="Hostel (optional)" name="hostel" placeholder="Hostel 3" />
-      </div>
+      <Field
+        label="Roll number (optional)"
+        name="roll_no"
+        inputMode="numeric"
+        defaultValue={state.fields?.roll_no}
+      />
       <FormError message={state.error} />
       <SubmitButton pendingLabel="Creating account…">Create account</SubmitButton>
+      <p className="text-center text-sm text-stone">
+        By creating an account you agree to how we handle your data, described in our{" "}
+        <Link href="/privacy" className="font-bold text-pine underline-offset-4 hover:underline">
+          privacy notice
+        </Link>
+        .
+      </p>
       <p className="text-center text-sm text-stone">
         Already registered?{" "}
         <Link href="/" className="font-bold text-pine underline-offset-4 hover:underline">

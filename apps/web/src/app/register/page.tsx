@@ -12,7 +12,7 @@ export default function RegisterPage(): ReactNode {
       <div>
         <h1 className="font-display text-title text-ink">Create your account</h1>
         <p className="mt-2 text-stone">
-          For Graphic Era students. You&apos;ll confirm your university email with a code.
+          Sign up with your university email. We&apos;ll send a code to confirm it.
         </p>
       </div>
       <RegisterForm />

@@ -12,8 +12,8 @@ function text(form: FormData, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function failure(error: unknown): FormState {
-  if (error instanceof ApiError) return { error: error.detail };
+function failure(error: unknown, fields?: Record<string, string>): FormState {
+  if (error instanceof ApiError) return { error: error.detail, fields };
   throw error; // unexpected: let the error boundary handle it
 }
 
@@ -21,7 +21,7 @@ export async function signIn(_: FormState, form: FormData): Promise<FormState> {
   const email = text(form, "email").toLowerCase();
   const password = form.get("password");
   if (!email || typeof password !== "string" || !password) {
-    return { error: "Enter your university email and password." };
+    return { error: "Enter your university email and password.", fields: { email } };
   }
   let tokens: TokenPair;
   try {
@@ -34,29 +34,28 @@ export async function signIn(_: FormState, form: FormData): Promise<FormState> {
     if (error instanceof ApiError && error.status === 403) {
       redirect(`/verify?email=${encodeURIComponent(email)}`);
     }
-    return failure(error);
+    return failure(error, { email });
   }
   await storeTokens(tokens);
   redirect("/home");
 }
 
 export async function register(_: FormState, form: FormData): Promise<FormState> {
-  const email = text(form, "email").toLowerCase();
+  const fields = {
+    name: text(form, "name"),
+    email: text(form, "email").toLowerCase(),
+    roll_no: text(form, "roll_no"),
+  };
   try {
     await callBackend("/auth/register", {
       method: "POST",
-      body: {
-        name: text(form, "name"),
-        email,
-        password: form.get("password"),
-        roll_no: text(form, "roll_no") || null,
-        hostel: text(form, "hostel") || null,
-      },
+      body: { ...fields, password: form.get("password"), roll_no: fields.roll_no || null },
       clientIp: await visitorIp(),
     });
   } catch (error) {
-    return failure(error);
+    return failure(error, fields);
   }
+  const { email } = fields;
   redirect(`/verify?email=${encodeURIComponent(email)}`);
 }
 
@@ -109,4 +108,27 @@ export async function signOut(): Promise<void> {
   }
   await clearTokens();
   redirect("/");
+}
+
+/**
+ * Permanently delete the signed-in account. The backend checks the password again (a session
+ * left open on a shared laptop isn't enough) and erases everything tied to the account.
+ */
+export async function deleteAccount(_: FormState, form: FormData): Promise<FormState> {
+  const fields = { confirm: text(form, "confirm") };
+  if (fields.confirm.toLowerCase() !== "delete") {
+    return { error: 'Type "delete" to confirm.', fields };
+  }
+  const password = form.get("password");
+  if (typeof password !== "string" || !password) return { error: "Enter your password.", fields };
+  const token = await accessToken();
+  if (!token) redirect("/");
+  try {
+    await callBackend("/auth/delete-account", { method: "POST", token, body: { password } });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) redirect("/");
+    return failure(error, fields);
+  }
+  await clearTokens();
+  redirect("/?deleted=1");
 }

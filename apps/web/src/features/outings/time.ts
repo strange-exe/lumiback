@@ -43,6 +43,18 @@ export function formatDay(iso: string | Date): string {
   return dateFormat.format(new Date(iso));
 }
 
+const longDateFormat = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/** "6 October 2026" */
+export function formatDate(iso: string | Date): string {
+  return longDateFormat.format(new Date(iso));
+}
+
 /** "2 h 15 min", "45 min" */
 export function formatMinutes(total: number): string {
   if (total < 1) return "under a minute";
