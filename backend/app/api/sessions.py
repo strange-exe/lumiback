@@ -16,6 +16,7 @@ from app.api.deps import (
     HubDep,
     LimiterDep,
     PrincipalDep,
+    PushDep,
     SessionDep,
     SettingsDep,
     enforce,
@@ -28,6 +29,7 @@ from app.models import (
     User,
     ViewerStatus,
 )
+from app.push import PushMessage
 from app.realtime import AccessChanged, LocationUpdated
 from app.schemas import (
     AccessLogEntry,
@@ -189,7 +191,7 @@ async def create_code(
 
 @router.post("/{session_id}/viewers/{viewer_id}/approve")
 async def approve_viewer(
-    viewer_id: uuid.UUID, share: OwnSession, session: SessionDep, hub: HubDep
+    viewer_id: uuid.UUID, share: OwnSession, session: SessionDep, hub: HubDep, push: PushDep
 ) -> SessionOut:
     """The sharer's confirmation on their own device: the second side of consent."""
     if not is_live(share, datetime.now(UTC)):
@@ -197,6 +199,17 @@ async def approve_viewer(
     if not await code_svc.approve(session, share.id, viewer_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No pending viewer with that id")
     await hub.publish(AccessChanged(share.id))
+    viewer = await session.get(ShareViewer, viewer_id)
+    if viewer is not None and viewer.viewer_user_id is not None:  # guests have no app to push to
+        sharer = await session.get(User, share.sharer_id)
+        push.to_user(
+            viewer.viewer_user_id,
+            PushMessage(
+                title=f"{sharer.name if sharer else 'They'} approved you",
+                body="You can see their live location now.",
+                url="/live",
+            ),
+        )
     return await svc.sharer_view(session, share)
 
 

@@ -3,6 +3,7 @@
 import re
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 PASSWORD = "correct-horse-battery"
 
@@ -62,3 +63,25 @@ def share_with(client: TestClient, sharer: dict, viewer_ids: list[str], minutes:
     )
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def make_admin(db, email: str) -> None:
+    """Promote directly in the database (the first admin comes from a script, not the API)."""
+    db.execute(text("UPDATE users SET role = 'admin' WHERE email = :e"), {"e": email.lower()})
+    db.commit()
+
+
+GATE = {"name": "Main Gate", "lat": 30.2683, "lng": 77.9950, "radius_m": 75}
+
+
+def create_gate(client: TestClient, admin: dict, **overrides) -> dict:
+    """Returns {"gate": {...}, "kiosk_token": "..."}."""
+    r = client.post("/admin/gates", json={**GATE, **overrides}, headers=admin)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def kiosk_qr(client: TestClient, kiosk_token: str) -> str:
+    r = client.get("/kiosk/qr", headers={"X-Kiosk-Token": kiosk_token})
+    assert r.status_code == 200, r.text
+    return r.json()["qr"]

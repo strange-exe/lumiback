@@ -7,7 +7,17 @@ no global limit: it would let one attacker lock every legitimate user out.
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from app.api.deps import LimiterDep, OptionalUser, SessionDep, SettingsDep, client_ip, too_many
+from app.api.deps import (
+    LimiterDep,
+    OptionalUser,
+    PushDep,
+    SessionDep,
+    SettingsDep,
+    client_ip,
+    too_many,
+)
+from app.models import ShareSession, ViewerStatus
+from app.push import PushMessage
 from app.schemas import RedeemIn, RedeemOut
 from app.security.rate_limit import Limit, RateLimited
 from app.services import codes as svc
@@ -27,6 +37,7 @@ async def redeem(
     session: SessionDep,
     settings: SettingsDep,
     limiter: LimiterDep,
+    push: PushDep,
 ) -> RedeemOut:
     if user is None and body.guest_label is None:
         raise HTTPException(
@@ -59,6 +70,18 @@ async def redeem(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="You cannot join your own session"
         ) from None
 
+    if result.status == ViewerStatus.PENDING:
+        share = await session.get(ShareSession, result.session_id)
+        if share is not None:  # tell the sharer even if their app is closed
+            who = user.name if user else (body.guest_label or "Someone")
+            push.to_user(
+                share.sharer_id,
+                PushMessage(
+                    title=f"{who} wants to follow you",
+                    body="Open Lumiback to approve or decline.",
+                    url="/live",
+                ),
+            )
     return RedeemOut(
         session_id=result.session_id,
         viewer_id=result.viewer_id,

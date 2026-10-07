@@ -13,11 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import auth, codes, contacts, outings, sessions, ws
+from app.api import admin, auth, codes, contacts, devices, gates, outings, sessions, ws
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
 from app.email import make_mailer
 from app.jobs import expiry
+from app.push import make_push_sender
 from app.realtime import Hub
 from app.security.rate_limit import RateLimiter
 
@@ -34,7 +35,9 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
             app.state.sessionmaker, settings.code_pepper.get_secret_value()
         )
         sweeper = (
-            asyncio.create_task(expiry.run_forever(app.state.sessionmaker, app.state.hub))
+            asyncio.create_task(
+                expiry.run_forever(app.state.sessionmaker, app.state.hub, app.state.push)
+            )
             if start_jobs
             else None
         )
@@ -60,13 +63,15 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.state.settings = settings
     app.state.hub = Hub()
     app.state.mailer = make_mailer(settings)
+    app.state.push = make_push_sender(settings)
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        # X-Kiosk-Token: gate kiosks call /kiosk/qr straight from the browser.
+        allow_headers=["Authorization", "Content-Type", "X-Kiosk-Token"],
     )
 
     @app.exception_handler(RequestValidationError)
@@ -93,5 +98,8 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(codes.router)
     app.include_router(ws.router)
     app.include_router(outings.router)
+    app.include_router(gates.router)
+    app.include_router(admin.router)
+    app.include_router(devices.router)
 
     return app

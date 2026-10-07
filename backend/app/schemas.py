@@ -241,6 +241,7 @@ class UserOut(BaseModel):
     hostel: str | None
     email_verified: bool
     created_at: datetime
+    role: Literal["student", "admin"] = "student"
 
 
 # ---------- outings ----------
@@ -273,6 +274,8 @@ class OutingOut(BaseModel):
     status: Literal["out", "overdue", "returned"]
     late_minutes: int  # past expected return: when returned, or so far if overdue
     duration_minutes: int | None  # once returned
+    out_via: Literal["self", "gate"] = "self"  # tapped out at a gate, or logged in the app
+    in_via: Literal["self", "gate"] | None = None
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -294,3 +297,152 @@ class OutingSummary(BaseModel):
     returned_late: int
     on_time_rate: float | None  # share of returned outings back by the expected time
     currently: Literal["in", "out", "overdue"]
+
+
+# ---------- gates (tap in / tap out) ----------
+
+GateName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+Latitude = Annotated[float, Field(ge=-90, le=90)]
+Longitude = Annotated[float, Field(ge=-180, le=180)]
+
+
+class GateScanIn(Input):
+    qr: str = Field(min_length=1, max_length=300)
+    lat: Latitude
+    lng: Longitude
+    accuracy_m: float = Field(ge=0, le=100_000)
+    mocked: bool = False  # Android's "from a mock location provider" flag
+    # Tap-out only: when the student plans to be back. Defaults to today's curfew.
+    expected_return_at: AwareDatetime | None = None
+    destination: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
+
+
+class GateScanOut(BaseModel):
+    direction: Literal["out", "in"]
+    gate: str
+    outing: OutingOut
+
+
+class KioskOut(BaseModel):
+    gate_id: uuid.UUID
+    gate_name: str
+    qr: str
+    refresh_at: datetime  # when this code stops being the current one
+
+    @field_serializer("refresh_at")
+    def _utc(self, value: datetime) -> str:
+        return value.isoformat()
+
+
+# ---------- admin ----------
+
+
+class GateIn(Input):
+    name: GateName
+    lat: Latitude
+    lng: Longitude
+    radius_m: int = Field(default=75, ge=10, le=500)
+
+
+class GatePatch(Input):
+    name: GateName | None = None
+    lat: Latitude | None = None
+    lng: Longitude | None = None
+    radius_m: int | None = Field(default=None, ge=10, le=500)
+    active: bool | None = None
+
+
+class GateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    lat: float
+    lng: float
+    radius_m: int
+    active: bool
+    created_at: datetime
+
+
+class GateCreated(BaseModel):
+    gate: GateOut
+    kiosk_token: str  # shown once; only its hash is stored
+
+
+class CampusSettingsIO(Input):
+    curfew: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+    scan_retention_days: int = Field(ge=7, le=730)
+
+
+class AdminOverview(BaseModel):
+    out_now: int
+    overdue: int
+    scans_today: int
+    rejected_today: int
+    active_gates: int
+
+
+class AdminOuting(BaseModel):
+    id: uuid.UUID
+    student_id: uuid.UUID
+    name: str
+    email: str
+    roll_no: str | None
+    destination: str | None
+    left_at: datetime
+    expected_return_at: datetime
+    status: Literal["out", "overdue", "returned"]
+    late_minutes: int
+    out_via: Literal["self", "gate"]
+    out_gate: str | None
+
+    @field_serializer("left_at", "expected_return_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class AdminScan(BaseModel):
+    id: int
+    name: str
+    roll_no: str | None
+    gate: str | None
+    direction: Literal["out", "in"]
+    result: str
+    distance_m: float | None
+    accuracy_m: float | None
+    scanned_at: datetime
+
+    @field_serializer("scanned_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class AdminScanPage(BaseModel):
+    items: list[AdminScan]
+    next_before: int | None  # scan id: pass as ?before= for older scans
+
+
+class AdminUser(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
+    roll_no: str | None
+    role: Literal["student", "admin"]
+
+
+class RoleIn(Input):
+    role: Literal["student", "admin"]
+
+
+# ---------- push ----------
+
+
+class PushTokenIn(Input):
+    # Expo push tokens look like ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx].
+    token: Annotated[
+        str, StringConstraints(pattern=r"^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,200}\]$")
+    ]
+    platform: Literal["android", "ios"]

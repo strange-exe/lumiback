@@ -6,7 +6,7 @@ so no code path (or manual SQL) can create an inconsistent sharing state.
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
 from sqlalchemy import (
     BigInteger,
@@ -21,6 +21,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -105,6 +106,32 @@ class AccessChannel(enum.StrEnum):
     WS = "ws"
 
 
+class UserRole(enum.StrEnum):
+    STUDENT = "student"
+    ADMIN = "admin"  # wardens / security: see gate scans and who is out, manage gates
+
+
+class Via(enum.StrEnum):
+    """How an outing was opened or closed: logged in the app, or scanned at a gate."""
+
+    SELF = "self"
+    GATE = "gate"
+
+
+class ScanDirection(enum.StrEnum):
+    OUT = "out"
+    IN = "in"
+
+
+class ScanResult(enum.StrEnum):
+    ACCEPTED = "accepted"
+    BAD_CODE = "bad_code"  # unknown gate, wrong or expired rotating code
+    GATE_OFF = "gate_off"  # gate deactivated by an admin
+    TOO_FAR = "too_far"  # GPS says the phone is not at the gate
+    WEAK_GPS = "weak_gps"  # accuracy too poor to tell
+    MOCK_GPS = "mock_gps"  # Android reports a mock-location provider
+
+
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
@@ -113,6 +140,9 @@ class User(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    role: Mapped[UserRole] = mapped_column(
+        str_enum(UserRole, "user_role"), server_default=UserRole.STUDENT.value
+    )
     name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
@@ -155,6 +185,102 @@ class Outing(Base):
     expected_return_at: Mapped[datetime]
     returned_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
+    out_via: Mapped[Via] = mapped_column(str_enum(Via, "outing_via"), server_default=Via.SELF.value)
+    in_via: Mapped[Via | None] = mapped_column(str_enum(Via, "outing_in_via"))
+    out_gate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("gates.id", ondelete="SET NULL")
+    )
+    in_gate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("gates.id", ondelete="SET NULL")
+    )
+    # Set when the "you're overdue" push went out, so it is sent once per outing.
+    overdue_notified_at: Mapped[datetime | None]
+
+
+class CampusSettings(Base):
+    """One row of campus-wide settings, edited by admins."""
+
+    __tablename__ = "campus_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint("scan_retention_days BETWEEN 7 AND 730", name="retention_range"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, server_default=text("1"))
+    # Hostel curfew in IST (the campus clock); the default return time on a gate tap-out.
+    curfew: Mapped[time] = mapped_column(Time, server_default=text("'21:30'"))
+    scan_retention_days: Mapped[int] = mapped_column(server_default=text("180"))
+    updated_at: Mapped[datetime] = created_at()
+
+
+class Gate(Base):
+    """A campus gate with a kiosk showing a rotating QR code. Keeps only the kiosk token hash."""
+
+    __tablename__ = "gates"
+    __table_args__ = (
+        hash_len_check("kiosk_token_hash"),
+        CheckConstraint("radius_m BETWEEN 10 AND 500", name="radius_range"),
+        CheckConstraint("lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180", name="coordinates"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    lat: Mapped[float] = mapped_column(Float)
+    lng: Mapped[float] = mapped_column(Float)
+    radius_m: Mapped[int] = mapped_column(server_default=text("75"))
+    kiosk_token_hash: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    active: Mapped[bool] = mapped_column(server_default=text("true"))
+    created_at: Mapped[datetime] = created_at()
+
+
+class GateScan(Base):
+    """Every scan attempt, accepted or not. Stores the distance from the gate, never the
+    phone's coordinates (data minimisation: admins need "was at the gate", not a location)."""
+
+    __tablename__ = "gate_scans"
+    __table_args__ = (
+        Index("ix_gate_scans_scanned", "scanned_at"),
+        Index("ix_gate_scans_user_scanned", "user_id", "scanned_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    gate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("gates.id", ondelete="SET NULL"))
+    direction: Mapped[ScanDirection] = mapped_column(str_enum(ScanDirection, "scan_direction"))
+    result: Mapped[ScanResult] = mapped_column(str_enum(ScanResult, "scan_result"))
+    distance_m: Mapped[float | None] = mapped_column(Float)
+    accuracy_m: Mapped[float | None] = mapped_column(Float)
+    outing_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("outings.id", ondelete="SET NULL")
+    )
+    scanned_at: Mapped[datetime] = created_at()
+
+
+class PushToken(Base):
+    """An Expo push token for one installed app. A token moves to whoever signed in last."""
+
+    __tablename__ = "push_tokens"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token: Mapped[str] = mapped_column(String(255), unique=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = created_at()
+    last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class AdminAudit(Base):
+    """Who changed what in the admin area (roles, gates, kiosk tokens, settings)."""
+
+    __tablename__ = "admin_audit"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(40))
+    target: Mapped[str] = mapped_column(String(160))
+    at: Mapped[datetime] = created_at()
 
 
 class RateLimitHit(Base):

@@ -32,6 +32,9 @@ and enabled only by the student. There is no covert mode.
 | Location | `PUT /sessions/{id}/location` `GET /sessions/{id}/location` `GET /sessions/{id}/access-log` |
 | Outings | `POST /outings` `GET /outings/current` `PATCH /outings/current` `POST /outings/current/return` `GET /outings` `GET /outings/summary` |
 | Live | `WS /ws`: authenticate in the first message, then subscribe to session ids |
+| Gates | `POST /gates/scan` (students tap out / in) `GET /kiosk/qr` (gate tablet, `X-Kiosk-Token`) |
+| Devices | `POST /devices/push-token` `POST /devices/push-token/remove` |
+| Admin | `GET /admin/overview` `GET /admin/outings` `GET /admin/outings.csv` `GET /admin/scans` `GET /admin/gates` `POST /admin/gates` `PATCH /admin/gates/{id}` `POST /admin/gates/{id}/kiosk-token` `GET /admin/settings` `PUT /admin/settings` `GET /admin/users` `POST /admin/users/{id}/role` |
 
 Access tokens last 15 minutes; refresh tokens rotate on every use. Guests send their token in the
 `X-Guest-Token` header. Outing times are returned in IST (`+05:30`); outing status (out, overdue,
@@ -96,6 +99,9 @@ browser only ever talks to the web app; the web app talks to the API server-side
    address), and rate limits fall back to the web server's address.
 4. **Check:** `https://<api>.onrender.com/health` returns `{"status":"ok"}` (it queries the
    database), sign-up emails arrive, and a live share works between two browsers.
+5. **First admin:** sign up in the app with the warden's address, then in `lumiback-api` → Shell
+   run `.venv/bin/python scripts/make_admin.py warden@geu.ac.in`. Further admins are promoted
+   from the dashboard; the last admin can't be demoted.
 
 **Free-tier limits.** Free services sleep after 15 minutes without traffic and take about a minute
 to wake. The 750 free instance hours per month are shared by both services, so keeping either one

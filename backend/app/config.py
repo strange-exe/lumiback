@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr
     code_pepper: SecretStr
     cors_origins: Annotated[list[str], NoDecode]
+    # The public web app: gate QR codes point here so a phone camera opens a helpful page.
+    web_url: str = Field(default="https://lumiback.abhinesh.codes", pattern=r"^https?://[^/\s]+$")
     app_env: Literal["development", "production"] = "production"
 
     # Only addresses at these domains may register (and be invited as contacts).
@@ -39,6 +41,10 @@ class Settings(BaseSettings):
     # HTTPS (works where SMTP ports are blocked, e.g. Render's free plan); "smtp" anywhere else.
     email_backend: Literal["console", "smtp", "resend"] = "console"
     resend_api_key: SecretStr | None = None
+    # Push notifications: "expo" sends through Expo's push service; "log" only logs (dev).
+    push_backend: Literal["expo", "log"] = "log"
+    # Optional: only needed if "enhanced push security" is turned on in the Expo project.
+    expo_access_token: SecretStr | None = None
     smtp_host: str | None = None
     smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit TLS
     smtp_username: str | None = None

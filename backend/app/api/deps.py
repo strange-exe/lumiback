@@ -2,16 +2,18 @@
 
 import hmac
 import ipaddress
+import uuid
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import BackgroundTasks, Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import get_session
 from app.email import Mailer
-from app.models import User
+from app.models import User, UserRole
+from app.push import PushMessage, notify_user
 from app.realtime import Hub
 from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
@@ -37,10 +39,23 @@ def get_hub(request: Request) -> Hub:
     return request.app.state.hub
 
 
+class Pusher:
+    """Queues a push to a user's devices; it runs after the response is sent."""
+
+    def __init__(self, request: Request, tasks: BackgroundTasks) -> None:
+        self._sessionmaker = request.app.state.sessionmaker
+        self._sender = request.app.state.push
+        self._tasks = tasks
+
+    def to_user(self, user_id: uuid.UUID, message: PushMessage) -> None:
+        self._tasks.add_task(notify_user, self._sessionmaker, self._sender, user_id, message)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 HubDep = Annotated[Hub, Depends(get_hub)]
 MailerDep = Annotated[Mailer, Depends(get_mailer)]
+PushDep = Annotated[Pusher, Depends(Pusher)]
 
 
 CLIENT_IP_HEADER = "X-Client-IP"
@@ -133,6 +148,16 @@ async def get_current_user(user: OptionalUser) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_admin_user(user: CurrentUser) -> User:
+    """Wardens / security. Students get 403 (the endpoint exists; they just may not use it)."""
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
+    return user
+
+
+AdminUser = Annotated[User, Depends(get_admin_user)]
 
 GUEST_TOKEN_HEADER = "X-Guest-Token"  # noqa: S105 - header name, not a secret
 

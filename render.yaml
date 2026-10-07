@@ -49,6 +49,12 @@ services:
         sync: false
       - key: EMAIL_FROM
         value: Lumiback <no-reply@lumiback.abhinesh.codes>
+      - key: WEB_URL # gate QR codes link here, so a plain phone camera lands on a help page
+        value: https://lumiback.abhinesh.codes
+      - key: PUSH_BACKEND # push notifications to the mobile app through Expo's push service
+        value: expo
+      - key: EXPO_ACCESS_TOKEN # optional: only if "enhanced push security" is on in Expo
+        sync: false
 
   - type: web
     name: lumiback-web
