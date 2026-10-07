@@ -28,10 +28,10 @@ export default function Profile(): ReactNode {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-  const icon = (name: React.ComponentProps<typeof Ionicons>["name"], color = c.pine) => (
+  const icon = (name: React.ComponentProps<typeof Ionicons>["name"], color = c.accent) => (
     <Ionicons name={name} size={22} color={color} />
   );
-  const chevron = <Ionicons name="chevron-forward" size={18} color={c.stone} />;
+  const chevron = <Ionicons name="chevron-forward" size={18} color={c.muted} />;
 
   return (
     <Screen edges={["top"]}>
@@ -102,7 +102,7 @@ export default function Profile(): ReactNode {
           leading={icon("shield-checkmark-outline")}
           title="Privacy notice"
           detail="What we collect and who can see it"
-          trailing={<Ionicons name="open-outline" size={18} color={c.stone} />}
+          trailing={<Ionicons name="open-outline" size={18} color={c.muted} />}
           onPress={() => void Linking.openURL(`${WEB_URL}/privacy`)}
         />
       </Section>
@@ -121,7 +121,7 @@ export default function Profile(): ReactNode {
           }}
         />
         <Row
-          leading={icon("trash-outline", c.ember)}
+          leading={icon("trash-outline", c.danger)}
           title="Delete account"
           danger
           trailing={chevron}

@@ -11,7 +11,7 @@
     "android": {
       "package": "codes.abhinesh.lumiback",
       "adaptiveIcon": {
-        "backgroundColor": "#234e46",
+        "backgroundColor": "#0b0c10",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
@@ -38,10 +38,11 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "imageWidth": 160,
-          "backgroundColor": "#f4efe6",
+          "imageWidth": 120,
+          "backgroundColor": "#fafafb",
           "dark": {
-            "backgroundColor": "#121a18"
+            "image": "./assets/splash-icon-dark.png",
+            "backgroundColor": "#08090c"
           }
         }
       ],
@@ -57,7 +58,7 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#234e46"
+          "color": "#1f3fd1"
         }
       ],
       "expo-image",

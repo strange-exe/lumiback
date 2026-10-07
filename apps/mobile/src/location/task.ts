@@ -132,7 +132,7 @@ export async function startSending(sessionId: string, endsAt: string): Promise<S
     foregroundService: {
       notificationTitle: "Sharing your live location",
       notificationBody: "Open Lumiback to see who can view it or to stop.",
-      notificationColor: "#234e46",
+      notificationColor: "#1f3fd1",
       killServiceOnDestroy: true,
     },
   });

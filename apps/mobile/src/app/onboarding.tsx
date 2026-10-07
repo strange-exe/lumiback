@@ -112,7 +112,7 @@ export default function Onboarding(): ReactNode {
               )}
             </View>
             <View style={{ gap: space(2) }}>
-              <T style={[type.eyebrow, { color: c.pine }]}>{step.eyebrow}</T>
+              <T style={[type.eyebrow, { color: c.accent }]}>{step.eyebrow}</T>
               <T tone="title" accessibilityRole="header">
                 {step.title}
               </T>
@@ -134,7 +134,7 @@ export default function Onboarding(): ReactNode {
                 width: i === index ? 24 : 8,
                 height: 8,
                 borderRadius: 4,
-                backgroundColor: i === index ? c.pine : c.line,
+                backgroundColor: i === index ? c.accent : c.line,
               }}
             />
           ))}

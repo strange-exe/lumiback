@@ -34,13 +34,13 @@ function page(c: Colors, dark: boolean): string {
 <style>
   html,body,#map{margin:0;height:100%;background:${c.surface}}
   .tiles{filter:${tiles}}
-  .leaflet-control-attribution{background:${c.surface}e0!important;color:${c.stone};font:11px sans-serif}
-  .leaflet-control-attribution a{color:${c.pine}}
-  .dot{border-radius:50%;background:${c.lantern};border:3px solid ${c.surface};
-    box-shadow:0 0 0 6px ${c.lantern}4d,0 2px 6px rgba(0,0,0,.3);animation:halo 2.4s ease-out infinite}
-  .dot.paused{background:${c.stone};box-shadow:0 2px 6px rgba(0,0,0,.3);animation:none}
-  @keyframes halo{0%{box-shadow:0 0 0 0 ${c.lantern}80,0 2px 6px rgba(0,0,0,.3)}
-    100%{box-shadow:0 0 0 18px ${c.lantern}00,0 2px 6px rgba(0,0,0,.3)}}
+  .leaflet-control-attribution{background:${c.surface}e0!important;color:${c.muted};font:11px sans-serif}
+  .leaflet-control-attribution a{color:${c.accent}}
+  .dot{border-radius:50%;background:${c.accent};border:3px solid ${c.surface};
+    box-shadow:0 0 0 6px ${c.accent}4d,0 2px 6px rgba(0,0,0,.3);animation:halo 2.4s ease-out infinite}
+  .dot.paused{background:${c.muted};box-shadow:0 2px 6px rgba(0,0,0,.3);animation:none}
+  @keyframes halo{0%{box-shadow:0 0 0 0 ${c.accent}80,0 2px 6px rgba(0,0,0,.3)}
+    100%{box-shadow:0 0 0 18px ${c.accent}00,0 2px 6px rgba(0,0,0,.3)}}
   @media (prefers-reduced-motion:reduce){.dot{animation:none}}
 </style></head><body><div id="map"></div>
 <script src="${LEAFLET_JS}" integrity="${LEAFLET_JS_SRI}" crossorigin=""></script>
@@ -53,8 +53,8 @@ function page(c: Colors, dark: boolean): string {
     var ll = [p.lat, p.lng];
     if (!marker) {
       marker = L.marker(ll, {icon: L.divIcon({className: 'dot', iconSize: [22, 22]}), keyboard: false}).addTo(map);
-      circle = L.circle(ll, {radius: p.accuracy_m, color: '${c.pine}', weight: 1.5, opacity: .45,
-        fillColor: '${c.pine}', fillOpacity: .12, interactive: false}).addTo(map);
+      circle = L.circle(ll, {radius: p.accuracy_m, color: '${c.accent}', weight: 1.5, opacity: .45,
+        fillColor: '${c.accent}', fillOpacity: .12, interactive: false}).addTo(map);
       map.setView(ll, 16);
     } else {
       marker.setLatLng(ll); circle.setLatLng(ll).setRadius(p.accuracy_m);

@@ -1,8 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, RefreshControl, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { findJoinCode } from "@/lib/join-code";
@@ -11,49 +10,51 @@ import type { Redeemed, Watching } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Card, Field, FormError, Heading, T } from "@/ui/kit";
+import { Button, Card, Field, FormError, Screen, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
 
-export default function Follow(): ReactNode {
+/** The Follow half of the Live tab: join with a code, and the shares you can see. */
+export function FollowPanel({ header }: { header: ReactNode }): ReactNode {
   const c = useColors();
   const load = useCallback(() => api<Watching[]>("/sessions/watching"), []);
   const { data: watching, error, loading, refreshing, reload } = useData(load);
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: c.page }}>
-      <ScrollView
-        contentContainerStyle={{ padding: space(5), gap: space(6) }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void reload()}
-            tintColor={c.pine}
-          />
-        }
-      >
-        <Heading
-          eyebrow="Follow"
-          title="Someone heading back?"
-          lede="Enter the code they sent you. You'll see their location once they approve you."
+    <Screen
+      edges={["top"]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void reload()}
+          tintColor={c.accent}
         />
-        <Join />
-        <View style={{ gap: space(3) }}>
-          <T tone="label">Sharing with you</T>
-          {loading ? null : watching && watching.length > 0 ? (
-            watching.map((w) => <SharerRow key={w.id} share={w} />)
-          ) : (
-            <View style={{ alignItems: "center", gap: space(2), paddingVertical: space(4) }}>
-              <Illustration name="pin" size={140} />
-              <T tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>
-                Nobody is sharing with you right now. Live shares appear here while they last.
-              </T>
-            </View>
-          )}
-          <FormError message={error} />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      }
+    >
+      {header}
+      <View style={{ gap: space(2) }}>
+        <T tone="title" accessibilityRole="header">
+          Someone heading back?
+        </T>
+        <T tone="muted">
+          Enter the code they sent you. You&apos;ll see their location once they approve you.
+        </T>
+      </View>
+      <Join />
+      <View style={{ gap: space(3) }}>
+        <T tone="label">Sharing with you</T>
+        {loading ? null : watching && watching.length > 0 ? (
+          watching.map((w) => <SharerRow key={w.id} share={w} />)
+        ) : (
+          <View style={{ alignItems: "center", gap: space(2), paddingVertical: space(4) }}>
+            <Illustration name="pin" size={140} />
+            <T tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>
+              Nobody is sharing with you right now. Live shares appear here while they last.
+            </T>
+          </View>
+        )}
+        <FormError message={error} />
+      </View>
+    </Screen>
   );
 }
 
@@ -71,7 +72,7 @@ function Join(): ReactNode {
       const joined = await api<Redeemed>("/codes/redeem", { method: "POST", body: { code } });
       haptic.success();
       setText("");
-      router.push({ pathname: "/follow/[id]", params: { id: joined.session_id } });
+      router.push({ pathname: "/live/[id]", params: { id: joined.session_id } });
     } catch (e) {
       haptic.warning();
       setError(e instanceof ApiError ? e.detail : "Something went wrong. Try again.");
@@ -108,7 +109,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
     <Pressable
       onPress={() => {
         haptic.tap();
-        router.push({ pathname: "/follow/[id]", params: { id: share.id } });
+        router.push({ pathname: "/live/[id]", params: { id: share.id } });
       }}
       accessibilityRole="button"
       accessibilityLabel={`${share.sharer.name}, sharing until ${formatTime(share.ends_at)}. Open map.`}
@@ -129,12 +130,12 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
           width: 44,
           height: 44,
           borderRadius: 22,
-          backgroundColor: c.pineSoft,
+          backgroundColor: c.accentSoft,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <T tone="heading" style={{ color: c.pine }}>
+        <T tone="heading" style={{ color: c.accent }}>
           {initial}
         </T>
       </View>
@@ -142,7 +143,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
         <T tone="label">{share.sharer.name}</T>
         <T tone="small">Live until {formatTime(share.ends_at)}</T>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={c.stone} />
+      <Ionicons name="chevron-forward" size={20} color={c.muted} />
     </Pressable>
   );
 }

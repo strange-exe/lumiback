@@ -77,7 +77,7 @@ async function show(channelId: string, content: Notifications.NotificationConten
 
 /** Opened from a notification: where to go. Read by the root layout. */
 export interface NotificationData {
-  url: "/share" | "/today";
+  url: "/live" | "/today";
 }
 
 export async function notifyFollowRequest(name: string): Promise<void> {
@@ -85,7 +85,7 @@ export async function notifyFollowRequest(name: string): Promise<void> {
   return show(CHANNELS.requests, {
     title: `${name} wants to follow you`,
     body: "Open Lumiback to approve or decline.",
-    data: { url: "/share" } satisfies NotificationData,
+    data: { url: "/live" } satisfies NotificationData,
   });
 }
 
@@ -94,7 +94,7 @@ export async function notifyShareEnded(reason: string | null): Promise<void> {
   return show(CHANNELS.status, {
     title: "Live location sharing ended",
     body: endedMessage(reason),
-    data: { url: "/share" } satisfies NotificationData,
+    data: { url: "/live" } satisfies NotificationData,
   });
 }
 
@@ -131,7 +131,7 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
   }
 }
 
-const ROUTES: readonly NotificationData["url"][] = ["/share", "/today"];
+const ROUTES: readonly NotificationData["url"][] = ["/live", "/today"];
 
 /**
  * Opens the screen a tapped notification points at, including the tap that launched the app.

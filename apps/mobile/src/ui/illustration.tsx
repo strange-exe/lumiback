@@ -11,18 +11,22 @@ const SOURCES = {
   "lantern-lit": {
     light: require("../../assets/illustrations/lantern-lit-light.webp"),
     dark: require("../../assets/illustrations/lantern-lit-dark.webp"),
+    hero: require("../../assets/illustrations/lantern-lit-hero.webp"),
   },
   "lantern-unlit": {
     light: require("../../assets/illustrations/lantern-unlit-light.webp"),
     dark: require("../../assets/illustrations/lantern-unlit-dark.webp"),
+    hero: require("../../assets/illustrations/lantern-unlit-hero.webp"),
   },
   gate: {
     light: require("../../assets/illustrations/gate-light.webp"),
     dark: require("../../assets/illustrations/gate-dark.webp"),
+    hero: require("../../assets/illustrations/gate-hero.webp"),
   },
   pin: {
     light: require("../../assets/illustrations/pin-light.webp"),
     dark: require("../../assets/illustrations/pin-dark.webp"),
+    hero: require("../../assets/illustrations/pin-hero.webp"),
   },
 } as const;
 
@@ -31,12 +35,12 @@ export type IllustrationName = keyof typeof SOURCES;
 export function Illustration({
   name,
   size = 160,
-  /** On the pine hero card the light render reads best in both themes. */
   variant,
 }: {
   name: IllustrationName;
   size?: number;
-  variant?: "light" | "dark";
+  /** "hero": made for the near-black status card (light objects, grey trim). */
+  variant?: "light" | "dark" | "hero";
 }): ReactNode {
   const dark = useIsDark();
   const source = SOURCES[name][variant ?? (dark ? "dark" : "light")];

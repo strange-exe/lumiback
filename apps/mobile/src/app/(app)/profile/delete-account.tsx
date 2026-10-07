@@ -43,7 +43,7 @@ export default function DeleteAccount(): ReactNode {
           location lose access straight away.
         </T>
       </View>
-      <Card style={{ borderColor: c.ember }}>
+      <Card style={{ borderColor: c.danger }}>
         <Field
           label="Password"
           value={password}

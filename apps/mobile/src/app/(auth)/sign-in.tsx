@@ -43,7 +43,7 @@ export default function SignIn(): ReactNode {
         <View style={{ gap: space(3) }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
             <Illustration name="lantern-lit" size={56} />
-            <T tone="headline" style={{ color: c.pine }}>
+            <T tone="headline" style={{ color: c.accent }}>
               Lumiback
             </T>
           </View>
@@ -87,7 +87,7 @@ export default function SignIn(): ReactNode {
         </View>
         <T tone="small" style={{ textAlign: "center" }}>
           New here?{" "}
-          <Link href="/register" style={{ color: c.pine, fontWeight: "700" }}>
+          <Link href="/register" style={{ color: c.accent, fontWeight: "700" }}>
             Create your account
           </Link>
         </T>

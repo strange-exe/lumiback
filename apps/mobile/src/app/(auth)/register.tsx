@@ -86,7 +86,7 @@ export default function Register(): ReactNode {
           By creating an account you agree to how we handle your data, described in our{" "}
           <T
             tone="small"
-            style={{ color: c.pine, fontWeight: "700" }}
+            style={{ color: c.accent, fontWeight: "700" }}
             onPress={() => void Linking.openURL(PRIVACY_URL)}
           >
             privacy notice
@@ -95,7 +95,7 @@ export default function Register(): ReactNode {
         </T>
         <T tone="small" style={{ textAlign: "center" }}>
           Already registered?{" "}
-          <Link href="/sign-in" style={{ color: c.pine, fontWeight: "700" }}>
+          <Link href="/sign-in" style={{ color: c.accent, fontWeight: "700" }}>
             Sign in
           </Link>
         </T>

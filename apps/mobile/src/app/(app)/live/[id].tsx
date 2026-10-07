@@ -101,7 +101,7 @@ export default function Watch(): ReactNode {
           <>
             <Heading
               eyebrow="Ended"
-              tone="stone"
+              tone="muted"
               title="Not sharing any more"
               lede={shown.reason}
             />
@@ -112,7 +112,7 @@ export default function Watch(): ReactNode {
         ) : null}
 
         {view.kind === "offline" ? (
-          <T tone="small" style={{ color: c.ember }}>
+          <T tone="small" style={{ color: c.danger }}>
             Can&apos;t reach Lumiback. Showing the last known position; retrying…
           </T>
         ) : null}
@@ -140,7 +140,7 @@ function Live({
     <>
       <Heading
         eyebrow={stale ? "Paused" : "Live"}
-        tone={stale ? "stone" : "sage"}
+        tone={stale ? "muted" : "good"}
         title={`${first}'s way back`}
         lede={`Sharing until ${formatTime(share.ends_at)}.`}
       />
@@ -166,7 +166,7 @@ function Live({
           </View>
         </View>
         {stale ? (
-          <T tone="small" style={{ color: c.stone }}>
+          <T tone="small" style={{ color: c.muted }}>
             {location
               ? `${first}'s phone hasn't sent a new position for a while. It may be in a pocket with no signal.`
               : `Waiting for ${first}'s phone to send the first position.`}

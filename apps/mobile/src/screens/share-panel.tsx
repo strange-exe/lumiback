@@ -37,7 +37,8 @@ function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
 }
 
-export default function Share(): ReactNode {
+/** The Share half of the Live tab: start, run and stop a live share. */
+export function SharePanel({ header }: { header: ReactNode }): ReactNode {
   const c = useColors();
   const load = useCallback(async () => {
     const [mine, sending] = await Promise.all([api<ShareSession[]>("/sessions/mine"), isSending()]);
@@ -68,10 +69,11 @@ export default function Share(): ReactNode {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void reload()}
-          tintColor={c.pine}
+          tintColor={c.accent}
         />
       }
     >
+      {header}
       {loading ? null : data?.active ? (
         // keyed: a join code belongs to one share and is dropped when the share changes
         <Live
@@ -143,7 +145,6 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
   return (
     <>
       <Heading
-        eyebrow="Live location"
         title="Share your way back"
         lede="Send a code to a friend or family member so they can follow you home."
       />
@@ -166,7 +167,7 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
               key={f.text}
               style={{ flexDirection: "row", gap: space(3), alignItems: "flex-start" }}
             >
-              <Ionicons name={f.icon} size={20} color={c.sage} style={{ marginTop: 2 }} />
+              <Ionicons name={f.icon} size={20} color={c.good} style={{ marginTop: 2 }} />
               <T tone="muted" style={{ flex: 1 }}>
                 {f.text}
               </T>
@@ -185,7 +186,7 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
           label="Start sharing"
           busy={busy}
           busyLabel="Starting…"
-          icon={<Ionicons name="navigate" size={18} color={c.onPine} />}
+          icon={<Ionicons name="navigate" size={18} color={c.onAccent} />}
           onPress={() => void start()}
         />
       </Card>
@@ -250,7 +251,7 @@ function Live({
     <>
       <Heading
         eyebrow={sending ? "Sharing live" : "Paused on this phone"}
-        tone={sending ? "sage" : "lanternText"}
+        tone={sending ? "good" : "accent"}
         title={`Until ${formatTime(share.ends_at)}`}
         lede={
           watching.length === 0
@@ -271,12 +272,12 @@ function Live({
           }
         />
         <View style={{ position: "absolute", top: space(3), left: space(3) }}>
-          <StatusChip label={sending ? "● Live" : "Paused"} tone={sending ? "sage" : "lantern"} />
+          <StatusChip label={sending ? "● Live" : "Paused"} tone={sending ? "good" : "accent"} />
         </View>
       </View>
 
       {!sending ? (
-        <Card style={{ borderColor: c.lantern }}>
+        <Card style={{ borderColor: c.accent }}>
           <T tone="headline">Your location isn&apos;t being sent</T>
           <T tone="muted">This happens if the app was closed from recent apps.</T>
           <Button
@@ -318,7 +319,7 @@ function Live({
 
       <Button
         label="Invite someone"
-        icon={<Ionicons name="person-add" size={18} color={c.onPine} />}
+        icon={<Ionicons name="person-add" size={18} color={c.onAccent} />}
         onPress={() => {
           haptic.tap();
           invite.ensureFresh();
@@ -370,12 +371,12 @@ function PersonRow({ viewer, children }: { viewer: Viewer; children: ReactNode }
           width: 40,
           height: 40,
           borderRadius: 20,
-          backgroundColor: c.pineSoft,
+          backgroundColor: c.accentSoft,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.pine }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
           {viewer.name.trim().charAt(0).toUpperCase() || "?"}
         </Text>
       </View>
@@ -447,8 +448,8 @@ function InviteSheet({
         style={{
           borderWidth: 2,
           borderStyle: "dashed",
-          borderColor: c.pine,
-          backgroundColor: c.pineSoft,
+          borderColor: c.accent,
+          backgroundColor: c.accentSoft,
           borderRadius: radius.control,
           paddingVertical: space(5),
           alignItems: "center",
@@ -462,7 +463,7 @@ function InviteSheet({
             fontSize: 30,
             lineHeight: 36,
             letterSpacing: 5,
-            color: c.pine,
+            color: c.accent,
             fontVariant: ["tabular-nums"],
           }}
         >
@@ -474,7 +475,7 @@ function InviteSheet({
 
       <Button
         label="Send on WhatsApp"
-        icon={<Ionicons name="logo-whatsapp" size={20} color={c.onPine} />}
+        icon={<Ionicons name="logo-whatsapp" size={20} color={c.onAccent} />}
         onPress={() => {
           if (!code) return;
           haptic.tap();
@@ -487,7 +488,7 @@ function InviteSheet({
             label={copied ? "Copied" : "Copy code"}
             variant="secondary"
             icon={
-              <Ionicons name={copied ? "checkmark" : "copy-outline"} size={18} color={c.pine} />
+              <Ionicons name={copied ? "checkmark" : "copy-outline"} size={18} color={c.accent} />
             }
             onPress={() => {
               if (!code) return;
@@ -502,7 +503,7 @@ function InviteSheet({
           <Button
             label="More apps"
             variant="secondary"
-            icon={<Ionicons name="share-social-outline" size={18} color={c.pine} />}
+            icon={<Ionicons name="share-social-outline" size={18} color={c.accent} />}
             onPress={() => {
               if (!code) return;
               void ShareSheet.share({ message: text }).catch(() => undefined);

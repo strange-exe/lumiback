@@ -49,7 +49,7 @@ export default function NotificationSettings(): ReactNode {
   return (
     <Screen edges={["bottom"]}>
       {system && system !== "granted" ? (
-        <Card style={{ borderColor: c.lantern }}>
+        <Card style={{ borderColor: c.accent }}>
           <T tone="headline">Notifications are off</T>
           <T tone="muted">
             Android is blocking notifications from Lumiback, so none of the choices below can reach
@@ -81,7 +81,7 @@ export default function NotificationSettings(): ReactNode {
                 value={prefs[t.key]}
                 onValueChange={(v) => toggle(t.key, v)}
                 accessibilityLabel={t.title}
-                trackColor={{ true: c.pine, false: c.line }}
+                trackColor={{ true: c.accent, false: c.line }}
                 thumbColor={c.surface}
               />
             }

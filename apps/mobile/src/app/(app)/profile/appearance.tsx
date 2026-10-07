@@ -34,7 +34,7 @@ export default function Appearance(): ReactNode {
                 <Ionicons
                   name={selected ? "radio-button-on" : "radio-button-off"}
                   size={22}
-                  color={selected ? c.pine : c.stone}
+                  color={selected ? c.accent : c.muted}
                 />
               }
             />

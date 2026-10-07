@@ -84,7 +84,7 @@ export function Screen({
       <ScrollView
         contentContainerStyle={{
           padding: layout.gutter,
-          paddingBottom: space(10),
+          paddingBottom: layout.dockClearance,
           gap: layout.section,
           flexGrow: 1,
         }}
@@ -132,10 +132,10 @@ export function T({
     headline: { ...type.headline, color: c.ink },
     heading: { ...type.headline, color: c.ink },
     body: { ...type.body, color: c.ink },
-    muted: { ...type.body, color: c.stone },
+    muted: { ...type.body, color: c.muted },
     label: { ...type.label, color: c.ink },
-    caption: { ...type.caption, color: c.stone },
-    small: { ...type.caption, color: c.stone },
+    caption: { ...type.caption, color: c.muted },
+    small: { ...type.caption, color: c.muted },
   };
   return (
     <Text
@@ -154,17 +154,17 @@ export function Heading({
   eyebrow,
   title,
   lede,
-  tone = "pine",
+  tone = "accent",
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   lede?: string;
-  tone?: "pine" | "sage" | "ember" | "stone" | "lanternText";
+  tone?: "accent" | "good" | "danger" | "muted";
 }): ReactNode {
   const c = useColors();
   return (
     <View style={{ gap: space(2) }}>
-      <Text style={[type.eyebrow, { color: c[tone] }]}>{eyebrow}</Text>
+      {eyebrow ? <Text style={[type.eyebrow, { color: c[tone] }]}>{eyebrow}</Text> : null}
       <T tone="title" accessibilityRole="header">
         {title}
       </T>
@@ -227,10 +227,10 @@ export function Button({
 }): ReactNode {
   const c = useColors();
   const look: Record<Variant, { bg: string; fg: string; border?: string }> = {
-    primary: { bg: c.pine, fg: c.onPine },
-    secondary: { bg: c.surface, fg: c.pine, border: c.line },
-    danger: { bg: c.ember, fg: c.surface },
-    quiet: { bg: "transparent", fg: c.pine },
+    primary: { bg: c.accent, fg: c.onAccent },
+    secondary: { bg: c.surface, fg: c.accent, border: c.line },
+    danger: { bg: c.danger, fg: c.surface },
+    quiet: { bg: "transparent", fg: c.accent },
     onHero: { bg: c.onHero, fg: c.hero },
     onHeroOutline: { bg: "transparent", fg: c.onHero, border: c.heroLine },
   };
@@ -278,7 +278,7 @@ export const Field = forwardRef<TextInput, TextInputProps & { label: string; hin
           ref={ref}
           accessibilityLabel={label}
           accessibilityHint={hint}
-          placeholderTextColor={c.stone}
+          placeholderTextColor={c.muted}
           style={[
             {
               minHeight: 52,
@@ -306,7 +306,7 @@ export function FormError({ message }: { message: string | null }): ReactNode {
   const c = useColors();
   if (!message) return null;
   return (
-    <T tone="label" accessibilityRole="alert" selectable style={{ color: c.ember }}>
+    <T tone="label" accessibilityRole="alert" selectable style={{ color: c.danger }}>
       {message}
     </T>
   );
@@ -323,7 +323,7 @@ export function Notice({
   return (
     <View
       style={{
-        backgroundColor: tone === "good" ? c.sageSoft : c.lanternSoft,
+        backgroundColor: tone === "good" ? c.goodSoft : c.accentSoft,
         borderRadius: radius.control,
         borderCurve: "continuous",
         padding: space(4),
@@ -393,8 +393,8 @@ export function Chips<V extends string>({
       >
         {options.map((option) => {
           const selected = option.value === value;
-          const bg = selected ? (onHero ? c.onHero : c.pine) : onHero ? "transparent" : c.raised;
-          const fg = selected ? (onHero ? c.hero : c.onPine) : onHero ? c.onHero : c.ink;
+          const bg = selected ? (onHero ? c.onHero : c.accent) : onHero ? "transparent" : c.raised;
+          const fg = selected ? (onHero ? c.hero : c.onAccent) : onHero ? c.onHero : c.ink;
           const border = selected ? bg : onHero ? c.heroLine : c.line;
           return (
             <View key={option.value} style={{ flex: 1 }}>
@@ -426,21 +426,81 @@ export function Chips<V extends string>({
   );
 }
 
+/** A two- or three-way switch between views of one screen (a tab group, not a form field). */
+export function Segmented<V extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: V; label: string }[];
+  value: V;
+  onChange: (value: V) => void;
+}): ReactNode {
+  const c = useColors();
+  return (
+    <View
+      accessibilityRole="tablist"
+      accessibilityLabel={label}
+      style={{
+        flexDirection: "row",
+        backgroundColor: c.line,
+        borderRadius: radius.control,
+        borderCurve: "continuous",
+        padding: 4,
+        gap: 4,
+      }}
+    >
+      {options.map((o) => {
+        const selected = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => !selected && onChange(o.value)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              borderRadius: radius.control - 4,
+              borderCurve: "continuous",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: selected ? c.surface : "transparent",
+              boxShadow: selected ? "0 1px 2px rgba(11, 12, 16, 0.08)" : undefined,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: fonts.semibold,
+                fontSize: 15,
+                color: selected ? c.ink : c.muted,
+              }}
+            >
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /** Small rounded status label: "Verified at gate", "Self-reported", "Overdue". */
 export function StatusChip({
   label,
   tone,
 }: {
   label: string;
-  tone: "sage" | "ember" | "lantern" | "stone" | "pine";
+  tone: "good" | "danger" | "accent" | "muted";
 }): ReactNode {
   const c = useColors();
   const map = {
-    sage: [c.sageSoft, c.sage],
-    ember: [c.emberSoft, c.ember],
-    lantern: [c.lanternSoft, c.lanternText],
-    stone: [c.line, c.stone],
-    pine: [c.pineSoft, c.pine],
+    good: [c.goodSoft, c.good],
+    danger: [c.dangerSoft, c.danger],
+    accent: [c.accentSoft, c.accent],
+    muted: [c.line, c.muted],
   } as const;
   const [bg, fg] = map[tone];
   return (
@@ -475,7 +535,7 @@ export function Section({
   return (
     <View style={{ gap: space(2) }}>
       {title ? (
-        <Text style={[type.eyebrow, { color: c.stone, paddingHorizontal: space(1) }]}>{title}</Text>
+        <Text style={[type.eyebrow, { color: c.muted, paddingHorizontal: space(1) }]}>{title}</Text>
       ) : null}
       <View
         style={{
@@ -534,7 +594,7 @@ export function Row({
     >
       {leading}
       <View style={{ flex: 1, gap: 2 }}>
-        <T tone="body" style={{ fontFamily: fonts.medium, color: danger ? c.ember : c.ink }}>
+        <T tone="body" style={{ fontFamily: fonts.medium, color: danger ? c.danger : c.ink }}>
           {title}
         </T>
         {detail ? <T tone="caption">{detail}</T> : null}

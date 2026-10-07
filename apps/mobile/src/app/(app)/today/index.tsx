@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { RefreshControl, Text, View } from "react-native";
 
@@ -54,6 +54,10 @@ export default function Today(): ReactNode {
     return { outing, summary };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
+  // The dock's Scan button lands here with a fresh `at`; until gate scanning ships it opens
+  // the trip sheet (when out, the card already shows "I'm back").
+  const { action, at } = useLocalSearchParams<{ action?: string; at?: string }>();
+  const scanRequest = action === "scan" ? (at ?? null) : null;
   const first = user?.name.split(" ")[0] ?? "";
   const initials = (user?.name ?? "")
     .split(/\s+/)
@@ -69,13 +73,13 @@ export default function Today(): ReactNode {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void reload()}
-          tintColor={c.pine}
+          tintColor={c.accent}
         />
       }
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
         <View style={{ flex: 1, gap: space(1) }}>
-          <Text style={[type.eyebrow, { color: c.pine }]}>{formatDay(new Date())}</Text>
+          <Text style={[type.eyebrow, { color: c.accent }]}>{formatDay(new Date())}</Text>
           <T tone="title" accessibilityRole="header">
             {first ? `Hi, ${first}` : "Hi"}
           </T>
@@ -87,12 +91,12 @@ export default function Today(): ReactNode {
             width: 44,
             height: 44,
             borderRadius: 22,
-            backgroundColor: c.pineSoft,
+            backgroundColor: c.accentSoft,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.pine }}>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
             {initials || "?"}
           </Text>
         </Press>
@@ -103,12 +107,12 @@ export default function Today(): ReactNode {
       ) : data?.outing ? (
         <Out outing={data.outing} onChange={reload} />
       ) : (
-        <AtHostel onDone={reload} />
+        <AtHostel onDone={reload} scanRequest={scanRequest} />
       )}
       <FormError message={error} />
 
       <View style={{ gap: space(3) }}>
-        <T tone="label" style={{ color: c.stone }}>
+        <T tone="label" style={{ color: c.muted }}>
           Quick actions
         </T>
         <View style={{ flexDirection: "row", gap: space(3) }}>
@@ -116,13 +120,13 @@ export default function Today(): ReactNode {
             icon="navigate"
             title="Share live location"
             detail="Let a friend follow your way back"
-            onPress={() => router.navigate("/share")}
+            onPress={() => router.navigate({ pathname: "/live", params: { view: "share" } })}
           />
           <QuickAction
             icon="people"
             title="Follow someone"
             detail="Enter a code a friend sent you"
-            onPress={() => router.navigate("/follow")}
+            onPress={() => router.navigate({ pathname: "/live", params: { view: "follow" } })}
           />
         </View>
       </View>
@@ -142,7 +146,7 @@ function HeroSkeleton(): ReactNode {
   );
 }
 
-/** The pine card: the screen's one focal surface, with its one 3D object. */
+/** The status card: the screen's one focal surface, with its one 3D object. */
 function Hero({ children, art }: { children: ReactNode; art: "gate" | "lantern-lit" }): ReactNode {
   const c = useColors();
   return (
@@ -161,16 +165,29 @@ function Hero({ children, art }: { children: ReactNode; art: "gate" | "lantern-l
         style={{ position: "absolute", right: -18, top: -10, opacity: 0.98 }}
         importantForAccessibility="no-hide-descendants"
       >
-        <Illustration name={art} size={150} variant="light" />
+        <Illustration name={art} size={150} variant="hero" />
       </View>
       {children}
     </FadeIn>
   );
 }
 
-function AtHostel({ onDone }: { onDone: () => Promise<void> }): ReactNode {
+function AtHostel({
+  onDone,
+  scanRequest,
+}: {
+  onDone: () => Promise<void>;
+  scanRequest: string | null;
+}): ReactNode {
   const c = useColors();
-  const [open, setOpen] = useState(false);
+  const [tapped, setTapped] = useState(false);
+  // A Scan tap opens the sheet once: it stays "handled" after closing until the next tap.
+  const [handled, setHandled] = useState<string | null>(null);
+  const open = tapped || (scanRequest !== null && scanRequest !== handled);
+  const setOpen = (next: boolean): void => {
+    setTapped(next);
+    if (!next) setHandled(scanRequest);
+  };
   return (
     <>
       <Hero art="gate">
@@ -185,8 +202,7 @@ function AtHostel({ onDone }: { onDone: () => Promise<void> }): ReactNode {
         </View>
         <Button
           label="Log a trip"
-          variant="onHero"
-          icon={<Ionicons name="exit-outline" size={20} color={c.hero} />}
+          icon={<Ionicons name="exit-outline" size={20} color={c.onAccent} />}
           onPress={() => {
             haptic.tap();
             setOpen(true);
@@ -253,7 +269,7 @@ function LogTripSheet({
       {parts ? (
         <View style={{ gap: space(1) }}>
           <T tone="caption">You&apos;ll be back by</T>
-          <Clock time={parts.time} period={parts.period} color={c.pine} size={48} />
+          <Clock time={parts.time} period={parts.period} color={c.accent} size={48} />
         </View>
       ) : null}
       <Field
@@ -316,7 +332,7 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
     <Hero art="lantern-lit">
       <View style={{ gap: space(2), paddingRight: space(28) }}>
         {overdue ? (
-          <StatusChip label="Overdue" tone="ember" />
+          <StatusChip label="Overdue" tone="danger" />
         ) : (
           <Text style={[type.eyebrow, { color: c.heroMuted }]}>You&apos;re out</Text>
         )}
@@ -335,7 +351,7 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
       <View style={{ gap: space(1) }}>
         <Text style={[type.caption, { color: c.heroMuted }]}>Back by</Text>
         <Clock time={back.time} period={back.period} color={c.onHero} />
-        <Text style={[type.label, { color: overdue ? "#f7b9a7" : c.lantern }]}>
+        <Text style={[type.label, { color: overdue ? c.heroDanger : c.heroAccent }]}>
           {overdue
             ? `${formatMinutes(Math.max(1, -minutesLeft))} late`
             : `${formatMinutes(Math.max(0, minutesLeft))} left`}
@@ -353,17 +369,16 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
             width: `${Math.round(done * 100)}%`,
             height: "100%",
             borderRadius: 4,
-            backgroundColor: overdue ? "#f08a6e" : c.lantern,
+            backgroundColor: overdue ? c.heroDanger : c.heroAccent,
           }}
         />
       </View>
 
       <Button
         label="I'm back"
-        variant="onHero"
         busy={busy === "return"}
         busyLabel="Marking…"
-        icon={<Ionicons name="home" size={18} color={c.hero} />}
+        icon={<Ionicons name="home" size={18} color={c.onAccent} />}
         onPress={() => void act("return", () => api("/outings/current/return", { method: "POST" }))}
       />
       <View style={{ flexDirection: "row", gap: space(2) }}>
@@ -382,7 +397,7 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         ))}
       </View>
       {error ? (
-        <Text style={[type.label, { color: "#f7b9a7" }]} accessibilityRole="alert">
+        <Text style={[type.label, { color: c.heroDanger }]} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
@@ -426,12 +441,12 @@ function QuickAction({
             width: 40,
             height: 40,
             borderRadius: 12,
-            backgroundColor: c.pineSoft,
+            backgroundColor: c.accentSoft,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Ionicons name={icon} size={20} color={c.pine} />
+          <Ionicons name={icon} size={20} color={c.accent} />
         </View>
         <View style={{ gap: 2 }}>
           <T tone="label" style={{ fontSize: 15 }}>
@@ -465,7 +480,7 @@ function Stats({ summary }: { summary: OutingSummary }): ReactNode {
     >
       <View style={{ flex: 1, gap: 2 }}>
         <T tone="caption">Back on time</T>
-        <T tone="title" style={{ color: c.sage, fontVariant: ["tabular-nums"] }}>
+        <T tone="title" style={{ color: c.good, fontVariant: ["tabular-nums"] }}>
           {onTime}
         </T>
       </View>
@@ -475,7 +490,7 @@ function Stats({ summary }: { summary: OutingSummary }): ReactNode {
           {summary.total}
         </T>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={c.stone} />
+      <Ionicons name="chevron-forward" size={18} color={c.muted} />
     </Press>
   );
 }

@@ -80,12 +80,16 @@ export default function History(): ReactNode {
         sections={sections}
         keyExtractor={(o) => o.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={{ padding: layout.gutter, paddingBottom: space(10), flexGrow: 1 }}
+        contentContainerStyle={{
+          padding: layout.gutter,
+          paddingBottom: layout.dockClearance,
+          flexGrow: 1,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void reload()}
-            tintColor={c.pine}
+            tintColor={c.accent}
           />
         }
         ListHeaderComponent={
@@ -95,8 +99,8 @@ export default function History(): ReactNode {
               <View style={{ flexDirection: "row", gap: space(3) }}>
                 {[
                   { label: "Outings", value: String(summary.total), tone: c.ink },
-                  { label: "On time", value: onTime, tone: c.sage },
-                  { label: "Late", value: String(summary.returned_late), tone: c.ember },
+                  { label: "On time", value: onTime, tone: c.good },
+                  { label: "Late", value: String(summary.returned_late), tone: c.danger },
                 ].map((stat) => (
                   <View
                     key={stat.label}
@@ -125,7 +129,7 @@ export default function History(): ReactNode {
           </View>
         }
         renderSectionHeader={({ section }) => (
-          <T tone="label" style={{ color: c.stone, paddingTop: space(5), paddingBottom: space(2) }}>
+          <T tone="label" style={{ color: c.muted, paddingTop: space(5), paddingBottom: space(2) }}>
             {section.title}
           </T>
         )}
@@ -175,12 +179,12 @@ function Row({
   const late = outing.late_minutes > 0;
   const chip =
     outing.status === "overdue"
-      ? { label: "Overdue", tone: "ember" as const }
+      ? { label: "Overdue", tone: "danger" as const }
       : outing.status === "out"
-        ? { label: "Out now", tone: "lantern" as const }
+        ? { label: "Out now", tone: "accent" as const }
         : late
-          ? { label: `${formatMinutes(outing.late_minutes)} late`, tone: "ember" as const }
-          : { label: "On time", tone: "sage" as const };
+          ? { label: `${formatMinutes(outing.late_minutes)} late`, tone: "danger" as const }
+          : { label: "On time", tone: "good" as const };
 
   return (
     <View

@@ -24,7 +24,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Someone sent me a code. What do I do?",
-    a: "Open the Follow tab and enter the code, or paste the whole message. You'll see their location once they approve you.",
+    a: "Open Live, choose Follow someone and enter the code, or paste the whole message. You'll see their location once they approve you.",
   },
   {
     q: "How do I delete my data?",
@@ -56,7 +56,7 @@ export default function Help(): ReactNode {
                 <Ionicons
                   name={expanded ? "chevron-up" : "chevron-down"}
                   size={18}
-                  color={c.stone}
+                  color={c.muted}
                 />
               </View>
               {expanded ? <T tone="muted">{item.a}</T> : null}
