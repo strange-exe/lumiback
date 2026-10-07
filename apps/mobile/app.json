@@ -36,7 +36,9 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
           "backgroundColor": "#f4efe6",
-          "dark": { "backgroundColor": "#121a18" }
+          "dark": {
+            "backgroundColor": "#121a18"
+          }
         }
       ],
       [
@@ -50,6 +52,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a8196cc1-95f6-4017-b4b0-41d506d4be76"
+      }
+    },
+    "owner": "strange-exe"
   }
 }
