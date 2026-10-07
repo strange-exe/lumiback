@@ -30,6 +30,10 @@ class Settings(BaseSettings):
 
     # Only addresses at these domains may register (and be invited as contacts).
     allowed_email_domains: Annotated[list[str], NoDecode] = ["geu.ac.in"]
+    # Individual outside addresses allowed for testing (comma-separated), e.g. a developer's
+    # Gmail. Each also admits its plus aliases (you+test1@gmail.com), so one inbox gives many
+    # test accounts without opening the whole domain.
+    allowed_test_emails: Annotated[list[str], NoDecode] = []
 
     # "console" logs emails instead of sending them: development only. "resend" sends over
     # HTTPS (works where SMTP ports are blocked, e.g. Render's free plan); "smtp" anywhere else.
@@ -59,6 +63,18 @@ class Settings(BaseSettings):
             if "." not in d or "@" in d or "/" in d or " " in d:
                 raise ValueError(f"'{d}' is not a domain like geu.ac.in")
         return domains
+
+    @field_validator("allowed_test_emails", mode="before")
+    @classmethod
+    def _parse_test_emails(cls, v: object) -> list[str]:
+        items = v if isinstance(v, list) else str(v).split(",")
+        emails = [str(e).strip().lower() for e in items if str(e).strip()]
+        for e in emails:
+            local, at, domain = e.partition("@")
+            plain = at and local and "+" not in local and " " not in e
+            if not plain or "@" in domain or "." not in domain:
+                raise ValueError(f"'{e}' is not a plain address like you@gmail.com")
+        return emails
 
     @model_validator(mode="after")
     def _email_delivery(self) -> "Settings":

@@ -39,6 +39,15 @@ def test_only_allowed_domains_can_register(client):
     assert _register(client, "riya@notgeu.ac.in").status_code == 422
 
 
+def test_listed_test_address_and_its_aliases_can_register(client):
+    for email in ("tester@gmail.com", "tester+second@gmail.com"):
+        r = _register(client, email)
+        assert r.status_code == 202, r.text
+        assert _verify(client, email, last_code(client, email)).status_code == 200
+    # The rest of gmail.com stays closed.
+    assert _register(client, "someone@gmail.com").status_code == 422
+
+
 def test_no_account_exists_until_the_code_is_entered(client, db):
     r = _register(client)
     assert r.status_code == 202

@@ -74,6 +74,7 @@ def settings(test_db_url: str) -> Settings:
         cors_origins="http://localhost:3000",
         app_env="development",
         allowed_email_domains="example.com,geu.ac.in",
+        allowed_test_emails="tester@gmail.com",
     )
 
 

@@ -41,6 +41,8 @@ services:
         value: https://lumiback.abhinesh.codes
       - key: ALLOWED_EMAIL_DOMAINS
         value: geu.ac.in
+      - key: ALLOWED_TEST_EMAILS # optional: your own outside addresses for testing
+        sync: false
       - key: EMAIL_BACKEND # HTTPS API: Render's free plan blocks outbound SMTP ports
         value: resend
       - key: RESEND_API_KEY

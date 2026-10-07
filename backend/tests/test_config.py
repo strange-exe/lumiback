@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import ConfigError, load_settings
 from app.main import create_app
+from app.services.verification import email_allowed
 
 STRONG = "t3st-only-" + "x7Kq9Zp2" * 5  # 50 chars, fake
 VALID_ENV = {
@@ -145,6 +146,45 @@ def test_university_domain_is_the_default(env):
 def test_allowed_domains_are_normalized(env):
     env.setenv("ALLOWED_EMAIL_DOMAINS", "@GEU.ac.in, example.com")
     assert load().allowed_email_domains == ["geu.ac.in", "example.com"]
+
+
+def test_no_test_emails_by_default(env):
+    assert load().allowed_test_emails == []
+
+
+def test_test_emails_are_normalized(env):
+    env.setenv("ALLOWED_TEST_EMAILS", " Riya@Gmail.com ,kabir@outlook.com,")
+    assert load().allowed_test_emails == ["riya@gmail.com", "kabir@outlook.com"]
+
+
+@pytest.mark.parametrize(
+    "emails", ["gmail.com", "@gmail.com", "riya@", "riya@gmail", "riya+x@gmail.com", "a@b@c.com"]
+)
+def test_malformed_test_emails_refused(env, emails):
+    env.setenv("ALLOWED_TEST_EMAILS", emails)
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "ALLOWED_TEST_EMAILS" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("email", "allowed"),
+    [
+        ("anyone@geu.ac.in", True),  # the university domain is untouched
+        ("riya@gmail.com", True),
+        ("RIYA@gmail.com", True),
+        ("riya+test1@gmail.com", True),  # plus alias of a listed address
+        ("riya+a+b@gmail.com", True),
+        ("other@gmail.com", False),  # listing one address does not open the domain
+        ("riya@gmail.com.evil.com", False),
+        ("riya@googlemail.com", False),
+        ("xriya@gmail.com", False),
+        ("riyatest1@gmail.com", False),
+    ],
+)
+def test_test_emails_admit_only_listed_inboxes(env, email, allowed):
+    env.setenv("ALLOWED_TEST_EMAILS", "riya@gmail.com")
+    assert email_allowed(email, load()) is allowed
 
 
 @pytest.mark.parametrize("domains", ["", "geu", "someone@geu.ac.in", "geu.ac.in/x"])

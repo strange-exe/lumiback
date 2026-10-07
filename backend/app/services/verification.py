@@ -41,7 +41,11 @@ class VerificationFailed(Exception):
 
 
 def email_allowed(email: str, settings: Settings) -> bool:
-    return email.rsplit("@", 1)[-1].lower() in settings.allowed_email_domains
+    local, _, domain = email.lower().rpartition("@")
+    if domain in settings.allowed_email_domains:
+        return True
+    # A listed test address, or one of its plus aliases (you+test1@gmail.com -> you@gmail.com).
+    return f"{local.split('+', 1)[0]}@{domain}" in settings.allowed_test_emails
 
 
 def _hash(pepper: str, email: str, code: str) -> bytes:
