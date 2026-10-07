@@ -58,7 +58,7 @@ export function RegisterForm(): ReactNode {
       </p>
       <p className="text-center text-sm text-stone">
         Already registered?{" "}
-        <Link href="/" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/sign-in" className="font-bold text-pine underline-offset-4 hover:underline">
           Sign in
         </Link>
       </p>

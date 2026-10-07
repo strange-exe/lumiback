@@ -14,12 +14,12 @@ const DURATIONS = new Set([60, 120, 240]); // tab shares last at most 4 h (backe
 
 async function call<T>(path: string, body?: unknown): Promise<Result<T>> {
   const token = await accessToken();
-  if (!token) redirect("/");
+  if (!token) redirect("/sign-in");
   try {
     return { ok: true, data: await callBackend<T>(path, { method: "POST", token, body }) };
   } catch (error) {
     if (error instanceof ApiError) {
-      if (error.status === 401) redirect("/");
+      if (error.status === 401) redirect("/sign-in");
       return { ok: false, error: error.detail };
     }
     throw error;

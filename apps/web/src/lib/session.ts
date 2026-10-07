@@ -50,6 +50,6 @@ export async function currentUser(): Promise<User | null> {
 export async function requireUser(): Promise<{ user: User; token: string }> {
   const token = await accessToken();
   const user = token ? await currentUser() : null;
-  if (!user || !token) redirect("/");
+  if (!user || !token) redirect("/sign-in");
   return { user, token };
 }

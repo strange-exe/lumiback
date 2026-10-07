@@ -9,13 +9,13 @@ test.describe("signed out", () => {
 
   test("protected pages send visitors to sign in", async ({ page }) => {
     await page.goto("/home");
-    await expect(page).toHaveURL("http://localhost:3000/");
+    await expect(page).toHaveURL("http://localhost:3000/sign-in");
     await page.goto("/history");
-    await expect(page).toHaveURL("http://localhost:3000/");
+    await expect(page).toHaveURL("http://localhost:3000/sign-in");
   });
 
   test("wrong password shows a calm, generic error", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/sign-in");
     await page.getByLabel("University email").fill(STUDENT.email);
     await page.getByLabel("Password").fill("not-the-password-1");
     await page.getByRole("button", { name: "Sign in" }).click();
@@ -46,7 +46,7 @@ test.describe("signed out", () => {
     const names = (await context.cookies()).map((c) => c.name);
     expect(names).not.toContain("outing_rt");
     await page.goto("/home");
-    await expect(page).toHaveURL("http://localhost:3000/");
+    await expect(page).toHaveURL("http://localhost:3000/sign-in");
   });
 });
 

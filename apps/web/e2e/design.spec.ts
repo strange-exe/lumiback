@@ -36,6 +36,12 @@ const SCREENS: Screen[] = [
     name: "landing",
     auth: false,
     prepare: async (page) => void (await page.goto("/")),
+    primary: (page) => page.getByRole("link", { name: "Create account" }).first(),
+  },
+  {
+    name: "sign-in",
+    auth: false,
+    prepare: async (page) => void (await page.goto("/sign-in")),
     primary: (page) => page.getByRole("button", { name: "Sign in" }),
   },
   {

@@ -4,7 +4,7 @@ import { expect, type BrowserContext, type Page } from "@playwright/test";
 export const STUDENT = { email: "e2e@geu.ac.in", password: "lantern-at-dusk-2029" };
 
 export async function signIn(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/sign-in");
   await page.getByLabel("University email").fill(STUDENT.email);
   await page.getByLabel("Password").fill(STUDENT.password);
   await page.getByRole("button", { name: "Sign in" }).click();

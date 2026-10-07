@@ -72,7 +72,7 @@ export async function verifyEmail(_: FormState, form: FormData): Promise<FormSta
   } catch (error) {
     return failure(error);
   }
-  redirect(`/?verified=${encodeURIComponent(email)}`);
+  redirect(`/sign-in?verified=${encodeURIComponent(email)}`);
 }
 
 export async function resendCode(_: FormState, form: FormData): Promise<FormState> {
@@ -122,13 +122,13 @@ export async function deleteAccount(_: FormState, form: FormData): Promise<FormS
   const password = form.get("password");
   if (typeof password !== "string" || !password) return { error: "Enter your password.", fields };
   const token = await accessToken();
-  if (!token) redirect("/");
+  if (!token) redirect("/sign-in");
   try {
     await callBackend("/auth/delete-account", { method: "POST", token, body: { password } });
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect("/");
+    if (error instanceof ApiError && error.status === 401) redirect("/sign-in");
     return failure(error, fields);
   }
   await clearTokens();
-  redirect("/?deleted=1");
+  redirect("/sign-in?deleted=1");
 }

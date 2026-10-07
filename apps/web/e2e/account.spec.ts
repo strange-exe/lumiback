@@ -33,7 +33,7 @@ test.describe("signed out", () => {
   });
 
   test("deleting an account needs the password, then erases it for good", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/sign-in");
     await page.getByLabel("University email").fill(DELETABLE.email);
     await page.getByLabel("Password").fill(DELETABLE.password);
     await page.getByRole("button", { name: "Sign in" }).click();

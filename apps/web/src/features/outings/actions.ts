@@ -11,7 +11,7 @@ import type { FormState } from "@/lib/types";
 /** Every action re-checks the session itself (never trust that a page was protected). */
 async function tokenOrSignIn(): Promise<string> {
   const token = await accessToken();
-  if (!token) redirect("/");
+  if (!token) redirect("/sign-in");
   return token;
 }
 
@@ -30,7 +30,7 @@ async function run(
     await call();
   } catch (error) {
     if (error instanceof ApiError) {
-      if (error.status === 401) redirect("/");
+      if (error.status === 401) redirect("/sign-in");
       return { error: error.detail, fields };
     }
     throw error;
