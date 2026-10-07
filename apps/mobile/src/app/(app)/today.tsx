@@ -17,6 +17,7 @@ import {
 import type { Outing } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
+import { allowNotifications, syncReturnReminders } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Chips, Clock, Field, FormError, Heading, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
@@ -35,7 +36,13 @@ function message(e: unknown): string {
 export default function Today(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
-  const load = useCallback(() => api<Outing | null>("/outings/current"), []);
+  const load = useCallback(async () => {
+    const current = await api<Outing | null>("/outings/current");
+    // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
+    // outing changed on the web or one that just ended.
+    void syncReturnReminders(current?.expected_return_at ?? null);
+    return current;
+  }, []);
   const { data: outing, error, loading, refreshing, reload } = useData(load);
   const first = user?.name.split(" ")[0] ?? "";
 
@@ -100,6 +107,7 @@ function CheckOut({ first, onDone }: { first: string; onDone: () => Promise<void
       });
       haptic.success();
       setDestination("");
+      await allowNotifications().catch(() => false); // for the return reminders
       await onDone();
     } catch (e) {
       haptic.warning();

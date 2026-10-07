@@ -9,6 +9,7 @@ import { formatTime } from "@/lib/time";
 import type { JoinCode, LiveLocation, ShareSession, Viewer } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
+import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Chips, FormError, Heading, Notice, T } from "@/ui/kit";
 import { LiveMap } from "@/ui/LiveMap";
@@ -94,6 +95,9 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
     setError(null);
     let created: ShareSession | null = null;
     try {
+      // Asked first: join requests and the sharing notification both need it (Android 13+).
+      // Sharing still works if the student says no; requests then show only in this tab.
+      await allowNotifications().catch(() => false);
       created = await api<ShareSession>("/sessions", {
         method: "POST",
         body: { source: "app", duration_minutes: Number(length) },

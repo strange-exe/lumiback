@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
 import { formatDate } from "@/lib/time";
 import { stopSending } from "@/location/task";
+import { syncReturnReminders } from "@/notify/notify";
 import { Button, Card, Field, FormError, Heading, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
@@ -43,6 +44,7 @@ export default function Account(): ReactNode {
           onPress={() => {
             setSigningOut(true);
             void stopSending()
+              .then(() => syncReturnReminders(null))
               .then(signOut)
               .finally(() => setSigningOut(false));
           }}
@@ -81,7 +83,8 @@ function DeleteAccount(): ReactNode {
     setError(null);
     try {
       await stopSending();
-      await deleteAccount(password); // signs out; the guard sends the student to sign-in
+      await deleteAccount(password);
+      await syncReturnReminders(null); // signs out; the guard sends the student to sign-in
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : "Something went wrong. Try again.");
       setPassword("");

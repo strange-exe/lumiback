@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 import type { ColorValue } from "react-native";
 
 import { useAuth } from "@/lib/auth";
+import { useNotificationRoutes } from "@/notify/notify";
 import { fonts, useColors } from "@/ui/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -17,6 +18,7 @@ function icon(name: IconName) {
 export default function AppLayout(): ReactNode {
   const { status } = useAuth();
   const c = useColors();
+  useNotificationRoutes(status === "signedIn");
   if (status !== "signedIn") return <Redirect href="/sign-in" />;
 
   return (
