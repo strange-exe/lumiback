@@ -4,7 +4,7 @@ Campus outing log with consent-based location sharing for Graphic Era University
 
 - **Backend:** FastAPI, PostgreSQL (Supabase), WebSockets
 - **Web:** Next.js 16, Tailwind CSS v4 (see `apps/web/README.md`)
-- **Mobile:** React Native + Expo *(planned)*
+- **Mobile:** Android app, Expo SDK 57 + expo-router (`apps/mobile`)
 
 ## Principles
 
@@ -59,6 +59,20 @@ cp .env.example .env.local        # BACKEND_URL of the API
 npm install
 npm run dev
 npm run test:e2e                  # Playwright against the API on the local test database
+```
+
+## Mobile setup
+
+The Android app shares location through a foreground service with a visible notification, so it
+needs only while-in-use location permission (no background-location access).
+
+```bash
+cd apps/mobile
+cp .env.example .env              # EXPO_PUBLIC_API_URL of the API
+npm install
+npx eas build --profile development --platform android   # dev client APK, install on the phone
+npm start                         # then open the dev client and scan the QR code
+npm test && npm run lint && npm run typecheck
 ```
 
 ## Deploying (Render + Cloudflare)
