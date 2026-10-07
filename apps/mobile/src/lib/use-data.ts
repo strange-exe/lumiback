@@ -8,8 +8,10 @@ interface DataState<T> {
   error: string | null;
   loading: boolean;
   refreshing: boolean;
-  /** Pull-to-refresh, or after an action changed the data. */
+  /** Pull-to-refresh, or after an action changed the data (shows the refresh spinner). */
   reload: () => Promise<void>;
+  /** Background polling: same fetch, no spinner. */
+  refetch: () => Promise<void>;
 }
 
 /** Loads when the screen comes into focus (so tabs stay fresh) and on demand. */
@@ -42,5 +44,7 @@ export function useData<T>(load: () => Promise<T>): DataState<T> {
     }, [run]),
   );
 
-  return { data, error, loading, refreshing, reload: () => run(true) };
+  const reload = useCallback(() => run(true), [run]);
+  const refetch = useCallback(() => run(false), [run]);
+  return { data, error, loading, refreshing, reload, refetch };
 }

@@ -78,6 +78,71 @@ export function T({
   );
 }
 
+/** Every tab opens the same way: a small coloured eyebrow, the title, an optional lede. */
+export function Heading({
+  eyebrow,
+  title,
+  lede,
+  tone = "pine",
+}: {
+  eyebrow: string;
+  title: string;
+  lede?: string;
+  tone?: "pine" | "sage" | "ember" | "stone";
+}): ReactNode {
+  const c = useColors();
+  return (
+    <View style={{ gap: space(2) }}>
+      <Text
+        style={{
+          fontFamily: fonts.semibold,
+          fontSize: 13,
+          letterSpacing: 1.2,
+          textTransform: "uppercase",
+          color: c[tone],
+        }}
+      >
+        {eyebrow}
+      </Text>
+      <T tone="title" accessibilityRole="header">
+        {title}
+      </T>
+      {lede ? <T tone="muted">{lede}</T> : null}
+    </View>
+  );
+}
+
+/** A time set large, the period small: the one number a screen is about. */
+export function Clock({
+  time,
+  period,
+  color,
+  size = 56,
+}: {
+  time: string;
+  period: string;
+  color?: string;
+  size?: number;
+}): ReactNode {
+  const c = useColors();
+  return (
+    <Text
+      accessibilityLabel={`${time} ${period}`}
+      style={{
+        fontFamily: fonts.semibold,
+        fontSize: size,
+        lineHeight: size * 1.08,
+        letterSpacing: -size * 0.03,
+        color: color ?? c.ink,
+        fontVariant: ["tabular-nums"],
+      }}
+    >
+      {time}
+      <Text style={{ fontSize: size * 0.36, letterSpacing: 0.5 }}> {period}</Text>
+    </Text>
+  );
+}
+
 type Variant = "primary" | "secondary" | "danger" | "quiet";
 
 export function Button({

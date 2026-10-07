@@ -6,7 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatDay, formatMinutes, formatTime } from "@/lib/time";
 import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
 import { useData } from "@/lib/use-data";
-import { Button, FormError, T } from "@/ui/kit";
+import { Button, FormError, Heading, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 interface FirstPage {
@@ -75,9 +75,7 @@ export default function History(): ReactNode {
         ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: c.line }} />}
         ListHeaderComponent={
           <View style={{ gap: space(6), paddingBottom: space(4) }}>
-            <T tone="title" accessibilityRole="header">
-              Your outings
-            </T>
+            <Heading eyebrow="History" title="Your outings" />
             {summary && summary.total > 0 ? (
               <View style={{ flexDirection: "row" }}>
                 {[

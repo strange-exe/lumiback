@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
 import { formatDate } from "@/lib/time";
 import { stopSending } from "@/location/task";
-import { Button, Card, Field, FormError, Screen, T } from "@/ui/kit";
+import { Button, Card, Field, FormError, Heading, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 const PRIVACY_URL = `${WEB_URL}/privacy`;
@@ -19,17 +19,13 @@ export default function Account(): ReactNode {
   if (!user) return null;
 
   const rows: [string, string][] = [
-    ["Name", user.name],
-    ["University email", user.email],
     ...(user.roll_no ? ([["Roll number", user.roll_no]] as [string, string][]) : []),
     ["Member since", formatDate(user.created_at)],
   ];
 
   return (
     <Screen edges={["top"]}>
-      <T tone="title" accessibilityRole="header">
-        Account
-      </T>
+      <Heading eyebrow="Account" title={user.name} lede={user.email} />
       <Card>
         {rows.map(([label, value]) => (
           <View key={label} accessible style={{ gap: space(0.5) }}>

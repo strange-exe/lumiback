@@ -39,6 +39,11 @@ export default function AppLayout(): ReactNode {
         options={{ title: "Share", tabBarIcon: icon("navigate-circle-outline") }}
       />
       <Tabs.Screen
+        name="follow"
+        options={{ title: "Follow", tabBarIcon: icon("people-outline") }}
+      />
+      <Tabs.Screen name="watch/[id]" options={{ href: null }} />
+      <Tabs.Screen
         name="account"
         options={{ title: "Account", tabBarIcon: icon("person-circle-outline") }}
       />

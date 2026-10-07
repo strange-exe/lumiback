@@ -6,10 +6,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api, ApiError } from "@/lib/api";
 import { WEB_URL } from "@/lib/config";
 import { formatTime } from "@/lib/time";
-import type { JoinCode, ShareSession, Viewer } from "@/lib/types";
+import type { JoinCode, LiveLocation, ShareSession, Viewer } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
-import { Button, Card, Chips, FormError, Notice, T } from "@/ui/kit";
+import { haptic } from "@/ui/haptics";
+import { Button, Card, Chips, FormError, Heading, Notice, T } from "@/ui/kit";
+import { LiveMap } from "@/ui/LiveMap";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 
 type Length = "60" | "120" | "240" | "480";
@@ -37,17 +39,21 @@ export default function Share(): ReactNode {
     const active = mine.find((s) => s.source === "app" && s.status === "active") ?? null;
     // The share ended elsewhere (web, expiry, idle close): make sure the service is off too.
     if (!active && sending) await stopSending();
-    return { active, sending: Boolean(active) && sending };
+    // What viewers see: the last position the server has (sharers can read their own).
+    const location = active
+      ? (await api<{ location: LiveLocation | null }>(`/sessions/${active.id}/location`)).location
+      : null;
+    return { active, sending: Boolean(active) && sending, location };
   }, []);
-  const { data, error, loading, refreshing, reload } = useData(load);
+  const { data, error, loading, refreshing, reload, refetch } = useData(load);
 
   const live = Boolean(data?.active);
   useFocusEffect(
     useCallback(() => {
       if (!live) return;
-      const timer = setInterval(() => void reload(), POLL_MS);
+      const timer = setInterval(() => void refetch(), POLL_MS);
       return () => clearInterval(timer);
-    }, [live, reload]),
+    }, [live, refetch]),
   );
 
   return (
@@ -63,7 +69,12 @@ export default function Share(): ReactNode {
         }
       >
         {loading ? null : data?.active ? (
-          <Live share={data.active} sending={data.sending} onChange={reload} />
+          <Live
+            share={data.active}
+            sending={data.sending}
+            location={data.location}
+            onChange={refetch}
+          />
         ) : (
           <Start onStarted={reload} />
         )}
@@ -93,9 +104,11 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
         await api(`/sessions/${created.id}/stop`, { method: "POST", body: {} }).catch(
           () => undefined,
         );
+        haptic.warning();
         setError(START_PROBLEM[result]);
         return;
       }
+      haptic.success();
       await onStarted();
     } catch (e) {
       if (created)
@@ -110,17 +123,21 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
 
   return (
     <>
-      <View style={{ gap: space(2) }}>
-        <T tone="title" accessibilityRole="header">
-          Share your way back
-        </T>
-        <T tone="muted">
-          Send a code to a friend or family member. They see your live location only after you
-          approve them, and only until you stop or the time runs out.
-        </T>
-      </View>
+      <Heading
+        eyebrow="Live location"
+        title="Share your way back"
+        lede="Send a code to a friend or family member. They see you only after you approve them, and only until you stop or the time runs out."
+      />
       <Card>
-        <Chips label="Share for" options={LENGTHS} value={length} onChange={setLength} />
+        <Chips
+          label="Share for"
+          options={LENGTHS}
+          value={length}
+          onChange={(v) => {
+            haptic.tap();
+            setLength(v);
+          }}
+        />
         <T tone="small">
           A notification stays on while you share. If your phone goes quiet for 15 minutes, sharing
           ends by itself.
@@ -147,10 +164,12 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
 function Live({
   share,
   sending,
+  location,
   onChange,
 }: {
   share: ShareSession;
   sending: boolean;
+  location: LiveLocation | null;
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
@@ -162,8 +181,10 @@ function Live({
     setError(null);
     try {
       await call();
+      haptic.success();
       await onChange();
     } catch (e) {
+      haptic.warning();
       setError(message(e));
     } finally {
       setBusy(null);
@@ -188,24 +209,26 @@ function Live({
 
   return (
     <>
-      <View style={{ gap: space(2) }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
-          <View
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: sending ? c.sage : c.lantern,
-            }}
-          />
-          <T tone="label" style={{ color: sending ? c.sage : c.ink }}>
-            {sending ? "Sharing live" : "Paused on this phone"}
-          </T>
-        </View>
-        <T tone="title" accessibilityRole="header">
-          Until {formatTime(share.ends_at)}
-        </T>
-      </View>
+      <Heading
+        eyebrow={sending ? "Sharing live" : "Paused on this phone"}
+        tone={sending ? "sage" : "stone"}
+        title={`Until ${formatTime(share.ends_at)}`}
+        lede={
+          watching.length === 0
+            ? "Nobody can see you yet. Send a code below."
+            : `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you.`
+        }
+      />
+      <LiveMap
+        point={location}
+        paused={!sending || !location || location.stale}
+        height={220}
+        label={
+          location
+            ? `Your shared location, accurate to about ${Math.round(location.accuracy_m)} metres`
+            : "Map, waiting for your first location"
+        }
+      />
 
       {!sending ? (
         <Card style={{ borderColor: c.lantern }}>
