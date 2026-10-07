@@ -25,7 +25,11 @@ from app.models import (
 from app.schemas import SessionCreateIn, SessionOut, ViewerOut
 from app.services.authz import is_live
 
-ENDS_WHEN = {ShareSource.MANUAL: EndsWhen.DURATION, ShareSource.TAB_LIVE: EndsWhen.TAB_CLOSED}
+ENDS_WHEN = {
+    ShareSource.MANUAL: EndsWhen.DURATION,
+    ShareSource.TAB_LIVE: EndsWhen.TAB_CLOSED,
+    ShareSource.APP: EndsWhen.DURATION,
+}
 
 
 class NotYourContacts(Exception):

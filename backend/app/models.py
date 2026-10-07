@@ -78,6 +78,7 @@ class ShareSource(enum.StrEnum):
     TAB_LIVE = "tab_live"
     PAIRING = "pairing"
     MANUAL = "manual"
+    APP = "app"  # started in the mobile app; runs in the background until it ends
 
 
 class EndsWhen(enum.StrEnum):

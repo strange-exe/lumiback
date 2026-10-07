@@ -115,13 +115,13 @@ class ContactsOut(BaseModel):
     incoming: list[IncomingContact]
 
 
-MAX_MINUTES = {"manual": 8 * 60, "tab_live": 4 * 60}
+MAX_MINUTES = {"manual": 8 * 60, "tab_live": 4 * 60, "app": 8 * 60}
 
 
 class SessionCreateIn(Input):
     """`outing` and `pairing` sessions are created by their own flows (M4, M5), not here."""
 
-    source: Literal["manual", "tab_live"]
+    source: Literal["manual", "tab_live", "app"]
     duration_minutes: int = Field(default=60, ge=5)
     viewer_user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
 
@@ -132,8 +132,8 @@ class SessionCreateIn(Input):
             raise ValueError(f"{self.source} sessions last at most {cap} minutes")
         if self.source == "manual" and not self.viewer_user_ids:
             raise ValueError("choose at least one contact to share with")
-        if self.source == "tab_live" and self.viewer_user_ids:
-            raise ValueError("tab_live viewers join with a code, not by id")
+        if self.source in ("tab_live", "app") and self.viewer_user_ids:
+            raise ValueError(f"{self.source} viewers join with a code, not by id")
         if len(set(self.viewer_user_ids)) != len(self.viewer_user_ids):
             raise ValueError("viewer_user_ids contains duplicates")
         return self

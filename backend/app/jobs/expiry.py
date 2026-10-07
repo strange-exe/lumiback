@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, update
+from sqlalchemy import and_, case, delete, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
@@ -36,6 +36,9 @@ KEEP_DEAD_REFRESH_TOKENS = timedelta(days=7)
 # The page also stops the share when the tab closes; this is the fallback when that never arrives.
 # Generous enough to ride out a background tab's throttled timers.
 TAB_IDLE = timedelta(minutes=5)
+# App shares report from a background service; if it stops (app killed, phone off) for this long,
+# the share ends. Longer than tabs: Android may batch updates while the phone sleeps.
+APP_IDLE = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -61,17 +64,31 @@ async def sweep(sessionmaker: async_sessionmaker[AsyncSession], hub: Hub) -> Swe
                 )
             ).scalars()
         )
+        last_seen = func.coalesce(ShareSession.sharer_seen_at, ShareSession.created_at)
         closed_tabs = list(
             (
                 await session.execute(
                     update(ShareSession)
                     .where(
                         ShareSession.status == SessionStatus.ACTIVE,
-                        ShareSession.source == ShareSource.TAB_LIVE,
-                        func.coalesce(ShareSession.sharer_seen_at, ShareSession.created_at)
-                        < now - TAB_IDLE,
+                        or_(
+                            and_(
+                                ShareSession.source == ShareSource.TAB_LIVE,
+                                last_seen < now - TAB_IDLE,
+                            ),
+                            and_(
+                                ShareSession.source == ShareSource.APP, last_seen < now - APP_IDLE
+                            ),
+                        ),
                     )
-                    .values(status=SessionStatus.ENDED, ended_at=now, ended_reason="tab_closed")
+                    .values(
+                        status=SessionStatus.ENDED,
+                        ended_at=now,
+                        ended_reason=case(
+                            (ShareSession.source == ShareSource.TAB_LIVE, "tab_closed"),
+                            else_="device_quiet",
+                        ),
+                    )
                     .returning(ShareSession.id)
                 )
             ).scalars()

@@ -198,3 +198,37 @@ def test_tab_that_never_checked_in_ends_after_the_idle_window(client, db):
     )
     db.commit()
     assert run_sweep(client).closed_tabs == [uuid.UUID(s["id"])]
+
+
+def test_app_shares_survive_short_silences_but_end_when_the_phone_goes_quiet(client, db):
+    """A locked phone may batch updates; only 15 minutes of silence ends an app share."""
+    _, riya = signup(client, "riya@example.com", "Riya")
+    sleepy = client.post("/sessions", json={"source": "app", "duration_minutes": 120}, headers=riya)
+    gone = client.post("/sessions", json={"source": "app", "duration_minutes": 120}, headers=riya)
+    assert sleepy.status_code == gone.status_code == 201
+    quiet_for(db, sleepy.json()["id"], 8)  # would end a tab share, not an app share
+    quiet_for(db, gone.json()["id"], 16)
+
+    result = run_sweep(client)
+    assert result.closed_tabs == [uuid.UUID(gone.json()["id"])]
+    row = db.execute(
+        text("SELECT ended_reason FROM share_sessions WHERE id = :s"), {"s": gone.json()["id"]}
+    ).scalar_one()
+    assert row == "device_quiet"
+    still = client.get(f"/sessions/{sleepy.json()['id']}", headers=riya).json()
+    assert still["status"] == "active"
+    assert still["ends_when"] == "duration"
+
+
+def test_app_shares_take_viewers_by_code_only_and_last_at_most_8_hours(client):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    too_long = client.post(
+        "/sessions", json={"source": "app", "duration_minutes": 481}, headers=riya
+    )
+    assert too_long.status_code == 422
+    by_id = client.post(
+        "/sessions",
+        json={"source": "app", "viewer_user_ids": [str(uuid.uuid4())]},
+        headers=riya,
+    )
+    assert by_id.status_code == 422

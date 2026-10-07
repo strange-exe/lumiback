@@ -62,7 +62,7 @@ export interface Viewer {
 /** The sharer's own view of a session. `status` is effective: past ends_at reads "ended". */
 export interface ShareSession {
   id: string;
-  source: "manual" | "tab_live" | "outing" | "pairing";
+  source: "manual" | "tab_live" | "app" | "outing" | "pairing";
   ends_when: string;
   status: "active" | "ended" | "revoked";
   ends_at: string;
