@@ -1,10 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+import { ADMIN_STATE } from "../playwright.config";
+
 import {
   allowLocation,
   checkOut,
   ensureIn,
+  KIOSK_TOKEN,
   newJoinCode,
   startSharing,
   stopSharing,
@@ -24,7 +27,8 @@ test.describe.configure({ timeout: 60_000 });
 
 interface Screen {
   name: string;
-  auth: boolean;
+  /** true: the seeded student; "admin": the seeded admin; false: signed out. */
+  auth: boolean | "admin";
   prepare: (page: Page) => Promise<void>;
   /** The one thing that must be visible without scrolling. */
   primary: (page: Page) => ReturnType<Page["getByRole"] | Page["getByText"]>;
@@ -120,12 +124,64 @@ const SCREENS: Screen[] = [
     },
     primary: (page) => page.getByRole("link", { name: "Enter a new code" }),
   },
+  {
+    name: "gate-code",
+    auth: false,
+    prepare: async (page) =>
+      void (await page.goto("/g/00000000-0000-4000-8000-000000000000.1.AAAAAAAAAA")),
+    primary: (page) => page.getByRole("heading", { name: "Scan this in the Lumiback app" }),
+  },
+  {
+    name: "kiosk",
+    auth: false,
+    prepare: async (page) => {
+      await page.goto(`/kiosk#k=${KIOSK_TOKEN}`);
+      await expect(page.getByRole("img", { name: "Gate code for North Gate" })).toBeVisible();
+    },
+    primary: (page) => page.getByRole("img", { name: "Gate code for North Gate" }),
+  },
+  {
+    name: "admin-register",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin")),
+    primary: (page) => page.getByRole("heading", { name: "Register", exact: true }),
+  },
+  {
+    name: "admin-scans",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/scans")),
+    primary: (page) => page.getByRole("heading", { name: "Gate scans" }),
+  },
+  {
+    name: "admin-gates",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/gates")),
+    primary: (page) => page.getByRole("heading", { name: "Gates", level: 1 }),
+  },
+  {
+    name: "admin-people",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/people?q=sharma")),
+    primary: (page) => page.getByRole("button", { name: "Make admin" }).first(),
+  },
+  {
+    name: "admin-settings",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/settings")),
+    primary: (page) => page.getByRole("button", { name: "Save settings" }),
+  },
 ];
 
 for (const viewport of VIEWPORTS) {
   for (const scheme of SCHEMES) {
     for (const screen of SCREENS) {
-      test(`${screen.name} · ${viewport.name} · ${scheme}`, async ({ page }) => {
+      test(`${screen.name} · ${viewport.name} · ${scheme}`, async ({
+        page: studentPage,
+        browser,
+      }) => {
+        const adminContext =
+          screen.auth === "admin" ? await browser.newContext({ storageState: ADMIN_STATE }) : null;
+        const page = adminContext ? await adminContext.newPage() : studentPage;
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.emulateMedia({ colorScheme: scheme });
         if (!screen.auth) await page.context().clearCookies(); // public pages: signed out
@@ -152,6 +208,7 @@ for (const viewport of VIEWPORTS) {
           fullPage: true,
         });
         await screen.cleanup?.(page);
+        await adminContext?.close();
         expect(errors, "console errors / failed requests").toEqual([]);
       });
     }

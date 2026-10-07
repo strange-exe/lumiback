@@ -13,10 +13,10 @@ export function OutView({ outing, serverNow }: { outing: Outing; serverNow: stri
   return (
     <section aria-labelledby="out-heading" className="flex flex-col gap-6">
       <div>
-        <p className="font-display text-lg text-stone">
+        <p className="font-display text-lg text-muted">
           {overdue ? "Still out at" : "You're out at"}
         </p>
-        <h1 id="out-heading" className="font-display text-title text-pine">
+        <h1 id="out-heading" className="font-display text-title text-accent">
           {outing.destination ?? "Your outing"}
         </h1>
       </div>
@@ -29,14 +29,14 @@ export function OutView({ outing, serverNow }: { outing: Outing; serverNow: stri
       />
 
       <div className="text-center">
-        <p className="text-sm text-stone">Back by</p>
+        <p className="text-sm text-muted">Back by</p>
         <p className="font-display text-hero tabular-nums text-ink md:text-[3.8rem]">
           {due.time} <span className="text-2xl">{due.period}</span>
         </p>
         {overdue && (
           <p
             role="status"
-            className="mx-auto mt-3 max-w-xs rounded-control bg-ember-soft px-4 py-3 text-ember"
+            className="mx-auto mt-3 max-w-xs rounded-control bg-danger-soft px-4 py-3 text-danger"
           >
             You&apos;re {formatMinutes(outing.late_minutes)} past your return time. Update it or
             mark yourself back.

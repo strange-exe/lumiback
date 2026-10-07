@@ -8,6 +8,7 @@ export interface User {
   hostel: string | null;
   email_verified: boolean;
   created_at: string;
+  role: "student" | "admin";
 }
 
 export interface TokenPair {
@@ -30,6 +31,9 @@ export interface Outing {
   status: OutingStatus;
   late_minutes: number;
   duration_minutes: number | null;
+  /** "gate": scanned at a gate with a GPS check; "self": the student logged it. */
+  out_via: "self" | "gate";
+  in_via: "self" | "gate" | null;
 }
 
 export interface OutingPage {
@@ -111,4 +115,87 @@ export interface FormState {
    * Never includes passwords.
    */
   fields?: Record<string, string>;
+}
+
+// ---------- admin ----------
+
+export interface AdminOverview {
+  out_now: number;
+  overdue: number;
+  scans_today: number;
+  rejected_today: number;
+  active_gates: number;
+}
+
+export interface AdminOuting {
+  id: string;
+  student_id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  destination: string | null;
+  /** IST (+05:30) */
+  left_at: string;
+  expected_return_at: string;
+  status: OutingStatus;
+  late_minutes: number;
+  out_via: "self" | "gate";
+  out_gate: string | null;
+}
+
+export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";
+
+export interface AdminScan {
+  id: number;
+  name: string;
+  roll_no: string | null;
+  gate: string | null;
+  direction: "out" | "in";
+  result: ScanResult;
+  distance_m: number | null;
+  accuracy_m: number | null;
+  scanned_at: string;
+}
+
+export interface AdminScanPage {
+  items: AdminScan[];
+  next_before: number | null;
+}
+
+export interface Gate {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface GateCreated {
+  gate: Gate;
+  /** Shown once; only its hash is stored. */
+  kiosk_token: string;
+}
+
+export interface CampusSettings {
+  /** "HH:MM", IST */
+  curfew: string;
+  scan_retention_days: number;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  role: "student" | "admin";
+}
+
+/** What a gate kiosk shows (GET /kiosk/qr). */
+export interface KioskCode {
+  gate_id: string;
+  gate_name: string;
+  qr: string;
+  refresh_at: string;
 }

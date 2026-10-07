@@ -28,7 +28,7 @@ export function ReturnTimePicker({ legend }: { legend: string }): ReactNode {
         {QUICK.map((option) => (
           <label
             key={option.value}
-            className="flex min-h-14 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-2 text-center text-sm font-bold text-ink transition has-[:checked]:border-pine has-[:checked]:bg-pine has-[:checked]:text-on-pine has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-lantern"
+            className="flex min-h-14 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-2 text-center text-sm font-bold text-ink transition has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
           >
             <input
               type="radio"
@@ -51,11 +51,11 @@ export function ReturnTimePicker({ legend }: { legend: string }): ReactNode {
             value={time}
             onChange={(event) => setTime(event.target.value)}
             required
-            className="min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink focus:border-pine focus:outline-none"
+            className="min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink focus:border-accent focus:outline-none"
           />
         </label>
       )}
-      <p className="text-sm text-stone" aria-live="polite">
+      <p className="text-sm text-muted" aria-live="polite">
         {now === 0 ? (
           <span aria-hidden="true">&nbsp;</span>
         ) : preview ? (

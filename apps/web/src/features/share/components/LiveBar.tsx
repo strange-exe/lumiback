@@ -27,12 +27,12 @@ export function LiveBar(): ReactNode {
   return (
     <Link
       href="/share"
-      className="block bg-pine text-on-pine transition hover:brightness-110 active:brightness-95"
+      className="block bg-accent text-on-accent transition hover:brightness-110 active:brightness-95"
     >
       <span className="mx-auto flex min-h-11 max-w-xl items-center gap-3 px-5 py-2 text-sm">
         <span
           aria-hidden="true"
-          className={`size-2 shrink-0 rounded-full ${problem ? "bg-on-pine/50" : "bg-lantern"}`}
+          className={`size-2 shrink-0 rounded-full ${problem ? "bg-on-accent/50" : "bg-accent"}`}
         />
         <span className="min-w-0 flex-1 truncate">
           <strong>{problem ? "Sharing paused" : "Sharing your location"}</strong>

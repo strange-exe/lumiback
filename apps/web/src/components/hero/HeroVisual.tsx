@@ -76,7 +76,7 @@ export function HeroVisual({ className = "" }: { className?: string }): ReactNod
       {/* Soft floor light behind the object, so it sits in space rather than on a flat page. */}
       <div
         aria-hidden="true"
-        className="absolute inset-[8%] rounded-full bg-[radial-gradient(closest-side,var(--pine-soft),transparent)] opacity-80"
+        className="absolute inset-[8%] rounded-full bg-[radial-gradient(closest-side,var(--accent-soft),transparent)] opacity-80"
       />
       <picture>
         <source srcSet="/hero/campus-dark.webp" media="(prefers-color-scheme: dark)" />

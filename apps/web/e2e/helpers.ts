@@ -2,11 +2,15 @@ import { expect, type BrowserContext, type Page } from "@playwright/test";
 
 /** Seeded by backend/scripts/e2e_server.py into the local *_test database only. */
 export const STUDENT = { email: "e2e@geu.ac.in", password: "lantern-at-dusk-2029" };
+export const ADMIN = { email: "e2e-admin@geu.ac.in", password: "lantern-at-dusk-2029" };
+/** The seeded "North Gate" kiosk's device token (see e2e_server.py). */
+export const KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000";
+export const API = "http://127.0.0.1:8100";
 
-export async function signIn(page: Page): Promise<void> {
+export async function signIn(page: Page, who = STUDENT): Promise<void> {
   await page.goto("/sign-in");
-  await page.getByLabel("University email").fill(STUDENT.email);
-  await page.getByLabel("Password").fill(STUDENT.password);
+  await page.getByLabel("University email").fill(who.email);
+  await page.getByLabel("Password").fill(who.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/home$/);
 }

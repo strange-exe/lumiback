@@ -26,7 +26,7 @@ export function UpdateReturnForm(): ReactNode {
   const [state, action] = useActionState(updateReturn, INITIAL);
   return (
     <details className="group rounded-control">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center font-bold text-pine underline-offset-4 hover:underline">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center font-bold text-accent underline-offset-4 hover:underline">
         Running late? Update your time
       </summary>
       <form action={action} className="mt-3 flex flex-col gap-4 border-t border-line pt-4">

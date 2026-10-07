@@ -18,7 +18,7 @@ export default async function HomePage(): Promise<ReactNode> {
   return (
     <section aria-labelledby="checkout-heading" className="flex flex-col gap-6">
       <div>
-        <p className="font-display text-lg text-stone">Hi {user.name.split(" ")[0]},</p>
+        <p className="font-display text-lg text-muted">Hi {user.name.split(" ")[0]},</p>
         <h1 id="checkout-heading" className="font-display text-title text-ink">
           Heading out?
         </h1>

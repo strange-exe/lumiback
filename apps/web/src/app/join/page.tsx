@@ -14,7 +14,7 @@ export default async function JoinPage(): Promise<ReactNode> {
     <AuthShell>
       <div>
         <h1 className="font-display text-title text-ink">Follow someone home</h1>
-        <p className="mt-2 text-stone">
+        <p className="mt-2 text-muted">
           Enter the code a Lumiback student sent you. They&apos;ll approve you before you see their
           location, and it stops when they stop sharing.
         </p>

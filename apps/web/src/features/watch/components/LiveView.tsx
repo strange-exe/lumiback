@@ -82,7 +82,7 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   const paused = recordedAt !== null && now > 0 && now - recordedAt > STALE_MS;
 
   if (phase === "connecting") {
-    return <p className="text-stone">Connecting…</p>;
+    return <p className="text-muted">Connecting…</p>;
   }
 
   if (phase === "pending") {
@@ -92,7 +92,7 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
         <h1 id="watch-heading" className="font-display text-title text-ink">
           Waiting for approval
         </h1>
-        <p className="text-stone">
+        <p className="text-muted">
           We&apos;ve asked them. Keep this page open: it updates by itself the moment they say yes.
         </p>
       </section>
@@ -106,12 +106,12 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
         <h1 id="watch-heading" className="font-display text-title text-ink">
           {phase === "ended" ? endedText(reason, name) : "This share isn't available"}
         </h1>
-        <p className="text-stone">
+        <p className="text-muted">
           {phase === "ended"
             ? "Their location is no longer visible to you."
             : "It may have ended, or this browser hasn't joined it. Ask them for a new code."}
         </p>
-        <Link href="/join" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/join" className="font-bold text-accent underline-offset-4 hover:underline">
           Enter a new code
         </Link>
       </section>
@@ -124,14 +124,14 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
         <h1 id="watch-heading" className="font-display text-title text-ink">
           Can&apos;t reach Lumiback
         </h1>
-        <p className="text-stone">Check your connection, then try again.</p>
+        <p className="text-muted">Check your connection, then try again.</p>
         <button
           type="button"
           onClick={() => {
             setPhase("connecting");
             setConnection((n) => n + 1);
           }}
-          className="min-h-12 rounded-control bg-pine px-5 font-bold text-on-pine hover:brightness-110"
+          className="min-h-12 rounded-control bg-accent px-5 font-bold text-on-accent hover:brightness-110"
         >
           Try again
         </button>
@@ -148,10 +148,10 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   return (
     <section aria-labelledby="watch-heading" className="flex flex-col gap-5">
       <div>
-        <p className="flex items-center gap-2 text-sm font-bold text-pine">
+        <p className="flex items-center gap-2 text-sm font-bold text-accent">
           <span
             aria-hidden="true"
-            className={`size-2.5 rounded-full ${location && !paused ? "bg-lantern" : "bg-stone"}`}
+            className={`size-2.5 rounded-full ${location && !paused ? "bg-accent" : "bg-muted"}`}
           />
           <span aria-live="polite">{status}</span>
         </p>
@@ -159,7 +159,7 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
           {share ? `${share.sharer.name}'s way back` : "Live location"}
         </h1>
         {share && (
-          <p className="mt-1 text-stone">Shared with you until {formatTime(share.ends_at)}.</p>
+          <p className="mt-1 text-muted">Shared with you until {formatTime(share.ends_at)}.</p>
         )}
       </div>
       <LiveMap
@@ -176,12 +176,12 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
           href={`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="self-start font-bold text-pine underline-offset-4 hover:underline"
+          className="self-start font-bold text-accent underline-offset-4 hover:underline"
         >
           Open in Google Maps
         </a>
       )}
-      <p className="text-sm text-stone">
+      <p className="text-sm text-muted">
         They can see that you&apos;re following, and can stop it at any time.
       </p>
     </section>

@@ -15,13 +15,13 @@ export function DeleteAccountForm(): ReactNode {
   const [state, action] = useActionState(deleteAccount, INITIAL);
   return (
     <details className="group rounded-sheet border border-line bg-surface">
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 font-bold text-ember">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 font-bold text-danger">
         Delete account
         <CaretDown
           size={18}
           weight="bold"
           aria-hidden="true"
-          className="text-stone transition-transform group-open:rotate-180"
+          className="text-muted transition-transform group-open:rotate-180"
         />
       </summary>
       <form action={action} className="flex flex-col gap-4 border-t border-line px-5 pb-5 pt-4">

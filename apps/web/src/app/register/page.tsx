@@ -11,7 +11,7 @@ export default function RegisterPage(): ReactNode {
     <AuthShell>
       <div>
         <h1 className="font-display text-title text-ink">Create your account</h1>
-        <p className="mt-2 text-stone">
+        <p className="mt-2 text-muted">
           Sign up with your university email. We&apos;ll send a code to confirm it.
         </p>
       </div>

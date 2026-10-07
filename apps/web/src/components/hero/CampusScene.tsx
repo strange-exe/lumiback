@@ -136,7 +136,7 @@ function Pin({ palette, still }: { palette: ScenePalette; still: boolean }): Rea
       <group ref={group} position={[0, 1.15, 0]}>
         <mesh castShadow>
           <sphereGeometry args={[0.24, 32, 24]} />
-          <Clay color={palette.pin} emissive={palette.glow} intensity={0.25} />
+          <Clay color={palette.pin} emissive={palette.pin} intensity={0.35} />
         </mesh>
         <mesh position={[0, -0.3, 0]} rotation={[Math.PI, 0, 0]} castShadow>
           <coneGeometry args={[0.17, 0.36, 32]} />

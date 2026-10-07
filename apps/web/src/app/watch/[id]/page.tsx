@@ -20,7 +20,7 @@ export default async function WatchPage({ params }: PageProps<"/watch/[id]">): P
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-8 px-5 py-6">
-      <Link href="/" className="self-start font-display text-xl text-pine">
+      <Link href="/" className="self-start font-display text-xl text-accent">
         Lumiback
       </Link>
       <LiveView sessionId={id} />

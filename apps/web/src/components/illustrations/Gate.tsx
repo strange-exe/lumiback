@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Clay, ClayDefs } from "@/components/illustrations/ClayShading";
 
-/** A campus gate at dusk, in clay: doors open, a path leading out, a lantern on the arch. */
+/** A campus gate at night, in clay: doors open, a path leading out, a lantern on the arch. */
 export function Gate({ className }: { className?: string }): ReactNode {
   const id = "gate";
   return (
@@ -10,7 +10,7 @@ export function Gate({ className }: { className?: string }): ReactNode {
       <ClayDefs id={id} />
 
       {/* Crescent moon: dusk */}
-      <circle cx="204" cy="26" r="11" fill="var(--lantern-glow)" />
+      <circle cx="204" cy="26" r="11" fill="var(--accent-glow)" />
       <circle cx="209" cy="22" r="10" fill="var(--page)" />
 
       <ellipse cx="120" cy="158" rx="112" ry="10" fill={`url(#${id}-ground)`} />
@@ -26,13 +26,13 @@ export function Gate({ className }: { className?: string }): ReactNode {
       {/* The path out, narrowing into the distance */}
       <path d="M100 158 L113 108 H127 L140 158 Z" fill="var(--line)" />
 
-      {/* Pillars with pine caps */}
+      {/* Pillars with dark caps */}
       {[30, 186].map((x) => (
         <g key={x}>
           <Clay id={id} fill="var(--surface)">
             {(paint) => <rect x={x} y="46" width="24" height="110" rx="7" fill={paint} />}
           </Clay>
-          <Clay id={id} fill="var(--pine)">
+          <Clay id={id} fill="var(--ink)">
             {(paint) => <rect x={x - 4} y="38" width="32" height="12" rx="6" fill={paint} />}
           </Clay>
         </g>
@@ -42,19 +42,19 @@ export function Gate({ className }: { className?: string }): ReactNode {
       <path
         d="M50 50 Q120 0 190 50"
         fill="none"
-        stroke="var(--pine)"
+        stroke="var(--ink)"
         strokeWidth="8"
         strokeLinecap="round"
       />
 
       {/* Door leaves, swung open towards us */}
-      <Clay id={id} fill="var(--pine-soft)">
+      <Clay id={id} fill="var(--accent-soft)">
         {(paint) => <path d="M54 64 L84 74 V146 L54 154 Z" fill={paint} />}
       </Clay>
-      <Clay id={id} fill="var(--pine-soft)">
+      <Clay id={id} fill="var(--accent-soft)">
         {(paint) => <path d="M186 64 L156 74 V146 L186 154 Z" fill={paint} />}
       </Clay>
-      <g stroke="var(--pine)" strokeWidth="2" strokeLinecap="round" opacity="0.55">
+      <g stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" opacity="0.35">
         <line x1="64" y1="70" x2="64" y2="150" />
         <line x1="74" y1="73" x2="74" y2="148" />
         <line x1="176" y1="70" x2="176" y2="150" />
@@ -62,11 +62,11 @@ export function Gate({ className }: { className?: string }): ReactNode {
       </g>
 
       {/* Lantern hanging from the arch */}
-      <line x1="120" y1="25" x2="120" y2="40" stroke="var(--pine)" strokeWidth="2.5" />
-      <Clay id={id} fill="var(--lantern)">
+      <line x1="120" y1="25" x2="120" y2="40" stroke="var(--ink)" strokeWidth="2.5" />
+      <Clay id={id} fill="var(--ink)">
         {(paint) => <rect x="111" y="40" width="18" height="22" rx="6" fill={paint} />}
       </Clay>
-      <rect x="115" y="44" width="10" height="14" rx="4" fill="var(--lantern-glow)" />
+      <rect x="115" y="44" width="10" height="14" rx="4" fill="var(--accent)" />
     </svg>
   );
 }

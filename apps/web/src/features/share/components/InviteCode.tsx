@@ -55,12 +55,12 @@ export function InviteCode({ sessionId }: { sessionId: string }): ReactNode {
       </h2>
       {code ? (
         <div className="mt-3 flex flex-col gap-3">
-          <p className="rounded-control border-2 border-dashed border-pine bg-pine-soft py-4 text-center font-mono text-3xl font-bold tracking-[0.2em] text-pine">
+          <p className="rounded-control border-2 border-dashed border-accent bg-accent-soft py-4 text-center font-mono text-3xl font-bold tracking-[0.2em] text-accent">
             <span aria-hidden="true">{code.code}</span>
             {/* Read out one character at a time, so it can be repeated over the phone. */}
             <span className="sr-only">Join code: {code.code.split("").join(" ")}</span>
           </p>
-          <p className="text-sm text-stone">
+          <p className="text-sm text-muted">
             Works once, until {formatTime(code.expires_at)}. You&apos;ll approve them before they
             see anything.
           </p>
@@ -68,7 +68,7 @@ export function InviteCode({ sessionId }: { sessionId: string }): ReactNode {
             <button
               type="button"
               onClick={() => void shareIt()}
-              className="min-h-12 flex-1 rounded-control bg-pine px-5 font-bold text-on-pine hover:brightness-110"
+              className="min-h-12 flex-1 rounded-control bg-accent px-5 font-bold text-on-accent hover:brightness-110"
             >
               Send invite
             </button>
@@ -76,32 +76,32 @@ export function InviteCode({ sessionId }: { sessionId: string }): ReactNode {
               type="button"
               onClick={create}
               disabled={pending}
-              className="min-h-12 rounded-control px-4 font-bold text-pine ring-1 ring-line hover:ring-pine/40 disabled:opacity-60"
+              className="min-h-12 rounded-control px-4 font-bold text-accent ring-1 ring-line hover:ring-accent/40 disabled:opacity-60"
             >
               New code
             </button>
           </div>
-          <p aria-live="polite" className="text-sm font-bold text-sage empty:hidden">
+          <p aria-live="polite" className="text-sm font-bold text-good empty:hidden">
             {copied ? "Invite copied. Paste it in a chat." : ""}
           </p>
         </div>
       ) : (
         <div className="mt-2 flex flex-col gap-3">
-          <p className="text-stone">
+          <p className="text-muted">
             Get a one-time code for a friend or family member. No account needed.
           </p>
           <button
             type="button"
             onClick={create}
             disabled={pending}
-            className="min-h-12 rounded-control px-5 font-bold text-pine ring-1 ring-line hover:ring-pine/40 disabled:opacity-60"
+            className="min-h-12 rounded-control px-5 font-bold text-accent ring-1 ring-line hover:ring-accent/40 disabled:opacity-60"
           >
             {pending ? "Making a code…" : "Get a join code"}
           </button>
         </div>
       )}
       {error && (
-        <p role="alert" className="mt-2 text-sm font-bold text-ember">
+        <p role="alert" className="mt-2 text-sm font-bold text-danger">
           {error}
         </p>
       )}

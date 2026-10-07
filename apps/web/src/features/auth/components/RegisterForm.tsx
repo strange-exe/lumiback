@@ -49,16 +49,16 @@ export function RegisterForm(): ReactNode {
       />
       <FormError message={state.error} />
       <SubmitButton pendingLabel="Creating account…">Create account</SubmitButton>
-      <p className="text-center text-sm text-stone">
+      <p className="text-center text-sm text-muted">
         By creating an account you agree to how we handle your data, described in our{" "}
-        <Link href="/privacy" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/privacy" className="font-bold text-accent underline-offset-4 hover:underline">
           privacy notice
         </Link>
         .
       </p>
-      <p className="text-center text-sm text-stone">
+      <p className="text-center text-sm text-muted">
         Already registered?{" "}
-        <Link href="/sign-in" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/sign-in" className="font-bold text-accent underline-offset-4 hover:underline">
           Sign in
         </Link>
       </p>

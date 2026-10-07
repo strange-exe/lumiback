@@ -26,8 +26,8 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
       <section className="flex flex-col items-center gap-4 py-10 text-center">
         <Lantern lit={false} className="h-24 w-20" />
         <h1 className="font-display text-title text-ink">No outings yet</h1>
-        <p className="max-w-xs text-stone">Your trips will appear here once you check out.</p>
-        <Link href="/home" className="font-bold text-pine underline-offset-4 hover:underline">
+        <p className="max-w-xs text-muted">Your trips will appear here once you check out.</p>
+        <Link href="/home" className="font-bold text-accent underline-offset-4 hover:underline">
           Plan an outing
         </Link>
       </section>
@@ -49,7 +49,7 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
           { label: "Late returns", value: String(summary.returned_late) },
         ].map((stat) => (
           <div key={stat.label} className="flex flex-col-reverse gap-0.5 px-3 first:pl-0">
-            <dt className="text-sm text-stone">{stat.label}</dt>
+            <dt className="text-sm text-muted">{stat.label}</dt>
             <dd className="font-display text-title tabular-nums text-ink">{stat.value}</dd>
           </div>
         ))}
@@ -58,7 +58,7 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
       {page.next_before && (
         <Link
           href={`/history?before=${encodeURIComponent(page.next_before)}`}
-          className="self-center font-bold text-pine underline-offset-4 hover:underline"
+          className="self-center font-bold text-accent underline-offset-4 hover:underline"
         >
           Older outings
         </Link>

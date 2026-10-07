@@ -33,9 +33,9 @@ export function SignInForm({ email }: { email?: string }): ReactNode {
       />
       <FormError message={state.error} />
       <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
-      <p className="text-center text-sm text-stone">
+      <p className="text-center text-sm text-muted">
         New here?{" "}
-        <Link href="/register" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/register" className="font-bold text-accent underline-offset-4 hover:underline">
           Create your account
         </Link>
       </p>

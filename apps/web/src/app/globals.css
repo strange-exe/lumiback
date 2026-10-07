@@ -1,44 +1,57 @@
 @import "tailwindcss";
 
-/* "Dusk Courtyard": one dominant pine, one lantern accent, warm neutrals. */
+/* White, black and deep cobalt: the same tokens as the mobile app (apps/mobile/src/ui/theme.ts).
+   Cool monochrome neutrals with exactly one accent; red and green are semantic only. */
 :root {
-  --page: #f4efe6;
-  --surface: #fbf8f2;
-  --ink: #1b2422;
-  --stone: #5c605a;
-  --line: #e3dccf;
-  --pine: #234e46;
-  --on-pine: #f4efe6;
-  --pine-soft: #dbe7e2;
-  --lantern: #e59a3a;
-  --lantern-glow: #f7d9a8;
-  --lantern-soft: #f8e6cc;
-  --ember: #ad432c;
-  --ember-soft: #f5ded6;
-  --sage: #3f7253;
-  --sage-soft: #dce9e0;
-  --clay-shadow: #c9bfae;
+  --page: #fafafb;
+  --surface: #ffffff;
+  --ink: #0b0c10;
+  --muted: #5b606b;
+  --line: #e7e8ec;
+  --accent: #1f3fd1;
+  --on-accent: #ffffff;
+  --accent-soft: #e9edfc;
+  --accent-glow: #b9c6ff;
+  --danger: #b8322a; /* AA (4.5:1) on danger-soft too */
+  --danger-soft: #fbe6e4;
+  --good: #187349; /* AA on good-soft too */
+  --good-soft: #e3f3eb;
+  /* The dark status panel (and the gate kiosk): near-black in light mode, lifted in dark. */
+  --hero: #0b0c10;
+  --on-hero: #f5f6f8;
+  --hero-muted: #9aa0ad;
+  --hero-line: #262932;
+  --hero-accent: #6d86ff;
+  --hero-danger: #ff8a7a;
+  --clay-shadow: #c9ccd6;
+  --tint: 11, 12, 16; /* rgb of ink, for shadows */
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #121a18;
-    --surface: #1a2421;
-    --ink: #ede7dc;
-    --stone: #a9aea6;
-    --line: #2d3935;
-    --pine: #8fc1b5;
-    --on-pine: #0f1f1b;
-    --pine-soft: #1f3530;
-    --lantern: #f0a94b;
-    --lantern-glow: #ffd99c;
-    --lantern-soft: #3a2c19;
-    --ember: #ee927a;
-    --ember-soft: #3a211b;
-    --sage: #93c4a3;
-    --sage-soft: #1d3326;
-    --clay-shadow: #0b100f;
+    --page: #08090c;
+    --surface: #121318;
+    --ink: #f2f3f5;
+    --muted: #9ca1ac;
+    --line: #23262e;
+    --accent: #5b78ff;
+    /* White on this cobalt is only 3.8:1; near-black is 5.3:1 (WCAG AA). */
+    --on-accent: #08090c;
+    --accent-soft: #10152b;
+    --accent-glow: #9fb0ff;
+    --danger: #ff7a6b;
+    --danger-soft: #2e1614;
+    --good: #5fd39b;
+    --good-soft: #12261d;
+    --hero: #14161c;
+    --on-hero: #f2f3f5;
+    --hero-muted: #9ca1ac;
+    --hero-line: #2a2e38;
+    --hero-accent: #6d86ff;
+    --hero-danger: #ff8a7a;
+    --clay-shadow: #050608;
+    --tint: 0, 0, 0;
     color-scheme: dark;
   }
 }
@@ -47,18 +60,22 @@
   --color-page: var(--page);
   --color-surface: var(--surface);
   --color-ink: var(--ink);
-  --color-stone: var(--stone);
+  --color-muted: var(--muted);
   --color-line: var(--line);
-  --color-pine: var(--pine);
-  --color-on-pine: var(--on-pine);
-  --color-pine-soft: var(--pine-soft);
-  --color-lantern: var(--lantern);
-  --color-lantern-glow: var(--lantern-glow);
-  --color-lantern-soft: var(--lantern-soft);
-  --color-ember: var(--ember);
-  --color-ember-soft: var(--ember-soft);
-  --color-sage: var(--sage);
-  --color-sage-soft: var(--sage-soft);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-glow: var(--accent-glow);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-hero: var(--hero);
+  --color-on-hero: var(--on-hero);
+  --color-hero-muted: var(--hero-muted);
+  --color-hero-line: var(--hero-line);
+  --color-hero-accent: var(--hero-accent);
+  --color-hero-danger: var(--hero-danger);
 
   --font-display: var(--font-geist), system-ui, sans-serif;
   --font-body: var(--font-geist), system-ui, sans-serif;
@@ -87,7 +104,7 @@ body {
 }
 
 :focus-visible {
-  outline: 3px solid var(--lantern);
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
   border-radius: 6px;
 }
@@ -109,6 +126,22 @@ body {
   transform-origin: 50% 80%;
 }
 
+/* Gate kiosk: the bar under the code drains until the next one. */
+@keyframes kiosk-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.kiosk-countdown {
+  animation-name: kiosk-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -127,7 +160,7 @@ body {
 
 /* Calm the standard OSM colours to sit with the page; dark mode re-lights them, not just dims. */
 .live-tiles {
-  filter: saturate(0.45) sepia(0.12) brightness(1.03);
+  filter: saturate(0.2) contrast(0.96) brightness(1.04);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -138,13 +171,13 @@ body {
 
 .live-map.leaflet-container .leaflet-control-attribution {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
-  color: var(--stone);
+  color: var(--muted);
   font-size: 11px;
 }
 
 .live-map.leaflet-container .leaflet-control-attribution a,
 .live-map.leaflet-container .leaflet-bar a {
-  color: var(--pine);
+  color: var(--accent);
 }
 
 .live-map.leaflet-container .leaflet-bar a {
@@ -155,27 +188,27 @@ body {
   line-height: 36px;
 }
 
-/* The person: a lantern-coloured dot with a soft halo. Greys out when the share is paused. */
+/* The person: an accent dot with a soft halo. Greys out when the share is paused. */
 .live-dot {
   border-radius: 9999px;
-  background: var(--lantern);
+  background: var(--accent);
   border: 3px solid var(--surface);
   box-shadow:
-    0 0 0 6px color-mix(in srgb, var(--lantern) 30%, transparent),
+    0 0 0 6px color-mix(in srgb, var(--accent) 30%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.3);
   animation: live-halo 2.4s ease-out infinite;
 }
 
 .live-dot.is-paused {
-  background: var(--stone);
+  background: var(--muted);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   animation: none;
 }
 
 .live-accuracy {
-  fill: var(--pine);
+  fill: var(--accent);
   fill-opacity: 0.12;
-  stroke: var(--pine);
+  stroke: var(--accent);
   stroke-opacity: 0.45;
   stroke-width: 1.5;
 }
@@ -183,12 +216,12 @@ body {
 @keyframes live-halo {
   0% {
     box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--lantern) 45%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent),
       0 2px 6px rgba(0, 0, 0, 0.3);
   }
   100% {
     box-shadow:
-      0 0 0 14px color-mix(in srgb, var(--lantern) 0%, transparent),
+      0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent),
       0 2px 6px rgba(0, 0, 0, 0.3);
   }
 }
@@ -196,12 +229,12 @@ body {
 /* ---------- landing depth and motion ---------- */
 
 /* Cards sit slightly above the page; on hover they rise a little more. Shadows are tinted with
-   pine so depth reads as light, not grime. */
+   ink so depth reads as light, not grime. */
 .lift {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.55) inset,
-    0 1px 2px rgba(35, 78, 70, 0.06),
-    0 18px 40px -24px rgba(35, 78, 70, 0.35);
+    0 1px 2px rgba(var(--tint), 0.06),
+    0 18px 40px -24px rgba(var(--tint), 0.35);
   transition:
     transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -211,8 +244,8 @@ body {
   transform: translateY(-3px);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.55) inset,
-    0 2px 4px rgba(35, 78, 70, 0.08),
-    0 28px 56px -28px rgba(35, 78, 70, 0.45);
+    0 2px 4px rgba(var(--tint), 0.08),
+    0 28px 56px -28px rgba(var(--tint), 0.45);
 }
 
 @media (prefers-color-scheme: dark) {

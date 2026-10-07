@@ -1,13 +1,14 @@
 import { defineConfig } from "@playwright/test";
 
 export const STUDENT_STATE = "e2e/.auth/student.json";
+export const ADMIN_STATE = "e2e/.auth/admin.json";
 
 /**
  * End-to-end and design checks against the real stack:
  *   - FastAPI on :8100 using the LOCAL test database (backend/scripts/e2e_server.py),
  *     started fresh for every run so data and rate limits never leak between runs
  *   - Next.js on :3000
- * The student signs in once (setup project); tests reuse that session, as a real browser would,
+ * The student and the admin each sign in once (setup project); tests reuse that session, as a real browser would,
  * instead of logging in dozens of times (which the backend would rightly rate-limit).
  */
 export default defineConfig({

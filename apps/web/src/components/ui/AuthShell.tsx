@@ -8,7 +8,7 @@ export function AuthShell({ children }: { children: ReactNode }): ReactNode {
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5">
       <header className="flex h-16 items-center">
-        <Link href="/" className="font-display text-xl text-pine">
+        <Link href="/" className="font-display text-xl text-accent">
           Lumiback
         </Link>
       </header>

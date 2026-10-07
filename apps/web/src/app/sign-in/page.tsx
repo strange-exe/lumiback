@@ -23,15 +23,15 @@ export default async function SignInPage({ searchParams }: PageProps): Promise<R
           <h1 id="sign-in-heading" className="font-display text-title text-ink">
             Sign in
           </h1>
-          <p className="mt-2 text-stone">Welcome back. Use your university email.</p>
+          <p className="mt-2 text-muted">Welcome back. Use your university email.</p>
         </div>
         {deleted && (
-          <p role="status" className="rounded-control bg-sage-soft px-4 py-3 text-ink">
+          <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
             Your account and all its data were deleted.
           </p>
         )}
         {verified && (
-          <p role="status" className="rounded-control bg-sage-soft px-4 py-3 text-ink">
+          <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
             Email verified. Sign in to continue.
           </p>
         )}

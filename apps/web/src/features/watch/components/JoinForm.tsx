@@ -38,7 +38,7 @@ export function JoinForm({ signedInAs }: { signedInAs: string | null }): ReactNo
         className="font-mono text-lg tracking-widest"
       />
       {signedInAs ? (
-        <p className="text-sm text-stone">
+        <p className="text-sm text-muted">
           You&apos;re joining as <strong className="text-ink">{signedInAs}</strong>.
         </p>
       ) : (

@@ -26,7 +26,7 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <p className="min-w-0 flex-1">
           <span className="font-bold text-ink">{who}</span>
-          <span className="block text-sm text-stone">
+          <span className="block text-sm text-muted">
             {viewer.status === "pending" ? "wants to see your location" : "can see your location"}
           </span>
         </p>
@@ -37,7 +37,7 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
               disabled={pending}
               onClick={() => act(approveViewer)}
               aria-label={`Approve ${who}`}
-              className="min-h-11 rounded-control bg-pine px-4 text-sm font-bold text-on-pine hover:brightness-110 disabled:opacity-60"
+              className="min-h-11 rounded-control bg-accent px-4 text-sm font-bold text-on-accent hover:brightness-110 disabled:opacity-60"
             >
               Approve
             </button>
@@ -46,7 +46,7 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
               disabled={pending}
               onClick={() => act(removeViewer)}
               aria-label={`Decline ${who}`}
-              className="min-h-11 rounded-control px-4 text-sm font-bold text-pine ring-1 ring-line hover:ring-pine/40 disabled:opacity-60"
+              className="min-h-11 rounded-control px-4 text-sm font-bold text-accent ring-1 ring-line hover:ring-accent/40 disabled:opacity-60"
             >
               Decline
             </button>
@@ -57,14 +57,14 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
             disabled={pending}
             onClick={() => act(removeViewer)}
             aria-label={`Remove ${who}`}
-            className="min-h-11 rounded-control px-3 text-sm font-bold text-ember underline-offset-4 hover:underline disabled:opacity-60"
+            className="min-h-11 rounded-control px-3 text-sm font-bold text-danger underline-offset-4 hover:underline disabled:opacity-60"
           >
             Remove
           </button>
         )}
       </div>
       {error && (
-        <p role="alert" className="text-sm font-bold text-ember">
+        <p role="alert" className="text-sm font-bold text-danger">
           {error}
         </p>
       )}
@@ -90,7 +90,7 @@ export function ViewerList({
           <h2 id="requests-heading" className="font-display text-xl text-ink">
             Waiting for you
           </h2>
-          <p className="text-sm text-stone">
+          <p className="text-sm text-muted">
             They used your code. They see nothing until you approve.
           </p>
           <ul className="mt-2">
@@ -105,7 +105,7 @@ export function ViewerList({
           Who can see you
         </h2>
         {watching.length === 0 ? (
-          <p className="mt-1 text-stone">Nobody yet. Send someone a join code.</p>
+          <p className="mt-1 text-muted">Nobody yet. Send someone a join code.</p>
         ) : (
           <ul className="mt-2">
             {watching.map((v) => (

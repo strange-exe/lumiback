@@ -25,7 +25,7 @@ function pointAt(fraction: number): { x: number; y: number } {
 
 /**
  * The signature element: an arc from when you left to when you're due back, with the lantern
- * travelling along it. Advances once a minute; overdue turns the whole arc ember.
+ * travelling along it. Advances once a minute; overdue turns the whole arc red.
  */
 export function ReturnArc({ leftAt, expectedAt, overdue, serverNow }: ReturnArcProps): ReactNode {
   const [now, setNow] = useState(() => new Date(serverNow));
@@ -65,15 +65,15 @@ export function ReturnArc({ leftAt, expectedAt, overdue, serverNow }: ReturnArcP
           <path
             d={travelled}
             fill="none"
-            stroke={overdue ? "var(--ember)" : "var(--pine)"}
+            stroke={overdue ? "var(--danger)" : "var(--accent)"}
             strokeWidth="10"
             strokeLinecap="round"
           />
         )}
-        <text x="20" y="149" textAnchor="middle" className="fill-stone font-display text-[12px]">
+        <text x="20" y="149" textAnchor="middle" className="fill-muted font-display text-[12px]">
           {formatTime(leftAt)}
         </text>
-        <text x="240" y="149" textAnchor="middle" className="fill-stone font-display text-[12px]">
+        <text x="240" y="149" textAnchor="middle" className="fill-muted font-display text-[12px]">
           {formatTime(expectedAt)}
         </text>
       </svg>

@@ -22,17 +22,17 @@ export default async function SharePage(): Promise<ReactNode> {
           Shared with you
         </h2>
         {watching.length === 0 ? (
-          <p className="text-stone">Nobody is sharing with you right now.</p>
+          <p className="text-muted">Nobody is sharing with you right now.</p>
         ) : (
           <ul>
             {watching.map((share) => (
               <li key={share.id} className="border-t border-line first:border-t-0">
                 <Link
                   href={`/watch/${share.id}`}
-                  className="flex min-h-12 items-center justify-between gap-3 py-2 hover:text-pine"
+                  className="flex min-h-12 items-center justify-between gap-3 py-2 hover:text-accent"
                 >
                   <span className="font-bold text-ink">{share.sharer.name}</span>
-                  <span className="text-sm text-stone">until {formatTime(share.ends_at)}</span>
+                  <span className="text-sm text-muted">until {formatTime(share.ends_at)}</span>
                 </Link>
               </li>
             ))}
@@ -40,7 +40,7 @@ export default async function SharePage(): Promise<ReactNode> {
         )}
         <Link
           href="/join"
-          className="mt-1 self-start font-bold text-pine underline-offset-4 hover:underline"
+          className="mt-1 self-start font-bold text-accent underline-offset-4 hover:underline"
         >
           Have a join code?
         </Link>

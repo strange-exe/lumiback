@@ -97,7 +97,7 @@ export function LiveMap({ point, paused, label }: LiveMapProps): ReactNode {
         ref={container}
         role="region"
         aria-label={label}
-        className="live-map h-72 w-full overflow-hidden rounded-sheet border border-line bg-pine-soft sm:h-80"
+        className="live-map h-72 w-full overflow-hidden rounded-sheet border border-line bg-accent-soft sm:h-80"
       />
       <figcaption className="sr-only">{label}</figcaption>
     </figure>

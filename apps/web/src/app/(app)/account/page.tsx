@@ -25,14 +25,14 @@ export default async function AccountPage(): Promise<ReactNode> {
       <dl className="flex flex-col divide-y divide-line rounded-sheet border border-line bg-surface">
         {rows.map(([label, value]) => (
           <div key={label} className="flex flex-wrap justify-between gap-x-6 gap-y-1 px-5 py-4">
-            <dt className="text-stone">{label}</dt>
+            <dt className="text-muted">{label}</dt>
             <dd className="break-all font-bold text-ink">{value}</dd>
           </div>
         ))}
       </dl>
-      <p className="text-stone">
+      <p className="text-muted">
         How your data is handled:{" "}
-        <Link href="/privacy" className="font-bold text-pine underline-offset-4 hover:underline">
+        <Link href="/privacy" className="font-bold text-accent underline-offset-4 hover:underline">
           privacy notice
         </Link>
         .

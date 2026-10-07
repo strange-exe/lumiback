@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ApiError, callBackend } from "@/lib/backend";
 import {
@@ -52,4 +52,11 @@ export async function requireUser(): Promise<{ user: User; token: string }> {
   const user = token ? await currentUser() : null;
   if (!user || !token) redirect("/sign-in");
   return { user, token };
+}
+
+/** For admin pages. Students get a plain 404: the admin area's existence isn't advertised. */
+export async function requireAdmin(): Promise<{ user: User; token: string }> {
+  const session = await requireUser();
+  if (session.user.role !== "admin") notFound();
+  return session;
 }

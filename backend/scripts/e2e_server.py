@@ -5,7 +5,8 @@
 Uses TEST_DATABASE_URL (must be localhost and end in _test, see TestDbSettings) so end-to-end
 tests never touch the real database. --reset empties every table; --seed then adds two verified
 demo students (e2e@geu.ac.in, and e2e-delete@geu.ac.in for the account-deletion test) so
-tests can sign in without reading an email.
+tests can sign in without reading an email. It also adds an admin (e2e-admin@geu.ac.in) and one
+gate, "North Gate", whose kiosk token is fixed so the kiosk page can be opened directly.
 """
 
 import argparse
@@ -20,11 +21,14 @@ from sqlalchemy import create_engine, text  # noqa: E402
 
 from app.config import TestDbSettings  # noqa: E402
 from app.models import Base  # noqa: E402
+from app.security.gate_codes import hash_kiosk_token  # noqa: E402
 from app.security.passwords import hash_password  # noqa: E402
 
 E2E_EMAIL = "e2e@geu.ac.in"
 DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase this one
 E2E_PASSWORD = "lantern-at-dusk-2029"  # noqa: S105 - test-only, local *_test database
+ADMIN_EMAIL = "e2e-admin@geu.ac.in"
+KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000"  # noqa: S105 - test-only
 
 
 def reset_and_seed(url: str, seed: bool) -> None:
@@ -46,6 +50,20 @@ def reset_and_seed(url: str, seed: bool) -> None:
                     "VALUES ('Kabir Mehta', :email, :hash, now())"
                 ),
                 {"email": DELETABLE_EMAIL, "hash": hash_password(E2E_PASSWORD)},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO users (name, email, password_hash, role, email_verified_at) "
+                    "VALUES ('Asha Rawat', :email, :hash, 'admin', now())"
+                ),
+                {"email": ADMIN_EMAIL, "hash": hash_password(E2E_PASSWORD)},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO gates (name, lat, lng, radius_m, kiosk_token_hash) "
+                    "VALUES ('North Gate', 30.2687, 77.9947, 75, :hash)"
+                ),
+                {"hash": hash_kiosk_token(KIOSK_TOKEN)},
             )
     engine.dispose()
 

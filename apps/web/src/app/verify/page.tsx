@@ -19,7 +19,7 @@ export default async function VerifyPage({ searchParams }: PageProps): Promise<R
     <AuthShell>
       <div>
         <h1 className="font-display text-title text-ink">Check your inbox</h1>
-        <p className="mt-2 text-stone">
+        <p className="mt-2 text-muted">
           We sent a 6-digit code to <strong className="break-all text-ink">{email}</strong>. It
           expires in 15 minutes.
         </p>

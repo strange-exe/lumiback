@@ -35,7 +35,7 @@ export function VerifyForm({ email }: { email: string }): ReactNode {
         <SubmitButton variant="quiet" pendingLabel="Sending…">
           Send a new code
         </SubmitButton>
-        <p role="status" className="min-h-5 text-sm text-stone">
+        <p role="status" className="min-h-5 text-sm text-muted">
           {resent.error ?? resent.notice ?? ""}
         </p>
       </form>

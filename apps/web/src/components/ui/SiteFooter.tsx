@@ -5,10 +5,10 @@ import type { ReactNode } from "react";
 export function SiteFooter({ className = "" }: { className?: string }): ReactNode {
   return (
     <footer
-      className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line py-5 text-sm text-stone ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line py-5 text-sm text-muted ${className}`}
     >
       <span>&copy; {new Date().getFullYear()} Lumiback</span>
-      <Link href="/privacy" className="font-bold text-pine underline-offset-4 hover:underline">
+      <Link href="/privacy" className="font-bold text-accent underline-offset-4 hover:underline">
         Privacy
       </Link>
     </footer>

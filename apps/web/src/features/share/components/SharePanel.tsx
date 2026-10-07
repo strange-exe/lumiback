@@ -32,7 +32,7 @@ function StartShare(): ReactNode {
   return (
     <section aria-labelledby="share-heading" className="flex flex-col gap-6">
       {endedReason && (
-        <p role="status" className="rounded-control bg-sage-soft px-4 py-3 text-ink">
+        <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
           <strong>{ENDED[endedReason] ?? "Sharing ended."}</strong> Your location was deleted and
           nobody can see it now.
         </p>
@@ -41,7 +41,7 @@ function StartShare(): ReactNode {
         <h1 id="share-heading" className="font-display text-title text-ink">
           Share your way back
         </h1>
-        <p className="mt-2 text-stone">
+        <p className="mt-2 text-muted">
           Let someone follow your location live while this tab is open.
         </p>
       </div>
@@ -72,7 +72,7 @@ function StartShare(): ReactNode {
             {DURATIONS.map((option) => (
               <label
                 key={option.minutes}
-                className="flex min-h-14 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-2 text-center text-sm font-bold text-ink transition has-[:checked]:border-pine has-[:checked]:bg-pine has-[:checked]:text-on-pine has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-lantern"
+                className="flex min-h-14 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-2 text-center text-sm font-bold text-ink transition has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
               >
                 <input
                   type="radio"
@@ -87,17 +87,17 @@ function StartShare(): ReactNode {
             ))}
           </div>
         </fieldset>
-        <p role="alert" className="text-sm font-bold text-ember empty:hidden">
+        <p role="alert" className="text-sm font-bold text-danger empty:hidden">
           {error ?? problem ?? ""}
         </p>
         <button
           type="submit"
           aria-disabled={starting}
-          className="min-h-12 rounded-control bg-pine px-5 text-lg font-bold text-on-pine shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-110 aria-disabled:cursor-progress aria-disabled:opacity-75"
+          className="min-h-12 rounded-control bg-accent px-5 text-lg font-bold text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-110 aria-disabled:cursor-progress aria-disabled:opacity-75"
         >
           {starting ? "Finding your location…" : "Start sharing"}
         </button>
-        <p className="text-sm text-stone">Your browser will ask to use your location.</p>
+        <p className="text-sm text-muted">Your browser will ask to use your location.</p>
       </form>
     </section>
   );
@@ -119,22 +119,22 @@ function LiveShare(): ReactNode {
   return (
     <section aria-labelledby="live-heading" className="flex flex-col gap-6">
       <div>
-        <p className="flex items-center gap-2 text-sm font-bold text-pine">
+        <p className="flex items-center gap-2 text-sm font-bold text-accent">
           <span
             aria-hidden="true"
-            className={`size-2.5 rounded-full ${problem ? "bg-stone" : "bg-lantern"}`}
+            className={`size-2.5 rounded-full ${problem ? "bg-muted" : "bg-accent"}`}
           />
           <span aria-live="polite">{status}</span>
         </p>
         <h1 id="live-heading" className="mt-1 font-display text-title text-ink">
           You&apos;re sharing your location
         </h1>
-        <p className="mt-1 text-stone">
+        <p className="mt-1 text-muted">
           Until {formatTime(session.ends_at)} at the latest, or until you close this tab.
         </p>
       </div>
 
-      <p className="flex gap-3 rounded-control bg-lantern-soft px-4 py-3 text-sm leading-relaxed text-ink">
+      <p className="flex gap-3 rounded-control bg-accent-soft px-4 py-3 text-sm leading-relaxed text-ink">
         <DeviceMobile size={20} weight="duotone" aria-hidden="true" className="mt-0.5 shrink-0" />
         <span>
           {screenAwake
@@ -145,12 +145,12 @@ function LiveShare(): ReactNode {
       </p>
 
       {problem && (
-        <div role="alert" className="flex flex-col gap-3 rounded-control bg-ember-soft p-4">
+        <div role="alert" className="flex flex-col gap-3 rounded-control bg-danger-soft p-4">
           <p className="text-ink">{problem}</p>
           <button
             type="button"
             onClick={retry}
-            className="min-h-11 self-start rounded-control bg-surface px-4 font-bold text-pine ring-1 ring-line"
+            className="min-h-11 self-start rounded-control bg-surface px-4 font-bold text-accent ring-1 ring-line"
           >
             Try again
           </button>
@@ -179,14 +179,14 @@ function LiveShare(): ReactNode {
               setError(await stop());
             })
           }
-          className="min-h-12 rounded-control bg-ember px-5 text-lg font-bold text-surface hover:brightness-110 aria-disabled:opacity-75"
+          className="min-h-12 rounded-control bg-danger px-5 text-lg font-bold text-surface hover:brightness-110 aria-disabled:opacity-75"
         >
           {stopping ? "Stopping…" : "Stop sharing"}
         </button>
-        <p className="text-center text-sm text-stone">
+        <p className="text-center text-sm text-muted">
           Everyone loses access at once and your location is deleted.
         </p>
-        <p role="alert" className="text-sm font-bold text-ember empty:hidden">
+        <p role="alert" className="text-sm font-bold text-danger empty:hidden">
           {error ?? ""}
         </p>
       </div>

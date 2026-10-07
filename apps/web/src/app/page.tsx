@@ -14,9 +14,9 @@ export const metadata: Metadata = {
 };
 
 const PRIMARY =
-  "inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-pine px-6 font-bold text-on-pine shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_10px_24px_-10px_rgba(35,78,70,0.55)] transition hover:-translate-y-px hover:brightness-110 active:translate-y-0";
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_10px_24px_-10px_rgba(31,63,209,0.45)] transition hover:-translate-y-px hover:brightness-110 active:translate-y-0";
 const SECONDARY =
-  "inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-pine ring-1 ring-line transition hover:-translate-y-px hover:ring-pine/40 active:translate-y-0";
+  "inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-accent ring-1 ring-line transition hover:-translate-y-px hover:ring-accent/40 active:translate-y-0";
 
 /** A real, static slice of the app's UI (not a screenshot): the check-out form. */
 function ReturnChips(): ReactNode {
@@ -27,20 +27,20 @@ function ReturnChips(): ReactNode {
           <span
             key={label}
             className={`flex min-h-11 items-center justify-center rounded-control text-sm font-bold ${
-              i === 1 ? "bg-pine text-on-pine" : "bg-page text-ink ring-1 ring-line"
+              i === 1 ? "bg-accent text-on-accent" : "bg-page text-ink ring-1 ring-line"
             }`}
           >
             {label}
           </span>
         ))}
       </div>
-      <p className="text-sm text-stone">
+      <p className="text-sm text-muted">
         Back by <span className="font-display text-base text-ink">8:30 PM</span>
       </p>
-      <span className="flex min-h-12 items-center rounded-control bg-page px-4 text-stone ring-1 ring-line">
+      <span className="flex min-h-12 items-center rounded-control bg-page px-4 text-muted ring-1 ring-line">
         Where to? <span className="ml-2 text-ink">Clock Tower market</span>
       </span>
-      <span className="flex min-h-12 items-center justify-center rounded-control bg-pine font-bold text-on-pine">
+      <span className="flex min-h-12 items-center justify-center rounded-control bg-accent font-bold text-on-accent">
         Check out
       </span>
     </div>
@@ -54,17 +54,17 @@ export default async function Landing(): Promise<ReactNode> {
   return (
     <div className="mx-auto flex min-h-dvh max-w-6xl flex-col px-5">
       <header className="flex h-16 items-center justify-between gap-3">
-        <span className="font-display text-xl text-pine">Lumiback</span>
+        <span className="font-display text-xl text-accent">Lumiback</span>
         <nav aria-label="Account" className="flex items-center gap-1 text-sm">
           <Link
             href="/join"
-            className="hidden min-h-11 items-center rounded-control px-3 font-bold text-pine hover:bg-pine-soft sm:flex"
+            className="hidden min-h-11 items-center rounded-control px-3 font-bold text-accent hover:bg-accent-soft sm:flex"
           >
             Have a join code?
           </Link>
           <Link
             href="/sign-in"
-            className="flex min-h-11 items-center rounded-control px-3 font-bold text-ink hover:bg-pine-soft"
+            className="flex min-h-11 items-center rounded-control px-3 font-bold text-ink hover:bg-accent-soft"
           >
             Sign in
           </Link>
@@ -77,9 +77,9 @@ export default async function Landing(): Promise<ReactNode> {
             <h1 className="font-display text-[2.6rem] leading-[1.02] text-ink sm:text-5xl lg:text-6xl">
               Head out.
               <br />
-              <span className="text-pine">Get back safe.</span>
+              <span className="text-accent">Get back safe.</span>
             </h1>
-            <p className="max-w-[34ch] text-lg leading-relaxed text-stone">
+            <p className="max-w-[34ch] text-lg leading-relaxed text-muted">
               Log where you&apos;re going and when you&apos;ll be back. Share your live location
               only with people you approve.
             </p>
@@ -110,14 +110,14 @@ export default async function Landing(): Promise<ReactNode> {
             <article className="lift reveal flex flex-col justify-between gap-8 rounded-sheet bg-surface p-6 ring-1 ring-line md:row-span-2 md:p-8">
               <div>
                 <h3 className="font-display text-2xl text-ink">Check out in two taps</h3>
-                <p className="mt-2 max-w-[40ch] leading-relaxed text-stone">
+                <p className="mt-2 max-w-[40ch] leading-relaxed text-muted">
                   Say where you&apos;re going and when you&apos;ll be back. Tap once more when
                   you&apos;re home, and your history keeps itself.
                 </p>
               </div>
               <ReturnChips />
             </article>
-            <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-pine p-6 text-on-pine md:p-8">
+            <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-accent p-6 text-on-accent md:p-8">
               <div>
                 <h3 className="font-display text-2xl">You choose who sees you</h3>
                 <p className="mt-2 leading-relaxed opacity-85">
@@ -126,12 +126,12 @@ export default async function Landing(): Promise<ReactNode> {
               </div>
               <span
                 aria-hidden="true"
-                className="self-start rounded-control border-2 border-dashed border-on-pine/50 px-4 py-2 font-mono text-lg font-bold tracking-[0.18em]"
+                className="self-start rounded-control border-2 border-dashed border-on-accent/50 px-4 py-2 font-mono text-lg font-bold tracking-[0.18em]"
               >
                 7KQ2M-XW4PD
               </span>
             </article>
-            <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-lantern-soft p-6 md:p-8">
+            <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-accent-soft p-6 md:p-8">
               <div>
                 <h3 className="font-display text-2xl text-ink">Stop whenever you want</h3>
                 <p className="mt-2 leading-relaxed text-ink/80">
@@ -140,7 +140,7 @@ export default async function Landing(): Promise<ReactNode> {
               </div>
               <span
                 aria-hidden="true"
-                className="self-start rounded-control bg-ember px-5 py-2.5 font-bold text-surface"
+                className="self-start rounded-control bg-danger px-5 py-2.5 font-bold text-surface"
               >
                 Stop sharing
               </span>
@@ -156,39 +156,40 @@ export default async function Landing(): Promise<ReactNode> {
             <h2 id="follow-heading" className="font-display text-title text-ink">
               Waiting for someone?
             </h2>
-            <p className="max-w-[46ch] leading-relaxed text-stone">
+            <p className="max-w-[46ch] leading-relaxed text-muted">
               Parents and friends follow along in any browser with the code they were sent. No
               account, no app. They see one dot, and only while it&apos;s shared.
             </p>
             <Link
               href="/join"
-              className="self-start font-bold text-pine underline-offset-4 hover:underline"
+              className="self-start font-bold text-accent underline-offset-4 hover:underline"
             >
               Have a join code?
             </Link>
           </div>
-          <div className="grid aspect-[4/3] place-items-center rounded-sheet bg-pine-soft">
+          <div className="grid aspect-[4/3] place-items-center rounded-sheet bg-accent-soft">
             <Lantern lit className="w-24 md:w-32" />
           </div>
         </section>
 
         <section
           aria-labelledby="privacy-heading"
-          className="reveal my-16 flex flex-col gap-4 border-l-4 border-lantern py-2 pl-6 md:my-24"
+          className="reveal my-16 flex flex-col gap-4 border-l-4 border-accent py-2 pl-6 md:my-24"
         >
           <h2
             id="privacy-heading"
             className="flex items-center gap-3 font-display text-2xl text-ink"
           >
-            <LockSimple size={26} weight="duotone" aria-hidden="true" className="text-pine" />
-            Nothing kept that you didn&apos;t choose to share
+            <LockSimple size={26} weight="duotone" aria-hidden="true" className="text-accent" />
+            Your location stays yours
           </h2>
-          <p className="max-w-[60ch] leading-relaxed text-stone">
+          <p className="max-w-[60ch] leading-relaxed text-muted">
             Only your latest position is stored while you share, and it is deleted when sharing
-            ends. No ads, no tracking, no staff access.{" "}
+            ends. Hostel staff see when you left and came back, never where you are. No ads, no
+            tracking.{" "}
             <Link
               href="/privacy"
-              className="font-bold text-pine underline-offset-4 hover:underline"
+              className="font-bold text-accent underline-offset-4 hover:underline"
             >
               Read the privacy notice
             </Link>
