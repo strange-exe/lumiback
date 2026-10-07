@@ -10,7 +10,6 @@
     "backgroundColor": "#f4efe6",
     "android": {
       "package": "codes.abhinesh.lumiback",
-      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#234e46",
         "foregroundImage": "./assets/android-icon-foreground.png",
