@@ -70,7 +70,7 @@ needs only while-in-use location permission (no background-location access).
 cd apps/mobile
 cp .env.example .env              # EXPO_PUBLIC_API_URL of the API
 npm install
-npx eas build --profile development --platform android   # dev client APK, install on the phone
+npx eas-cli build --profile development --platform android   # dev client APK, install on the phone
 npm start                         # then open the dev client and scan the QR code
 npm test && npm run lint && npm run typecheck
 ```
