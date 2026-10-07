@@ -1,7 +1,6 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ago } from "@/lib/ago";
@@ -12,7 +11,7 @@ import { useNow } from "@/lib/use-now";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Heading, T } from "@/ui/kit";
 import { LiveMap } from "@/ui/LiveMap";
-import { space, useColors } from "@/ui/theme";
+import { layout, space, useColors } from "@/ui/theme";
 
 const POLL_MS = 5_000;
 const WAITING = "Waiting for the sharer to approve you"; // backend AWAITING_APPROVAL detail
@@ -82,21 +81,11 @@ export default function Watch(): ReactNode {
   const first = name.split(" ")[0] ?? name;
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: c.page }}>
-      <ScrollView contentContainerStyle={{ padding: space(5), gap: space(5) }}>
-        <Pressable
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          hitSlop={12}
-          style={{ flexDirection: "row", alignItems: "center", gap: space(1), minHeight: 44 }}
-        >
-          <Ionicons name="chevron-back" size={20} color={c.pine} />
-          <T tone="label" style={{ color: c.pine }}>
-            Follow
-          </T>
-        </Pressable>
-
+    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: c.page }}>
+      <Stack.Screen
+        options={{ title: shown.kind === "live" ? `Following ${first}` : "Live location" }}
+      />
+      <ScrollView contentContainerStyle={{ padding: layout.gutter, gap: space(5) }}>
         {shown.kind === "loading" ? (
           <T tone="muted">Opening…</T>
         ) : shown.kind === "pending" ? (

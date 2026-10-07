@@ -1,54 +1,54 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { Redirect, Tabs } from "expo-router";
-import type { ComponentProps, ReactNode } from "react";
-import type { ColorValue } from "react-native";
+import { Redirect } from "expo-router";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
+import type { ReactNode } from "react";
 
 import { useAuth } from "@/lib/auth";
+import { usePrefs } from "@/lib/prefs";
 import { useNotificationRoutes } from "@/notify/notify";
 import { fonts, useColors } from "@/ui/theme";
 
-type IconName = ComponentProps<typeof Ionicons>["name"];
-
-function icon(name: IconName) {
-  return function TabIcon({ color, size }: { color: ColorValue; size: number }): ReactNode {
-    return <Ionicons name={name} color={color} size={size} />;
-  };
-}
-
+/** Material 3 bottom navigation (native), one stack per tab. */
 export default function AppLayout(): ReactNode {
   const { status } = useAuth();
+  const { onboarded } = usePrefs();
   const c = useColors();
-  useNotificationRoutes(status === "signedIn");
+  useNotificationRoutes(status === "signedIn" && onboarded);
   if (status !== "signedIn") return <Redirect href="/sign-in" />;
+  if (!onboarded) return <Redirect href="/onboarding" />;
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: c.pine,
-        tabBarInactiveTintColor: c.stone,
-        tabBarStyle: { backgroundColor: c.surface, borderTopColor: c.line },
-        tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 12 },
+    <NativeTabs
+      backgroundColor={c.surface}
+      tintColor={c.pine}
+      iconColor={{ default: c.stone, selected: c.pine }}
+      indicatorColor={c.pineSoft}
+      rippleColor={c.line}
+      labelStyle={{
+        default: { color: c.stone, fontFamily: fonts.medium, fontSize: 12 },
+        selected: { color: c.pine, fontFamily: fonts.semibold, fontSize: 12 },
       }}
+      labelVisibilityMode="labeled"
     >
-      <Tabs.Screen name="today" options={{ title: "Today", tabBarIcon: icon("walk-outline") }} />
-      <Tabs.Screen
-        name="history"
-        options={{ title: "History", tabBarIcon: icon("time-outline") }}
-      />
-      <Tabs.Screen
-        name="share"
-        options={{ title: "Share", tabBarIcon: icon("navigate-circle-outline") }}
-      />
-      <Tabs.Screen
-        name="follow"
-        options={{ title: "Follow", tabBarIcon: icon("people-outline") }}
-      />
-      <Tabs.Screen name="watch/[id]" options={{ href: null }} />
-      <Tabs.Screen
-        name="account"
-        options={{ title: "Account", tabBarIcon: icon("person-circle-outline") }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="today">
+        <NativeTabs.Trigger.Icon md="directions_walk" />
+        <NativeTabs.Trigger.Label>Today</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="share">
+        <NativeTabs.Trigger.Icon md="near_me" />
+        <NativeTabs.Trigger.Label>Share</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="follow">
+        <NativeTabs.Trigger.Icon md="group" />
+        <NativeTabs.Trigger.Label>Follow</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="history">
+        <NativeTabs.Trigger.Icon md="history" />
+        <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="profile">
+        <NativeTabs.Trigger.Icon md="person" />
+        <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

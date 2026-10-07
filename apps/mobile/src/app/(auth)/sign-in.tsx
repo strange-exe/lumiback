@@ -4,6 +4,7 @@ import { type TextInput, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { Illustration } from "@/ui/illustration";
 import { Button, Field, FormError, Notice, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
@@ -39,11 +40,14 @@ export default function SignIn(): ReactNode {
   return (
     <Screen>
       <View style={{ flex: 1, justifyContent: "center", gap: space(6) }}>
-        <View style={{ gap: space(2) }}>
-          <T tone="heading" style={{ color: c.pine }}>
-            Lumiback
-          </T>
-          <T tone="title" accessibilityRole="header">
+        <View style={{ gap: space(3) }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
+            <Illustration name="lantern-lit" size={56} />
+            <T tone="headline" style={{ color: c.pine }}>
+              Lumiback
+            </T>
+          </View>
+          <T tone="display" accessibilityRole="header">
             Head out.{"\n"}Get back safe.
           </T>
           <T tone="muted">Sign in with your university email.</T>

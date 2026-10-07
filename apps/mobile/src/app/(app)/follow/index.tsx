@@ -10,6 +10,7 @@ import { formatTime } from "@/lib/time";
 import type { Redeemed, Watching } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { haptic } from "@/ui/haptics";
+import { Illustration } from "@/ui/illustration";
 import { Button, Card, Field, FormError, Heading, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
 
@@ -42,7 +43,12 @@ export default function Follow(): ReactNode {
           {loading ? null : watching && watching.length > 0 ? (
             watching.map((w) => <SharerRow key={w.id} share={w} />)
           ) : (
-            <T tone="muted">Nobody right now. Live shares appear here while they last.</T>
+            <View style={{ alignItems: "center", gap: space(2), paddingVertical: space(4) }}>
+              <Illustration name="pin" size={140} />
+              <T tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>
+                Nobody is sharing with you right now. Live shares appear here while they last.
+              </T>
+            </View>
           )}
           <FormError message={error} />
         </View>
@@ -65,7 +71,7 @@ function Join(): ReactNode {
       const joined = await api<Redeemed>("/codes/redeem", { method: "POST", body: { code } });
       haptic.success();
       setText("");
-      router.push({ pathname: "/watch/[id]", params: { id: joined.session_id } });
+      router.push({ pathname: "/follow/[id]", params: { id: joined.session_id } });
     } catch (e) {
       haptic.warning();
       setError(e instanceof ApiError ? e.detail : "Something went wrong. Try again.");
@@ -102,7 +108,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
     <Pressable
       onPress={() => {
         haptic.tap();
-        router.push({ pathname: "/watch/[id]", params: { id: share.id } });
+        router.push({ pathname: "/follow/[id]", params: { id: share.id } });
       }}
       accessibilityRole="button"
       accessibilityLabel={`${share.sharer.name}, sharing until ${formatTime(share.ends_at)}. Open map.`}

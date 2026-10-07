@@ -1,34 +1,95 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
+  type StyleProp,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { fonts, radius, space, useColors } from "@/ui/theme";
+import { useReducedMotion } from "@/ui/motion";
+import { fonts, layout, radius, space, type, useColors } from "@/ui/theme";
+
+/** Scale-down on press: a physical "push" (native driver; off with reduced motion). */
+export function Press({
+  onPress,
+  disabled,
+  style,
+  children,
+  accessibilityLabel,
+  accessibilityRole = "button",
+  accessibilityState,
+  hitSlop,
+}: {
+  onPress?: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+  accessibilityLabel?: string;
+  accessibilityRole?: "button" | "link" | "radio" | "tab";
+  accessibilityState?: {
+    checked?: boolean;
+    busy?: boolean;
+    disabled?: boolean;
+    selected?: boolean;
+  };
+  hitSlop?: number;
+}): ReactNode {
+  const [scale] = useState(() => new Animated.Value(1));
+  const reduced = useReducedMotion();
+  const to = (value: number): void => {
+    if (reduced) return;
+    Animated.spring(scale, {
+      toValue: value,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  };
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      onPressIn={() => to(0.97)}
+      onPressOut={() => to(1)}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled, ...accessibilityState }}
+      hitSlop={hitSlop}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+    </Pressable>
+  );
+}
 
 /** A scrolling page with the app's background and safe-area padding. */
 export function Screen({
   children,
   edges = ["top", "bottom"],
+  refreshControl,
 }: {
   children: ReactNode;
   edges?: ("top" | "bottom")[];
+  refreshControl?: React.ComponentProps<typeof ScrollView>["refreshControl"];
 }): ReactNode {
   const c = useColors();
   return (
     <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: c.page }}>
       <ScrollView
-        contentContainerStyle={{ padding: space(5), gap: space(6), flexGrow: 1 }}
+        contentContainerStyle={{
+          padding: layout.gutter,
+          paddingBottom: space(10),
+          gap: layout.section,
+          flexGrow: 1,
+        }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
       >
         {children}
       </ScrollView>
@@ -36,49 +97,59 @@ export function Screen({
   );
 }
 
-type Tone = "title" | "heading" | "body" | "muted" | "small" | "label";
+type Tone =
+  | "display"
+  | "title"
+  | "headline"
+  | "heading" // alias of headline
+  | "body"
+  | "muted"
+  | "label"
+  | "caption"
+  | "small";
 
 export function T({
   tone = "body",
   style,
   children,
+  selectable,
+  numberOfLines,
   ...rest
 }: {
   tone?: Tone;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   children: ReactNode;
+  selectable?: boolean;
+  numberOfLines?: number;
   accessibilityRole?: "header" | "text" | "alert" | "link";
+  accessibilityLabel?: string;
   onPress?: () => void;
 }): ReactNode {
   const c = useColors();
   const base: Record<Tone, TextStyle> = {
-    title: {
-      fontFamily: fonts.semibold,
-      fontSize: 31,
-      lineHeight: 36,
-      letterSpacing: -0.6,
-      color: c.ink,
-    },
-    heading: {
-      fontFamily: fonts.semibold,
-      fontSize: 20,
-      lineHeight: 26,
-      letterSpacing: -0.3,
-      color: c.ink,
-    },
-    body: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 24, color: c.ink },
-    muted: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 24, color: c.stone },
-    small: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20, color: c.stone },
-    label: { fontFamily: fonts.bold, fontSize: 14, lineHeight: 20, color: c.ink },
+    display: { ...type.display, color: c.ink, fontVariant: ["tabular-nums"] },
+    title: { ...type.title, color: c.ink },
+    headline: { ...type.headline, color: c.ink },
+    heading: { ...type.headline, color: c.ink },
+    body: { ...type.body, color: c.ink },
+    muted: { ...type.body, color: c.stone },
+    label: { ...type.label, color: c.ink },
+    caption: { ...type.caption, color: c.stone },
+    small: { ...type.caption, color: c.stone },
   };
   return (
-    <Text style={[base[tone], style]} {...rest}>
+    <Text
+      style={[base[tone], style]}
+      selectable={selectable}
+      numberOfLines={numberOfLines}
+      {...rest}
+    >
       {children}
     </Text>
   );
 }
 
-/** Every tab opens the same way: a small coloured eyebrow, the title, an optional lede. */
+/** Every top-level screen opens the same way: a small coloured eyebrow, the title, a lede. */
 export function Heading({
   eyebrow,
   title,
@@ -88,22 +159,12 @@ export function Heading({
   eyebrow: string;
   title: string;
   lede?: string;
-  tone?: "pine" | "sage" | "ember" | "stone";
+  tone?: "pine" | "sage" | "ember" | "stone" | "lanternText";
 }): ReactNode {
   const c = useColors();
   return (
     <View style={{ gap: space(2) }}>
-      <Text
-        style={{
-          fontFamily: fonts.semibold,
-          fontSize: 13,
-          letterSpacing: 1.2,
-          textTransform: "uppercase",
-          color: c[tone],
-        }}
-      >
-        {eyebrow}
-      </Text>
+      <Text style={[type.eyebrow, { color: c[tone] }]}>{eyebrow}</Text>
       <T tone="title" accessibilityRole="header">
         {title}
       </T>
@@ -143,7 +204,7 @@ export function Clock({
   );
 }
 
-type Variant = "primary" | "secondary" | "danger" | "quiet";
+type Variant = "primary" | "secondary" | "danger" | "quiet" | "onHero" | "onHeroOutline";
 
 export function Button({
   label,
@@ -153,14 +214,16 @@ export function Button({
   busyLabel,
   style,
   accessibilityLabel,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   variant?: Variant;
   busy?: boolean;
   busyLabel?: string;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  icon?: ReactNode;
 }): ReactNode {
   const c = useColors();
   const look: Record<Variant, { bg: string; fg: string; border?: string }> = {
@@ -168,26 +231,39 @@ export function Button({
     secondary: { bg: c.surface, fg: c.pine, border: c.line },
     danger: { bg: c.ember, fg: c.surface },
     quiet: { bg: "transparent", fg: c.pine },
+    onHero: { bg: c.onHero, fg: c.hero },
+    onHeroOutline: { bg: "transparent", fg: c.onHero, border: c.heroLine },
   };
   const { bg, fg, border } = look[variant];
   return (
-    <Pressable
-      onPress={busy ? undefined : onPress}
-      accessibilityRole="button"
+    <Press
+      onPress={onPress}
+      disabled={busy}
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ busy, disabled: busy }}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: bg, borderColor: border ?? bg, opacity: busy ? 0.75 : 1 },
-        pressed && !busy ? { transform: [{ scale: 0.98 }] } : null,
+      accessibilityState={{ busy }}
+      style={[
+        {
+          minHeight: 52,
+          borderRadius: radius.control,
+          borderCurve: "continuous",
+          borderWidth: 1,
+          borderColor: border ?? bg,
+          backgroundColor: bg,
+          paddingHorizontal: space(5),
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: space(2),
+          opacity: busy ? 0.75 : 1,
+        },
         style,
       ]}
     >
-      {busy && <ActivityIndicator color={fg} size="small" />}
-      <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: fg }}>
+      {busy ? <ActivityIndicator color={fg} size="small" /> : icon}
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: fg }} numberOfLines={1}>
         {busy && busyLabel ? busyLabel : label}
       </Text>
-    </Pressable>
+    </Press>
   );
 }
 
@@ -204,13 +280,23 @@ export const Field = forwardRef<TextInput, TextInputProps & { label: string; hin
           accessibilityHint={hint}
           placeholderTextColor={c.stone}
           style={[
-            styles.input,
-            { backgroundColor: c.surface, borderColor: c.line, color: c.ink },
+            {
+              minHeight: 52,
+              borderRadius: radius.control,
+              borderCurve: "continuous",
+              borderWidth: 1,
+              paddingHorizontal: space(4),
+              fontFamily: fonts.regular,
+              fontSize: 16,
+              backgroundColor: c.raised,
+              borderColor: c.line,
+              color: c.ink,
+            },
             style,
           ]}
           {...input}
         />
-        {hint ? <T tone="small">{hint}</T> : null}
+        {hint ? <T tone="caption">{hint}</T> : null}
       </View>
     );
   },
@@ -220,7 +306,7 @@ export function FormError({ message }: { message: string | null }): ReactNode {
   const c = useColors();
   if (!message) return null;
   return (
-    <T tone="label" accessibilityRole="alert" style={{ color: c.ember }}>
+    <T tone="label" accessibilityRole="alert" selectable style={{ color: c.ember }}>
       {message}
     </T>
   );
@@ -239,6 +325,7 @@ export function Notice({
       style={{
         backgroundColor: tone === "good" ? c.sageSoft : c.lanternSoft,
         borderRadius: radius.control,
+        borderCurve: "continuous",
         padding: space(4),
       }}
     >
@@ -247,7 +334,16 @@ export function Notice({
   );
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: ViewStyle }): ReactNode {
+export function Card({
+  children,
+  style,
+  flat = false,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  /** No shadow: for cards inside other surfaces. */
+  flat?: boolean;
+}): ReactNode {
   const c = useColors();
   return (
     <View
@@ -257,8 +353,10 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
           borderColor: c.line,
           borderWidth: 1,
           borderRadius: radius.sheet,
+          borderCurve: "continuous",
           padding: space(5),
-          gap: space(3),
+          gap: space(4),
+          boxShadow: flat ? undefined : c.shadow,
         },
         style,
       ]}
@@ -274,16 +372,20 @@ export function Chips<V extends string>({
   options,
   value,
   onChange,
+  onHero = false,
 }: {
   label: string;
   options: { value: V; label: string }[];
   value: V;
   onChange: (value: V) => void;
+  onHero?: boolean;
 }): ReactNode {
   const c = useColors();
   return (
-    <View style={{ gap: space(1.5) }}>
-      <T tone="label">{label}</T>
+    <View style={{ gap: space(2) }}>
+      <T tone="label" style={onHero ? { color: c.heroMuted } : undefined}>
+        {label}
+      </T>
       <View
         accessibilityRole="radiogroup"
         accessibilityLabel={label}
@@ -291,31 +393,32 @@ export function Chips<V extends string>({
       >
         {options.map((option) => {
           const selected = option.value === value;
+          const bg = selected ? (onHero ? c.onHero : c.pine) : onHero ? "transparent" : c.raised;
+          const fg = selected ? (onHero ? c.hero : c.onPine) : onHero ? c.onHero : c.ink;
+          const border = selected ? bg : onHero ? c.heroLine : c.line;
           return (
-            <Pressable
-              key={option.value}
-              onPress={() => onChange(option.value)}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selected }}
-              style={({ pressed }) => [
-                styles.chip,
-                {
-                  backgroundColor: selected ? c.pine : c.surface,
-                  borderColor: selected ? c.pine : c.line,
-                },
-                pressed ? { transform: [{ scale: 0.97 }] } : null,
-              ]}
-            >
-              <Text
+            <View key={option.value} style={{ flex: 1 }}>
+              <Press
+                onPress={() => onChange(option.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={option.label}
                 style={{
-                  fontFamily: fonts.semibold,
-                  fontSize: 15,
-                  color: selected ? c.onPine : c.ink,
+                  minHeight: 48,
+                  borderRadius: radius.control,
+                  borderCurve: "continuous",
+                  borderWidth: 1,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: bg,
+                  borderColor: border,
                 }}
               >
-                {option.label}
-              </Text>
-            </Pressable>
+                <Text style={{ fontFamily: fonts.semibold, fontSize: 15, color: fg }}>
+                  {option.label}
+                </Text>
+              </Press>
+            </View>
           );
         })}
       </View>
@@ -323,31 +426,131 @@ export function Chips<V extends string>({
   );
 }
 
-const styles = StyleSheet.create({
-  chip: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  button: {
-    minHeight: 52,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    paddingHorizontal: space(5),
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space(2),
-  },
-  input: {
-    minHeight: 52,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    paddingHorizontal: space(4),
-    fontFamily: fonts.regular,
-    fontSize: 16,
-  },
-});
+/** Small rounded status label: "Verified at gate", "Self-reported", "Overdue". */
+export function StatusChip({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "sage" | "ember" | "lantern" | "stone" | "pine";
+}): ReactNode {
+  const c = useColors();
+  const map = {
+    sage: [c.sageSoft, c.sage],
+    ember: [c.emberSoft, c.ember],
+    lantern: [c.lanternSoft, c.lanternText],
+    stone: [c.line, c.stone],
+    pine: [c.pineSoft, c.pine],
+  } as const;
+  const [bg, fg] = map[tone];
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        backgroundColor: bg,
+        borderRadius: radius.pill,
+        paddingHorizontal: space(2.5),
+        paddingVertical: space(0.5),
+      }}
+    >
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 12, lineHeight: 18, color: fg }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** A labelled group of rows with hairline dividers (settings, details). */
+export function Section({
+  title,
+  children,
+  footer,
+}: {
+  title?: string;
+  children: ReactNode;
+  footer?: string;
+}): ReactNode {
+  const c = useColors();
+  const rows = (Array.isArray(children) ? children : [children]).filter(Boolean);
+  return (
+    <View style={{ gap: space(2) }}>
+      {title ? (
+        <Text style={[type.eyebrow, { color: c.stone, paddingHorizontal: space(1) }]}>{title}</Text>
+      ) : null}
+      <View
+        style={{
+          backgroundColor: c.surface,
+          borderRadius: radius.sheet,
+          borderCurve: "continuous",
+          borderWidth: 1,
+          borderColor: c.line,
+          overflow: "hidden",
+        }}
+      >
+        {rows.map((row, i) => (
+          <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: c.line } : undefined}>
+            {row}
+          </View>
+        ))}
+      </View>
+      {footer ? (
+        <T tone="caption" style={{ paddingHorizontal: space(1) }}>
+          {footer}
+        </T>
+      ) : null}
+    </View>
+  );
+}
+
+/** One tappable row: icon, title, optional detail, trailing element (chevron, switch, value). */
+export function Row({
+  title,
+  detail,
+  leading,
+  trailing,
+  onPress,
+  danger = false,
+  accessibilityLabel,
+}: {
+  title: string;
+  detail?: string;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  onPress?: () => void;
+  danger?: boolean;
+  accessibilityLabel?: string;
+}): ReactNode {
+  const c = useColors();
+  const body = (
+    <View
+      style={{
+        minHeight: 60,
+        paddingHorizontal: space(4),
+        paddingVertical: space(3),
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space(3),
+      }}
+    >
+      {leading}
+      <View style={{ flex: 1, gap: 2 }}>
+        <T tone="body" style={{ fontFamily: fonts.medium, color: danger ? c.ember : c.ink }}>
+          {title}
+        </T>
+        {detail ? <T tone="caption">{detail}</T> : null}
+      </View>
+      {trailing}
+    </View>
+  );
+  if (!onPress) return body;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      android_ripple={{ color: c.line }}
+    >
+      {body}
+    </Pressable>
+  );
+}

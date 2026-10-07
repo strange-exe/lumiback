@@ -8,11 +8,12 @@ import {
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { loadPrefs } from "@/lib/prefs";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
 import { useColors } from "@/ui/theme";
@@ -29,7 +30,13 @@ function Navigator(): ReactNode {
     Geist_600SemiBold,
     Geist_700Bold,
   });
-  const ready = fontsLoaded && status !== "loading";
+  // Appearance and "seen onboarding" are read before the first frame: no flash of the wrong
+  // theme or of the onboarding screen.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  useEffect(() => {
+    void loadPrefs().finally(() => setPrefsLoaded(true));
+  }, []);
+  const ready = fontsLoaded && prefsLoaded && status !== "loading";
 
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();

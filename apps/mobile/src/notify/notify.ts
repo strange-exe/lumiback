@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
 import { Platform } from "react-native";
 
+import { loadPrefs } from "@/lib/prefs";
 import { endedMessage, RETURN_DUE, RETURN_SOON, returnReminders } from "@/notify/plan";
 
 /**
@@ -79,7 +80,8 @@ export interface NotificationData {
   url: "/share" | "/today";
 }
 
-export function notifyFollowRequest(name: string): Promise<void> {
+export async function notifyFollowRequest(name: string): Promise<void> {
+  if (!(await loadPrefs()).followRequests) return;
   return show(CHANNELS.requests, {
     title: `${name} wants to follow you`,
     body: "Open Lumiback to approve or decline.",
@@ -87,7 +89,8 @@ export function notifyFollowRequest(name: string): Promise<void> {
   });
 }
 
-export function notifyShareEnded(reason: string | null): Promise<void> {
+export async function notifyShareEnded(reason: string | null): Promise<void> {
+  if (!(await loadPrefs()).shareStatus) return;
   return show(CHANNELS.status, {
     title: "Live location sharing ended",
     body: endedMessage(reason),
@@ -103,7 +106,8 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
   try {
     await Notifications.cancelScheduledNotificationAsync(RETURN_SOON);
     await Notifications.cancelScheduledNotificationAsync(RETURN_DUE);
-    const plan = returnReminders(expectedReturnAt, Date.now());
+    const enabled = (await loadPrefs()).returnReminders;
+    const plan = enabled ? returnReminders(expectedReturnAt, Date.now()) : [];
     if (plan.length === 0) return;
     await ensureChannels();
     if (!(await Notifications.getPermissionsAsync()).granted) return;
