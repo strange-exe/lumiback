@@ -59,7 +59,14 @@ test.describe("gate kiosk", () => {
     const page = await context.newPage();
     await page.goto("/kiosk");
     await expect(page.getByRole("heading", { name: "Set up this gate tablet" })).toBeVisible();
+    await expect(page.getByLabel("Time now")).toHaveText(/^\d{1,2}:\d{2} [AP]M$/);
     await context.close();
+  });
+
+  test("the server never renders the clock, so hydration can't disagree", async ({ request }) => {
+    const html = await (await request.get("/kiosk")).text();
+    expect(html).toContain('aria-label="Time now"');
+    expect(html).not.toMatch(/aria-label="Time now"[^>]*>\s*\d/); // filled in after mount
   });
 
   test("a phone camera that opens the code gets pointed to the app", async ({ page }) => {

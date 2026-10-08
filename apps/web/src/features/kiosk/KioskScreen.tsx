@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { formatTime } from "@/features/outings/time";
 import { QrCode } from "@/features/kiosk/QrCode";
 import type { KioskCode } from "@/lib/types";
+import { useNow } from "@/lib/use-now";
 
 const STORAGE_KEY = "lumiback.kiosk-token";
 /** A code is still accepted for two windows after it stops being current (see gate_codes.py). */
@@ -64,15 +65,6 @@ function useWakeLock(): void {
   }, []);
 }
 
-function useClock(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 5_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
-}
-
 /**
  * The gate tablet. Calls the API directly (not through the web app) so a kiosk left running only
  * keeps the API awake. Refreshes as each code expires; rides out short network drops on the
@@ -80,7 +72,9 @@ function useClock(): Date {
  */
 export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
   const [view, setView] = useState<View>({ kind: "starting" });
-  const now = useClock();
+  // 0 until mounted: a clock read during server rendering can cross a minute before the page
+  // hydrates, and the mismatch makes React throw the server HTML away.
+  const now = useNow(5_000);
   useWakeLock();
 
   useEffect(() => {
@@ -165,7 +159,7 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
       <header className="flex items-center justify-between gap-4 px-6 pt-6 sm:px-10 sm:pt-8">
         <span className="font-display text-xl">Lumiback</span>
         <span className="font-display text-title tabular-nums" aria-label="Time now">
-          {formatTime(now)}
+          {now ? formatTime(new Date(now)) : ""}
         </span>
       </header>
       <Body view={view} />
