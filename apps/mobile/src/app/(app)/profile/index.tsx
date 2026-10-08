@@ -1,10 +1,12 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Constants from "expo-constants";
 import { router } from "expo-router";
+import * as Updates from "expo-updates";
 import { useState, type ReactNode } from "react";
 import { Linking, Text, View } from "react-native";
 
 import { useAuth } from "@/lib/auth";
+import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
 import { formatDate } from "@/lib/time";
@@ -129,8 +131,17 @@ export default function Profile(): ReactNode {
         />
       </Section>
 
-      <T tone="caption" style={{ textAlign: "center" }}>
-        Lumiback {Constants.expoConfig?.version ?? ""}
+      <T tone="caption" selectable style={{ textAlign: "center" }}>
+        {buildLines(
+          {
+            version: Constants.expoConfig?.version,
+            runtimeVersion: Updates.runtimeVersion,
+            updateId: Updates.updateId,
+            createdAt: Updates.createdAt,
+            isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+          },
+          formatDate,
+        ).join("\n")}
       </T>
     </Screen>
   );
