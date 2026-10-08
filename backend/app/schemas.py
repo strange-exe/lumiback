@@ -529,7 +529,8 @@ class GateCreated(BaseModel):
 
 
 class CampusSettingsIO(Input):
-    curfew: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+    # Superseded by rule sets; optional so the settings page can leave it out.
+    curfew: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] | None = None
     scan_retention_days: int = Field(ge=7, le=730)
 
 
@@ -539,6 +540,8 @@ class AdminOverview(BaseModel):
     scans_today: int
     rejected_today: int
     active_gates: int
+    pending_requests: int = 0  # today's weekend/holiday requests waiting for a decision
+    open_escalations: int = 0  # late students who didn't answer, not yet handled
 
 
 class AdminOuting(BaseModel):
@@ -554,6 +557,10 @@ class AdminOuting(BaseModel):
     late_minutes: int
     out_via: Literal["self", "gate"]
     out_gate: str | None
+    hostel: str | None = None
+    late_reason: str | None = None  # took the later return option, and why
+    late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the late alert
+    on_request: bool = False  # a weekend/holiday outing an admin approved
 
     @field_serializer("left_at", "expected_return_at")
     def _in_ist(self, value: datetime) -> str:

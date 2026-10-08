@@ -161,15 +161,16 @@ async def put_settings(
     body: CampusSettingsIO, me: AdminUser, session: SessionDep
 ) -> CampusSettingsIO:
     row = await campus_settings(session)
-    hours, minutes = (int(x) for x in body.curfew.split(":"))
-    row.curfew = time(hours, minutes)
+    if body.curfew is not None:  # older admin pages still send it
+        hours, minutes = (int(x) for x in body.curfew.split(":"))
+        row.curfew = time(hours, minutes)
     row.scan_retention_days = body.scan_retention_days
     row.updated_at = datetime.now(UTC)
-    svc.audit(
-        session, me, "settings", f"curfew {body.curfew}, keep scans {body.scan_retention_days} d"
-    )
+    svc.audit(session, me, "settings", f"keep scans {body.scan_retention_days} d")
     await session.commit()
-    return body
+    return CampusSettingsIO(
+        curfew=row.curfew.strftime("%H:%M"), scan_retention_days=row.scan_retention_days
+    )
 
 
 # ---------- people ----------

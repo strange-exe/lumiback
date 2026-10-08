@@ -111,6 +111,8 @@ def test_overview_and_who_is_out(client, db, admin, riya):
         "scans_today": 1,
         "rejected_today": 1,
         "active_gates": 1,
+        "pending_requests": 0,
+        "open_escalations": 0,
     }
 
     everyone = client.get("/admin/outings", headers=admin).json()
@@ -230,7 +232,10 @@ def test_settings_round_trip(client, db, admin):
     new = {"curfew": "22:15", "scan_retention_days": 90}
     assert client.put("/admin/settings", json=new, headers=admin).json() == new
     assert client.get("/admin/settings", headers=admin).json() == new
-    assert audit(db) == [("settings", "curfew 22:15, keep scans 90 d")]
+    assert audit(db) == [("settings", "keep scans 90 d")]
+    # The settings page no longer sends the curfew (rule sets replaced it): it stays as it was.
+    r = client.put("/admin/settings", json={"scan_retention_days": 60}, headers=admin)
+    assert r.json() == {"curfew": "22:15", "scan_retention_days": 60}
     for bad in (
         {"curfew": "24:00", "scan_retention_days": 90},
         {"curfew": "22:00", "scan_retention_days": 1},

@@ -15,15 +15,20 @@ from sqlalchemy.orm import aliased
 
 from app.models import (
     AdminAudit,
+    Escalation,
     Gate,
     GateScan,
+    Hostel,
     Outing,
+    OutingRequest,
+    RequestStatus,
     ScanResult,
     User,
     UserRole,
 )
 from app.schemas import AdminOuting, AdminOverview, AdminScan, AdminScanPage, AdminUser
 from app.services.outings import status_of
+from app.services.rules import ist_date
 
 IST = timedelta(hours=5, minutes=30)
 MAX_EXPORT_DAYS = 92
@@ -63,12 +68,22 @@ async def overview(session: AsyncSession) -> AdminOverview:
         )
     )
     gates = await session.scalar(select(func.count()).select_from(Gate).where(Gate.active))
+    pending = await session.scalar(
+        select(func.count()).where(
+            OutingRequest.status == RequestStatus.PENDING, OutingRequest.day == ist_date(now)
+        )
+    )
+    escalated = await session.scalar(
+        select(func.count()).select_from(Escalation).where(Escalation.resolved_at.is_(None))
+    )
     return AdminOverview(
         out_now=out_now or 0,
         overdue=overdue or 0,
         scans_today=accepted or 0,
         rejected_today=rejected or 0,
         active_gates=gates or 0,
+        pending_requests=pending or 0,
+        open_escalations=escalated or 0,
     )
 
 
@@ -76,9 +91,10 @@ async def open_outings(session: AsyncSession, state: str) -> list[AdminOuting]:
     """Students currently out: `overdue`, `out` (not yet due) or `all`. Most urgent first."""
     now = datetime.now(UTC)
     query = (
-        select(Outing, User, Gate.name)
+        select(Outing, User, Gate.name, Hostel.name)
         .join(User, User.id == Outing.student_id)
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
+        .outerjoin(Hostel, Hostel.id == User.hostel_id)
         .where(Outing.returned_at.is_(None))
         .order_by(Outing.expected_return_at)
         .limit(500)
@@ -102,8 +118,12 @@ async def open_outings(session: AsyncSession, state: str) -> list[AdminOuting]:
             late_minutes=max(0, int((now - o.expected_return_at).total_seconds() // 60)),
             out_via=o.out_via.value,
             out_gate=gate_name,
+            hostel=hostel,
+            late_reason=o.late_reason,
+            late_reply=o.late_reply.value if o.late_reply else None,
+            on_request=o.request_id is not None,
         )
-        for o, u, gate_name in rows
+        for o, u, gate_name, hostel in rows
     ]
 
 
