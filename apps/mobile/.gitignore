@@ -28,5 +28,5 @@ npm-debug.*
 *.mobileprovision
 *.pem
 
-# Firebase config for Android push (EAS builds get it from the GOOGLE_SERVICES_JSON variable)
+# Firebase config for Android push: kept out of git, but uploaded with EAS builds (see /.easignore)
 google-services.json

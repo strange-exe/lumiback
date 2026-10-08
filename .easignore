@@ -10,11 +10,11 @@ apps/web/
 .vscode/
 .idea/
 
-# Secrets: EAS environment variables provide the build's settings
+# Secrets: EAS environment variables provide the build's settings. (apps/mobile/google-services.json
+# is uploaded on purpose: it holds public identifiers, and its path is part of the fingerprint.)
 .env
 .env.*
 !.env.example
-**/google-services.json
 *.jks
 *.keystore
 *.p8
