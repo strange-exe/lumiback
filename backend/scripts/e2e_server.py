@@ -65,6 +65,23 @@ def reset_and_seed(url: str, seed: bool) -> None:
                 ),
                 {"hash": hash_kiosk_token(KIOSK_TOKEN)},
             )
+        # Outings allowed all day as the default rules (TRUNCATE removed the migration's
+        # seeds), so browser tests pass at any hour; rule behaviour is tested in pytest.
+        rule_set = conn.execute(
+            text("INSERT INTO rule_sets (name) VALUES ('E2E (always open)') RETURNING id")
+        ).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO day_rules (rule_set_id, day_type, opens_at, return_by) "
+                "SELECT :s, d, '00:00', '23:59' "
+                "FROM unnest(ARRAY['weekday', 'saturday', 'sunday', 'holiday']) AS d"
+            ),
+            {"s": rule_set},
+        )
+        conn.execute(
+            text("INSERT INTO campus_settings (id, default_rule_set_id) VALUES (1, :s)"),
+            {"s": rule_set},
+        )
     engine.dispose()
 
 

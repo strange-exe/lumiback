@@ -13,7 +13,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import admin, auth, codes, contacts, devices, gates, outings, sessions, ws
+from app.api import (
+    admin,
+    admin_rules,
+    auth,
+    codes,
+    contacts,
+    devices,
+    gates,
+    outings,
+    profile,
+    sessions,
+    ws,
+)
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
 from app.email import make_mailer
@@ -100,6 +112,8 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(outings.router)
     app.include_router(gates.router)
     app.include_router(admin.router)
+    app.include_router(admin_rules.router)
+    app.include_router(profile.router)
     app.include_router(devices.router)
 
     return app

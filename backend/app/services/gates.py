@@ -18,10 +18,10 @@ from datetime import UTC, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CampusSettings, Gate, GateScan, Outing, ScanDirection, ScanResult
+from app.models import CampusSettings, Gate, GateScan, Outing, ScanDirection, ScanResult, User
 from app.schemas import GateScanIn, OutingCreateIn
 from app.security.gate_codes import code_is_valid, hash_kiosk_token, parse_qr
-from app.services import outings
+from app.services import outings, rules
 
 IST = timedelta(hours=5, minutes=30)
 EARTH_RADIUS_M = 6_371_000
@@ -39,10 +39,6 @@ class ScanRejected(Exception):
 
 class AlreadyScanned(Exception):
     pass
-
-
-class NeedsReturnTime(Exception):
-    """Tapping out after today's curfew: the student must choose when they'll be back."""
 
 
 @dataclass(frozen=True)
@@ -157,18 +153,21 @@ async def scan(
         if outing is None:  # closed by a simultaneous request; treat as a double scan
             raise AlreadyScanned
     else:
-        expected = body.expected_return_at
-        if expected is None:
-            expected = curfew_today((await campus_settings(session)).curfew, now)
-            if expected <= now + outings.MIN_AHEAD:
-                raise NeedsReturnTime
-        outing = await outings.check_out(
-            session,
-            user_id,
-            OutingCreateIn(destination=body.destination, expected_return_at=expected),
-            gate_id=gate.id,
-            commit=False,
-        )
+        student = await session.get(User, user_id)
+        assert student is not None  # the caller is signed in as this user
+        try:
+            outing = await outings.check_out(
+                session,
+                student,
+                OutingCreateIn(
+                    destination=body.destination, late=body.late, late_reason=body.late_reason
+                ),
+                gate_id=gate.id,
+                commit=False,
+            )
+        except rules.Refused as e:  # at the gate, but not allowed out now: worth a log entry
+            # (the rules refuse before check_out writes anything, so nothing to undo)
+            raise await reject(gate, ScanResult.NOT_ALLOWED, e.message) from None
     await _record(session, user_id, gate, direction, ScanResult.ACCEPTED, body, outing.id)
     await session.commit()
     await session.refresh(outing)

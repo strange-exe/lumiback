@@ -1,7 +1,9 @@
-"""Outings: check out, extend, return, history, summary.
+"""Outings: check out, return, history, summary.
 
-The return time is always the server's clock (a client cannot backdate it). Status is derived:
-returned if returned_at is set, overdue if now is past expected_return_at, otherwise out.
+The outing rules (app/services/rules.py) decide whether a student may go out and when they must
+be back; the return time never changes afterwards (no extensions). Leaving and returning use the
+database clock (a client cannot backdate them). Status is derived: returned if returned_at is
+set, overdue if now is past expected_return_at, otherwise out.
 """
 
 import uuid
@@ -11,18 +13,14 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Outing, Via
+from app.models import Outing, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
+from app.services import requests, rules
 
-MAX_OUTING = timedelta(days=7)
-MIN_AHEAD = timedelta(minutes=1)
+MIN_AHEAD = rules.MIN_AHEAD
 
 
 class AlreadyOut(Exception):
-    pass
-
-
-class InvalidReturnTime(Exception):
     pass
 
 
@@ -52,37 +50,49 @@ def to_out(outing: Outing, now: datetime) -> OutingOut:
         ),
         out_via=outing.out_via.value,
         in_via=outing.in_via.value if outing.in_via else None,
+        late_reason=outing.late_reason,
+        late_reply=outing.late_reply.value if outing.late_reply else None,
     )
-
-
-def _check_return_time(expected: datetime, left_at: datetime, now: datetime) -> None:
-    if expected < now + MIN_AHEAD:
-        raise InvalidReturnTime("expected return must be in the future")
-    if expected > left_at + MAX_OUTING:
-        raise InvalidReturnTime(f"an outing can last at most {MAX_OUTING.days} days")
 
 
 async def check_out(
     session: AsyncSession,
-    student_id: uuid.UUID,
+    student: User,
     body: OutingCreateIn,
     *,
     gate_id: uuid.UUID | None = None,
     commit: bool = True,
 ) -> Outing:
-    """Opens an outing. `gate_id`: tapped out at that gate (otherwise logged in the app).
-    `commit=False` leaves the commit to the caller, so a gate scan saves atomically."""
+    """Opens an outing if today's rules allow it (raises rules.Refused otherwise). `gate_id`:
+    tapped out at that gate (otherwise logged in the app). `commit=False` leaves the commit to
+    the caller, so a gate scan saves atomically."""
     now = datetime.now(UTC)
-    _check_return_time(body.expected_return_at, now, now)
+    window = await rules.today_window(session, student, now)
+    request = None
+    if window.needs_form:
+        request = await requests.usable_today(session, student.id, window.day)
+        if request is None:
+            raise rules.Refused(
+                f"{window.label} outings need an approved request. Ask for today's outing "
+                "on the Today screen, then scan once it's approved."
+            )
+    expected = rules.return_time(
+        window,
+        now,
+        late=body.late,
+        requested_minutes=request.requested_minutes if request else None,
+    )
     outing = Outing(
-        student_id=student_id,
+        student_id=student.id,
         destination=body.destination,
-        purpose=body.purpose,
+        purpose=body.purpose or (request.purpose if request else None),
         # left_at and returned_at both come from the database clock (server_default /
         # now()), so app/DB clock skew can never make a return look earlier than leaving.
-        expected_return_at=body.expected_return_at,
+        expected_return_at=expected,
         out_via=Via.GATE if gate_id else Via.SELF,
         out_gate_id=gate_id,
+        request_id=request.id if request else None,
+        late_reason=body.late_reason,
     )
     session.add(outing)
     try:
@@ -103,16 +113,6 @@ async def current(session: AsyncSession, student_id: uuid.UUID) -> Outing | None
             select(Outing).where(Outing.student_id == student_id, Outing.returned_at.is_(None))
         )
     ).scalar_one_or_none()
-
-
-async def extend(session: AsyncSession, student_id: uuid.UUID, expected: datetime) -> Outing | None:
-    outing = await current(session, student_id)
-    if outing is None:
-        return None
-    _check_return_time(expected, outing.left_at, datetime.now(UTC))
-    outing.expected_return_at = expected
-    await session.commit()
-    return outing
 
 
 async def mark_return(

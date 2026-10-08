@@ -40,3 +40,31 @@ def test_downgrade_to_base_and_back(migrated_engine, test_db_url):
     assert set(inspect(migrated_engine).get_table_names()) <= {"alembic_version"}
     command.upgrade(cfg, "head")
     assert set(Base.metadata.tables) <= set(inspect(migrated_engine).get_table_names())
+
+
+def test_outing_rules_are_seeded_from_hostel_practice(migrated_engine, test_db_url):
+    # The per-test reset replaces the seeds, so rebuild the schema to read them fresh.
+    cfg = alembic_config(test_db_url)
+    command.downgrade(cfg, "0013")
+    command.upgrade(cfg, "head")
+    with migrated_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT s.name, d.day_type, d.opens_at::text, d.return_by::text, "
+                "d.late_until::text, d.max_minutes, d.needs_form "
+                "FROM day_rules d JOIN rule_sets s ON s.id = d.rule_set_id"
+            )
+        ).all()
+        default = conn.execute(
+            text(
+                "SELECT s.name FROM campus_settings c JOIN rule_sets s "
+                "ON s.id = c.default_rule_set_id"
+            )
+        ).scalar_one()
+    rules = {(name, day): rest for name, day, *rest in rows}
+    assert rules[("Boys' hostels", "weekday")] == ["18:00:00", "20:00:00", "20:30:00", None, False]
+    assert rules[("Girls' hostels", "weekday")] == ["18:00:00", "20:00:00", None, None, False]
+    assert rules[("Boys' hostels", "sunday")] == ["10:00:00", "20:00:00", None, 180, True]
+    assert rules[("Girls' hostels", "holiday")] == ["10:00:00", "20:00:00", None, 300, True]
+    assert len(rules) == 8
+    assert default == "Boys' hostels"

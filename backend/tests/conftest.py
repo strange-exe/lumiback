@@ -48,9 +48,41 @@ def migrated_engine(test_db_url: str) -> Engine:
     engine.dispose()
 
 
+OPEN_RULES = "Test rules (always open)"
+
+
+def seed_open_rules(conn: Connection) -> None:
+    """Outings allowed all day on every day type, as the campus default: tests that don't test
+    the rules then pass at any time of day. Rule tests narrow these with tests.helpers.set_rules.
+    (The upsert also restores campus_settings, which the per-test TRUNCATE empties.)"""
+    conn.execute(text("DELETE FROM hostels"))
+    conn.execute(text("UPDATE campus_settings SET default_rule_set_id = NULL"))
+    conn.execute(text("DELETE FROM rule_sets"))
+    rule_set = conn.execute(
+        text("INSERT INTO rule_sets (name) VALUES (:n) RETURNING id"), {"n": OPEN_RULES}
+    ).scalar_one()
+    conn.execute(
+        text(
+            "INSERT INTO day_rules (rule_set_id, day_type, opens_at, return_by) "
+            "SELECT :s, d, '00:00', '23:59' "
+            "FROM unnest(ARRAY['weekday', 'saturday', 'sunday', 'holiday']) AS d"
+        ),
+        {"s": rule_set},
+    )
+    conn.execute(
+        text(
+            "INSERT INTO campus_settings (id, default_rule_set_id) VALUES (1, :s) "
+            "ON CONFLICT (id) DO UPDATE SET default_rule_set_id = EXCLUDED.default_rule_set_id"
+        ),
+        {"s": rule_set},
+    )
+
+
 @pytest.fixture
 def clean_db(migrated_engine: Engine) -> Engine:
-    """Empties every table after the test."""
+    """Starts every test with the open default rules; empties every table after the test."""
+    with migrated_engine.begin() as conn:
+        seed_open_rules(conn)
     yield migrated_engine
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     with migrated_engine.begin() as conn:

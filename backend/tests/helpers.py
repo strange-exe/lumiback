@@ -85,3 +85,71 @@ def kiosk_qr(client: TestClient, kiosk_token: str) -> str:
     r = client.get("/kiosk/qr", headers={"X-Kiosk-Token": kiosk_token})
     assert r.status_code == 200, r.text
     return r.json()["qr"]
+
+
+# ---------- outing rules ----------
+
+IST_OFFSET_MIN = 330
+
+
+def ist_now_minutes() -> int:
+    """Minutes since midnight on the campus clock, right now."""
+    from datetime import UTC, datetime, timedelta
+
+    t = datetime.now(UTC) + timedelta(minutes=IST_OFFSET_MIN)
+    return t.hour * 60 + t.minute
+
+
+def hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def set_rules(
+    db,
+    state: str = "open",
+    *,
+    late: bool = False,
+    max_minutes: int | None = None,
+    needs_form: bool = False,
+) -> dict[str, str | None]:
+    """Today's rules for students on the default rule set, placed around the current IST time
+    so they fit inside today at any hour the suite runs:
+      "open"     opened before now; closes later today (and `late`: a later option after that)
+      "closed"   closed a few minutes ago
+      "not_yet"  opens in a few minutes
+    Applies to every day type. Returns the chosen times ("HH:MM") so tests can assert them."""
+    import pytest
+
+    now, last = ist_now_minutes(), 23 * 60 + 59
+    late_until = None
+    if state == "open":
+        if last - now < 10:
+            pytest.skip("too close to midnight IST to fit an open window")
+        opens = max(0, now - 60)
+        return_by = now + (last - now) // 2 if late else last
+        late_until = last if late else None
+    elif state == "closed":
+        if now < 10:
+            pytest.skip("too soon after midnight IST for a window that already closed")
+        opens, return_by = 0, now - 5
+    elif state == "not_yet":
+        if last - now < 10:
+            pytest.skip("too close to midnight IST for a window that opens later")
+        opens, return_by = now + 5, last
+    else:
+        raise ValueError(state)
+    times = {
+        "opens": hhmm(opens),
+        "return_by": hhmm(return_by),
+        "late_until": hhmm(late_until) if late_until is not None else None,
+    }
+    db.execute(
+        text(
+            "UPDATE day_rules SET opens_at = CAST(:opens AS time), "
+            "return_by = CAST(:return_by AS time), late_until = CAST(:late_until AS time), "
+            "max_minutes = :m, needs_form = :f"
+        ),
+        {**times, "m": max_minutes, "f": needs_form},
+    )
+    db.commit()
+    return times

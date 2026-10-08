@@ -6,11 +6,12 @@ so no code path (or manual SQL) can create an inconsistent sharing state.
 
 import enum
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -119,6 +120,13 @@ class Via(enum.StrEnum):
     GATE = "gate"
 
 
+class LateReply(enum.StrEnum):
+    """A late student's answer to the "are you OK?" alert."""
+
+    ON_MY_WAY = "on_my_way"
+    SAFE = "safe"
+
+
 class ScanDirection(enum.StrEnum):
     OUT = "out"
     IN = "in"
@@ -131,6 +139,7 @@ class ScanResult(enum.StrEnum):
     TOO_FAR = "too_far"  # GPS says the phone is not at the gate
     WEAK_GPS = "weak_gps"  # accuracy too poor to tell
     MOCK_GPS = "mock_gps"  # Android reports a mock-location provider
+    NOT_ALLOWED = "not_allowed"  # at the gate, but the outing rules don't allow it now
 
 
 class User(Base):
@@ -148,7 +157,17 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     roll_no: Mapped[str | None] = mapped_column(String(32))
-    hostel: Mapped[str | None] = mapped_column(String(64))
+    hostel: Mapped[str | None] = mapped_column(String(64))  # free text from sign-up (legacy)
+    # The hostel decides the outing rules (via its rule set). Until a student picks one, the
+    # campus default rule set applies.
+    hostel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("hostels.id", ondelete="SET NULL")
+    )
+    # Contacts for escalations and the weekend form (entered once, prefilled on forms).
+    phone: Mapped[str | None] = mapped_column(String(16))
+    emergency_name: Mapped[str | None] = mapped_column(String(80))
+    emergency_relation: Mapped[str | None] = mapped_column(String(40))
+    emergency_phone: Mapped[str | None] = mapped_column(String(16))
     email_verified_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
 
@@ -196,6 +215,141 @@ class Outing(Base):
     )
     # Set when the "you're overdue" push went out, so it is sent once per outing.
     overdue_notified_at: Mapped[datetime | None]
+    # The approved weekend/holiday request this outing was allowed by.
+    request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("outing_requests.id", ondelete="SET NULL")
+    )
+    # Weekday 8:30 PM option (where the hostel allows it): the student's reason, shown to admins.
+    late_reason: Mapped[str | None] = mapped_column(String(200))
+    # Late follow-up: "are you OK?" push at 30 min late, the student's answer, and escalation.
+    late_alert_at: Mapped[datetime | None]
+    late_reply: Mapped[LateReply | None] = mapped_column(str_enum(LateReply, "late_reply"))
+    late_replied_at: Mapped[datetime | None]
+
+
+class DayType(enum.StrEnum):
+    WEEKDAY = "weekday"
+    SATURDAY = "saturday"
+    SUNDAY = "sunday"
+    HOLIDAY = "holiday"
+
+
+class RuleSet(Base):
+    """A named set of outing rules ("Boys' hostels"), shared by the hostels that follow it."""
+
+    __tablename__ = "rule_sets"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    created_at: Mapped[datetime] = created_at()
+
+
+class DayRule(Base):
+    """One day type's rules in a rule set. Times are on the campus clock (IST)."""
+
+    __tablename__ = "day_rules"
+    __table_args__ = (
+        CheckConstraint("return_by > opens_at", name="window_order"),
+        CheckConstraint("late_until IS NULL OR late_until > return_by", name="late_after_return"),
+        CheckConstraint("max_minutes IS NULL OR max_minutes BETWEEN 30 AND 720", name="max_range"),
+    )
+
+    rule_set_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rule_sets.id", ondelete="CASCADE"), primary_key=True
+    )
+    day_type: Mapped[DayType] = mapped_column(str_enum(DayType, "day_type"), primary_key=True)
+    opens_at: Mapped[time] = mapped_column(Time)  # earliest tap-out
+    return_by: Mapped[time] = mapped_column(Time)  # latest normal return
+    late_until: Mapped[time | None] = mapped_column(Time)  # latest return with a reason
+    max_minutes: Mapped[int | None]  # longest outing; None: the window is the limit
+    needs_form: Mapped[bool] = mapped_column(server_default=text("false"))
+
+
+class Hostel(Base):
+    """A hostel, the rule set it follows, and who to call about its students."""
+
+    __tablename__ = "hostels"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    rule_set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rule_sets.id", ondelete="RESTRICT"))
+    warden_name: Mapped[str | None] = mapped_column(String(80))
+    warden_phone: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = created_at()
+
+
+class Holiday(Base):
+    """A date with holiday rules (form + weekend-style window), whatever weekday it falls on."""
+
+    __tablename__ = "holidays"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    name: Mapped[str] = mapped_column(String(60))
+
+
+class RequestStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    DECLINED = "declined"
+    CANCELLED = "cancelled"
+
+
+class OutingRequest(Base):
+    """The weekend/holiday outing form: sent on the day, approved by an admin before tap-out.
+    Contacts are a snapshot (what the student gave for this outing)."""
+
+    __tablename__ = "outing_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "requested_minutes IS NULL OR requested_minutes BETWEEN 30 AND 720",
+            name="requested_range",
+        ),
+        # One live request per student per day: a declined or cancelled one can be replaced.
+        Index(
+            "uq_outing_requests_one_live_per_day",
+            "student_id",
+            "day",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'approved')"),
+        ),
+        Index("ix_outing_requests_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    day: Mapped[date] = mapped_column(Date)  # the IST date it is for (always the day it's sent)
+    purpose: Mapped[str] = mapped_column(String(200))
+    phone: Mapped[str] = mapped_column(String(16))
+    emergency_name: Mapped[str] = mapped_column(String(80))
+    emergency_relation: Mapped[str] = mapped_column(String(40))
+    emergency_phone: Mapped[str] = mapped_column(String(16))
+    requested_minutes: Mapped[int | None]  # shorter than the day's max, if the student wants
+    status: Mapped[RequestStatus] = mapped_column(
+        str_enum(RequestStatus, "request_status"), server_default=RequestStatus.PENDING.value
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None]
+    note: Mapped[str | None] = mapped_column(String(200))  # e.g. why it was declined
+    created_at: Mapped[datetime] = created_at()
+
+
+class Escalation(Base):
+    """A late student who didn't answer the "are you OK?" alert: for an admin to follow up."""
+
+    __tablename__ = "escalations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    outing_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("outings.id", ondelete="CASCADE"), unique=True
+    )
+    created_at: Mapped[datetime] = created_at()
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    resolved_at: Mapped[datetime | None]
+    note: Mapped[str | None] = mapped_column(String(200))
 
 
 class CampusSettings(Base):
@@ -208,8 +362,12 @@ class CampusSettings(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, server_default=text("1"))
-    # Hostel curfew in IST (the campus clock); the default return time on a gate tap-out.
+    # Superseded by rule sets (kept one release for app versions that still read /campus.curfew).
     curfew: Mapped[time] = mapped_column(Time, server_default=text("'21:30'"))
+    # Rules for students who haven't picked a hostel yet.
+    default_rule_set_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("rule_sets.id", ondelete="SET NULL")
+    )
     scan_retention_days: Mapped[int] = mapped_column(server_default=text("180"))
     updated_at: Mapped[datetime] = created_at()
 

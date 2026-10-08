@@ -1,4 +1,4 @@
-"""Gate tap-out / tap-in: the rotating code, the GPS check, direction, replay and curfew rules."""
+"""Gate tap-out / tap-in: the rotating code, the GPS check, direction, replay and outing rules."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -7,9 +7,15 @@ import pytest
 from sqlalchemy import text
 
 from app.security.gate_codes import gate_code, qr_payload, window_at
-from app.services.gates import curfew_today
-from tests.conftest import FAKE_SECRET
-from tests.helpers import GATE, create_gate, kiosk_qr, make_admin, signup
+from tests.conftest import FAKE_SECRET, OPEN_RULES
+from tests.helpers import (
+    GATE,
+    create_gate,
+    kiosk_qr,
+    make_admin,
+    set_rules,
+    signup,
+)
 
 AT_GATE = {"lat": GATE["lat"], "lng": GATE["lng"], "accuracy_m": 8}
 METRES_PER_DEGREE_LAT = 111_195
@@ -62,18 +68,6 @@ def age_scans(db, seconds: int = 120) -> None:
     db.commit()
 
 
-def set_curfew(db, hh_mm: str) -> None:
-    # Upsert: the per-test TRUNCATE also empties this single-row table.
-    db.execute(
-        text(
-            "INSERT INTO campus_settings (id, curfew) VALUES (1, CAST(:c AS time)) "
-            "ON CONFLICT (id) DO UPDATE SET curfew = EXCLUDED.curfew"
-        ),
-        {"c": hh_mm},
-    )
-    db.commit()
-
-
 # ---------- tap out / tap in ----------
 
 
@@ -101,43 +95,78 @@ def test_tap_out_then_tap_in_at_the_gate(client, db, gate, riya):
     assert scans(db) == [("out", "accepted", True), ("in", "accepted", True)]
 
 
-def test_tap_out_defaults_to_tonights_curfew(client, db, gate, riya):
-    now = datetime.now(UTC)
-    if (now + timedelta(hours=5, minutes=30)).time() >= datetime.strptime("23:55", "%H:%M").time():
-        pytest.skip("too close to midnight IST for a 23:59 curfew")
-    set_curfew(db, "23:59")
+def test_tap_out_returns_by_todays_rule(client, db, gate, riya):
+    rules = set_rules(db, "open")
     r = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]))
     assert r.status_code == 200, r.text
     expected = datetime.fromisoformat(r.json()["outing"]["expected_return_at"])
-    assert expected == curfew_today(datetime.strptime("23:59", "%H:%M").time(), now)
+    assert expected.utcoffset() == timedelta(hours=5, minutes=30)  # on the campus clock
+    assert expected.strftime("%H:%M") == rules["return_by"]
 
 
-def test_students_can_read_tonights_curfew(client, db, riya):
-    set_curfew(db, "22:15")
+def test_a_return_time_sent_by_an_older_app_is_ignored(client, db, gate, riya):
+    rules = set_rules(db, "open")
+    r = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]), expected_return_at=soon(30))
+    assert r.status_code == 200, r.text
+    expected = datetime.fromisoformat(r.json()["outing"]["expected_return_at"])
+    assert expected.strftime("%H:%M") == rules["return_by"]
+
+
+def test_outside_the_window_tap_out_is_refused_and_logged(client, db, gate, riya):
+    set_rules(db, "closed")
+    r = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]))
+    assert r.status_code == 422
+    assert "outings end at" in r.json()["detail"]
+    assert client.get("/outings/current", headers=riya).json() is None
+    assert scans(db) == [("out", "not_allowed", True)]
+
+
+def test_tapping_in_is_never_refused_by_the_rules(client, db, gate, riya):
+    set_rules(db, "open")
+    assert scan(client, riya, kiosk_qr(client, gate["kiosk_token"])).status_code == 200
+    set_rules(db, "closed")  # the window closed while they were out
+    age_scans(db)
+    back = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]))
+    assert back.status_code == 200, back.text
+    assert back.json()["direction"] == "in"
+
+
+def test_the_later_return_option_with_a_reason(client, db, gate, riya):
+    rules = set_rules(db, "open", late=True)
+    qr = kiosk_qr(client, gate["kiosk_token"])
+    no_reason = scan(client, riya, qr, late=True)
+    assert no_reason.status_code == 422
+    r = scan(client, riya, qr, late=True, late_reason="Doctor's appointment")
+    assert r.status_code == 200, r.text
+    assert r.json()["outing"]["late_reason"] == "Doctor's appointment"
+    expected = datetime.fromisoformat(r.json()["outing"]["expected_return_at"])
+    assert expected.strftime("%H:%M") == rules["late_until"]
+
+
+def test_the_later_return_option_is_refused_where_the_rules_dont_have_it(client, db, gate, riya):
+    set_rules(db, "open")  # no later option
+    r = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]), late=True, late_reason="Bus")
+    assert r.status_code == 422
+    assert "don't include returning after" in r.json()["detail"]
+
+
+def test_campus_shows_todays_rules(client, db, riya):
+    rules = set_rules(db, "open", late=True)
     r = client.get("/campus", headers=riya)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["curfew"] == "22:15"
-    at = datetime.fromisoformat(body["curfew_at"])
-    assert at.utcoffset() == timedelta(hours=5, minutes=30)  # on the campus clock
-    assert (at.hour, at.minute) == (22, 15)
-    assert at == curfew_today(datetime.strptime("22:15", "%H:%M").time(), datetime.now(UTC))
+    today = body["today"]
+    assert today["rule_set"] == OPEN_RULES and today["hostel"] is None  # the campus default
+    assert today["needs_form"] is False
+    return_by = datetime.fromisoformat(today["return_by"])
+    assert return_by.utcoffset() == timedelta(hours=5, minutes=30)  # on the campus clock
+    assert body["curfew_at"] == today["return_by"]  # for app versions that predate `today`
+    assert body["curfew"] == return_by.strftime("%H:%M")
+    assert datetime.fromisoformat(today["late_until"]).strftime("%H:%M") == rules["late_until"]
 
 
 def test_campus_rules_need_a_signed_in_user(client):
     assert client.get("/campus").status_code == 401
-
-
-def test_after_curfew_the_student_must_choose_a_return_time(client, db, gate, riya):
-    set_curfew(db, "00:00")  # always in the past today
-    qr = kiosk_qr(client, gate["kiosk_token"])
-    r = scan(client, riya, qr)
-    assert r.status_code == 428
-    assert "curfew" in r.json()["detail"]
-    assert client.get("/outings/current", headers=riya).json() is None
-
-    retry = scan(client, riya, qr, expected_return_at=soon(1))
-    assert retry.status_code == 200, retry.text  # the same code still works (3 windows)
 
 
 def test_tap_in_closes_a_self_reported_outing(client, db, gate, riya):

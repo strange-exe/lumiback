@@ -1,4 +1,5 @@
-"""M1 outings: check out, extend, return, history, overdue (computed correctly in IST)."""
+"""Outings: check out (within the outing rules), return, history, overdue (computed in IST).
+The rules themselves are tested in test_rules.py; here, that the API applies them."""
 
 import threading
 from datetime import UTC, datetime, timedelta
@@ -7,7 +8,7 @@ import pytest
 from sqlalchemy import text
 
 from app.schemas import IST
-from tests.helpers import signup
+from tests.helpers import set_rules, signup
 
 
 def iso(dt: datetime) -> str:
@@ -46,43 +47,66 @@ def make_overdue(db, minutes: int = 10) -> None:
 # ---------- check out ----------
 
 
-def test_check_out_records_the_trip_in_ist(client, riya):
-    expected = in_ist(2)
+def test_check_out_records_the_trip_in_ist(client, riya, db):
+    rules = set_rules(db, "open")
     r = client.post(
-        "/outings",
-        json={
-            "destination": "Clock Tower",
-            "purpose": "Groceries",
-            "expected_return_at": iso(expected),
-        },
-        headers=riya,
+        "/outings", json={"destination": "Clock Tower", "purpose": "Groceries"}, headers=riya
     )
     assert r.status_code == 201, r.text
     o = r.json()
     assert o["status"] == "out" and o["returned_at"] is None
     assert (o["destination"], o["purpose"]) == ("Clock Tower", "Groceries")
     assert o["expected_return_at"].endswith("+05:30") and o["left_at"].endswith("+05:30")
-    assert parse(o["expected_return_at"]) == expected
+    assert parse(o["expected_return_at"]).strftime("%H:%M") == rules["return_by"]  # the rules'
     assert abs(parse(o["left_at"]) - datetime.now(UTC)) < timedelta(seconds=30)
 
 
-def test_utc_input_is_the_same_instant_shown_in_ist(client, riya):
-    expected_utc = (datetime.now(UTC) + timedelta(hours=3)).replace(microsecond=0)
-    r = client.post("/outings", json={"expected_return_at": expected_utc.isoformat()}, headers=riya)
-    shown = r.json()["expected_return_at"]
-    assert shown.endswith("+05:30")
-    assert parse(shown) == expected_utc  # same moment, different offset
+def test_a_return_time_sent_by_an_older_app_is_ignored(client, riya, db):
+    rules = set_rules(db, "open")
+    r = client.post("/outings", json={"expected_return_at": iso(in_ist(30))}, headers=riya)
+    assert r.status_code == 201, r.text
+    assert parse(r.json()["expected_return_at"]).strftime("%H:%M") == rules["return_by"]
+
+
+@pytest.mark.parametrize("state", ["closed", "not_yet"])
+def test_check_out_outside_the_window_is_refused(client, riya, db, state):
+    set_rules(db, state)
+    r = client.post("/outings", json={}, headers=riya)
+    assert r.status_code == 403
+    assert "outings" in r.json()["detail"]
+    assert client.get("/outings/current", headers=riya).json() is None
+
+
+def test_the_later_return_option_needs_a_reason(client, riya, db):
+    rules = set_rules(db, "open", late=True)
+    assert client.post("/outings", json={"late": True}, headers=riya).status_code == 422
+    r = client.post("/outings", json={"late": True, "late_reason": "Family dinner"}, headers=riya)
+    assert r.status_code == 201, r.text
+    assert parse(r.json()["expected_return_at"]).strftime("%H:%M") == rules["late_until"]
+    assert r.json()["late_reason"] == "Family dinner"
+
+
+def test_a_reason_without_the_later_option_is_dropped(client, riya, db):
+    set_rules(db, "open", late=True)
+    r = client.post("/outings", json={"late_reason": "Just because"}, headers=riya)
+    assert r.status_code == 201, r.text
+    assert r.json()["late_reason"] is None
+
+
+def test_form_days_need_an_approved_request(client, riya, db):
+    set_rules(db, "open", needs_form=True)
+    r = client.post("/outings", json={}, headers=riya)
+    assert r.status_code == 403
+    assert "need an approved request" in r.json()["detail"]
 
 
 @pytest.mark.parametrize(
     "body",
     [
         {"expected_return_at": "2026-10-05T20:00:00"},  # naive: ambiguous
-        {"expected_return_at": iso(datetime.now(UTC) - timedelta(minutes=5))},  # past
-        {"expected_return_at": iso(datetime.now(UTC) + timedelta(days=8))},  # too long
-        {"expected_return_at": iso(in_ist(2)), "status": "returned"},  # unknown field
-        {"expected_return_at": iso(in_ist(2)), "destination": "x" * 101},
-        {"destination": "Library"},  # expected return is required
+        {"status": "returned"},  # unknown field
+        {"destination": "x" * 101},
+        {"late": True, "late_reason": "ok"},  # reason too short to mean anything
     ],
 )
 def test_invalid_check_outs_rejected(client, riya, body):
@@ -157,37 +181,15 @@ def test_overdue_boundary_in_ist(client, riya, db):
         assert client.get("/outings/current", headers=riya).json()["status"] == status
 
 
-def test_extending_clears_overdue(client, riya, db):
+def test_return_times_cannot_be_extended(client, riya, db):
     check_out(client, riya)
     make_overdue(db)
-    later = in_ist(1)
-    r = client.patch("/outings/current", json={"expected_return_at": iso(later)}, headers=riya)
-    assert r.status_code == 200
-    assert r.json()["status"] == "out" and parse(r.json()["expected_return_at"]) == later
-
-
-def test_extend_rules(client, riya):
-    past = iso(datetime.now(UTC) - timedelta(minutes=1))
-    assert (
-        client.patch(
-            "/outings/current", json={"expected_return_at": iso(in_ist(1))}, headers=riya
-        ).status_code
-        == 404
-    )
-    check_out(client, riya)
-    assert (
-        client.patch(
-            "/outings/current", json={"expected_return_at": past}, headers=riya
-        ).status_code
-        == 422
-    )
-    too_far = iso(datetime.now(UTC) + timedelta(days=8))
-    assert (
-        client.patch(
-            "/outings/current", json={"expected_return_at": too_far}, headers=riya
-        ).status_code
-        == 422
-    )
+    before = client.get("/outings/current", headers=riya).json()["expected_return_at"]
+    r = client.patch("/outings/current", json={"expected_return_at": iso(in_ist(1))}, headers=riya)
+    assert r.status_code == 403
+    assert "can't be extended" in r.json()["detail"]
+    after = client.get("/outings/current", headers=riya).json()
+    assert after["expected_return_at"] == before and after["status"] == "overdue"
 
 
 # ---------- history & summary ----------

@@ -1,10 +1,12 @@
 """Request/response models. Inputs forbid unknown fields so typos fail loudly."""
 
+import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from pydantic import (
+    AfterValidator,
     AwareDatetime,
     BaseModel,
     ConfigDict,
@@ -263,13 +265,32 @@ Destination = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 Purpose = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
-class OutingCreateIn(Input):
+LateReason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
+
+
+class LateOption(Input):
+    """The weekday "back by 8:30 PM" option, where the hostel's rules allow it: needs a reason."""
+
+    late: bool = False
+    late_reason: LateReason | None = None
+
+    @model_validator(mode="after")
+    def _reason_with_late(self) -> "LateOption":
+        if self.late and not self.late_reason:
+            raise ValueError("give a reason for coming back later")
+        if not self.late:
+            self.late_reason = None
+        return self
+
+
+class OutingCreateIn(LateOption):
     destination: Destination | None = None
     purpose: Purpose | None = None
-    expected_return_at: AwareDatetime  # any offset; naive timestamps are rejected
+    # Ignored: the outing rules set the return time. Accepted so older app versions still work.
+    expected_return_at: AwareDatetime | None = None
 
 
-class OutingExtendIn(Input):
+class OutingExtendIn(Input):  # the endpoint now always refuses (no extensions)
     expected_return_at: AwareDatetime
 
 
@@ -287,6 +308,8 @@ class OutingOut(BaseModel):
     duration_minutes: int | None  # once returned
     out_via: Literal["self", "gate"] = "self"  # tapped out at a gate, or logged in the app
     in_via: Literal["self", "gate"] | None = None
+    late_reason: str | None = None  # chose the later return time (weekday option), and why
+    late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the "are you OK?" alert
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -310,6 +333,96 @@ class OutingSummary(BaseModel):
     currently: Literal["in", "out", "overdue"]
 
 
+# ---------- contacts, hostels, weekend requests ----------
+
+
+def _phone(value: str) -> str:
+    """'98765 43210', '+91-98765-43210', '09876543210' -> '+919876543210'. Other countries need
+    their + code. Stored in one dialable form so a warden can call it straight from the page."""
+    digits = re.sub(r"[\s\-().]", "", value)
+    if digits.startswith("+"):
+        rest = digits[1:]
+        if not rest.isdigit() or not 8 <= len(rest) <= 15:
+            raise ValueError("enter a phone number with 8-15 digits")
+        return "+" + rest
+    if not digits.isdigit():
+        raise ValueError("a phone number has only digits")
+    if len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    if len(digits) != 10 or digits[0] not in "6789":
+        raise ValueError("enter a 10-digit Indian mobile number, or add the country code (+)")
+    return "+91" + digits
+
+
+Phone = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=24), AfterValidator(_phone)
+]
+PersonName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+Relation = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class ContactsIn(Input):
+    """The student's own number and an emergency contact (parent, guardian or companion)."""
+
+    phone: Phone
+    emergency_name: PersonName
+    emergency_relation: Relation
+    emergency_phone: Phone
+
+
+class ProfileIn(Input):
+    """Fields a student may change on their profile. Omitted fields stay as they are."""
+
+    hostel_id: uuid.UUID | None = None
+    contacts: ContactsIn | None = None
+
+
+class ProfileOut(BaseModel):
+    hostel_id: uuid.UUID | None
+    hostel: str | None  # the hostel's name
+    phone: str | None
+    emergency_name: str | None
+    emergency_relation: str | None
+    emergency_phone: str | None
+
+
+class HostelChoiceOut(BaseModel):
+    """For the student's hostel picker: just names and their rule set."""
+
+    id: uuid.UUID
+    name: str
+    rule_set: str
+
+
+class OutingRequestIn(ContactsIn):
+    purpose: Purpose
+    # Shorter than the day's limit, if the student wants; never longer.
+    requested_minutes: int | None = Field(default=None, ge=30, le=720)
+
+
+class OutingRequestOut(BaseModel):
+    id: uuid.UUID
+    day: date
+    purpose: str
+    requested_minutes: int | None
+    status: Literal["pending", "approved", "declined", "cancelled"]
+    note: str | None
+    decided_at: datetime | None
+    created_at: datetime
+    used: bool  # an outing was started with it
+
+    @field_serializer("decided_at", "created_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class RequestDecisionIn(Input):
+    approve: bool
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+
+
 # ---------- gates (tap in / tap out) ----------
 
 GateName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
@@ -317,13 +430,13 @@ Latitude = Annotated[float, Field(ge=-90, le=90)]
 Longitude = Annotated[float, Field(ge=-180, le=180)]
 
 
-class GateScanIn(Input):
+class GateScanIn(LateOption):
     qr: str = Field(min_length=1, max_length=300)
     lat: Latitude
     lng: Longitude
     accuracy_m: float = Field(ge=0, le=100_000)
     mocked: bool = False  # Android's "from a mock location provider" flag
-    # Tap-out only: when the student plans to be back. Defaults to today's curfew.
+    # Ignored: the outing rules set the return time. Accepted so older app versions still work.
     expected_return_at: AwareDatetime | None = None
     destination: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -337,11 +450,32 @@ class GateScanOut(BaseModel):
     outing: OutingOut
 
 
-class CampusOut(BaseModel):
-    """What every student may know about campus rules: tonight's curfew, on the campus clock."""
+class TodayRulesOut(BaseModel):
+    """The student's outing rules for today (their hostel's rule set, or the campus default)."""
 
-    curfew: str  # "21:30", IST
-    curfew_at: datetime  # today's curfew as an instant (IST offset)
+    day: date
+    day_type: Literal["weekday", "saturday", "sunday", "holiday"]
+    label: str  # "Weekday", "Sunday", or the holiday's name
+    rule_set: str
+    hostel: str | None  # None: the student hasn't picked one (campus default rules)
+    opens_at: datetime
+    return_by: datetime
+    late_until: datetime | None  # the later return option, where allowed
+    max_minutes: int | None
+    needs_form: bool
+
+    @field_serializer("opens_at", "return_by", "late_until")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class CampusOut(BaseModel):
+    """What a student may know about the outing rules, on the campus clock.
+    `curfew`/`curfew_at` (today's return-by) stay for app versions that predate `today`."""
+
+    curfew: str  # "20:00", IST
+    curfew_at: datetime
+    today: TodayRulesOut | None = None  # None: rules aren't set up
 
     @field_serializer("curfew_at")
     def _in_ist(self, value: datetime) -> str:
@@ -472,3 +606,96 @@ class PushTokenIn(Input):
     muted: list[Literal["follow-requests", "return-reminders", "share-status"]] = Field(
         default_factory=list, max_length=3
     )
+
+
+# ---------- admin: outing rules, hostels, holidays, weekend requests ----------
+
+Clock = Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]  # "18:00", IST
+ShortName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+
+
+class DayRuleIO(Input):
+    day_type: Literal["weekday", "saturday", "sunday", "holiday"]
+    opens_at: Clock
+    return_by: Clock
+    late_until: Clock | None = None  # a later return with a reason; None: not allowed
+    max_minutes: int | None = Field(default=None, ge=30, le=720)
+    needs_form: bool = False
+
+    @model_validator(mode="after")
+    def _order(self) -> "DayRuleIO":
+        if self.return_by <= self.opens_at:
+            raise ValueError("the return time must be after the opening time")
+        if self.late_until is not None and self.late_until <= self.return_by:
+            raise ValueError("the later return must be after the normal return")
+        return self
+
+
+class RuleSetIn(Input):
+    name: ShortName
+    days: list[DayRuleIO] = Field(min_length=4, max_length=4)
+
+    @model_validator(mode="after")
+    def _every_day_once(self) -> "RuleSetIn":
+        if {d.day_type for d in self.days} != {"weekday", "saturday", "sunday", "holiday"}:
+            raise ValueError("give rules for weekday, saturday, sunday and holiday, once each")
+        return self
+
+
+class RuleSetOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_default: bool  # applies to students who haven't picked a hostel
+    hostels: list[str]
+    days: list[DayRuleIO]
+
+
+class HostelIn(Input):
+    name: ShortName
+    rule_set_id: uuid.UUID
+    warden_name: PersonName | None = None
+    warden_phone: Phone | None = None
+
+
+class HostelOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    rule_set_id: uuid.UUID
+    rule_set: str
+    warden_name: str | None
+    warden_phone: str | None
+    students: int
+
+
+class HolidayIO(Input):
+    day: date
+    name: ShortName
+
+
+class AdminRequestOut(BaseModel):
+    """A weekend/holiday request as admins see it: who, why, how long, and whom to call."""
+
+    id: uuid.UUID
+    student_id: uuid.UUID
+    name: str
+    email: str
+    roll_no: str | None
+    hostel: str | None
+    day: date
+    purpose: str
+    phone: str
+    emergency_name: str
+    emergency_relation: str
+    emergency_phone: str
+    requested_minutes: int | None
+    max_minutes: int | None  # the student's limit that day, for context
+    status: Literal["pending", "approved", "declined", "cancelled"]
+    note: str | None
+    decided_by: str | None
+    decided_at: datetime | None
+    created_at: datetime
+    used: bool
+
+    @field_serializer("decided_at", "created_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None

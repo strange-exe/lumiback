@@ -6,11 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.api.deps import CurrentUser, LimiterDep, SessionDep, SettingsDep, client_ip, enforce
-from app.schemas import CampusOut, GateScanIn, GateScanOut, KioskOut
+from app.models import Hostel
+from app.schemas import CampusOut, GateScanIn, GateScanOut, KioskOut, TodayRulesOut
 from app.security.gate_codes import gate_code, qr_payload, window_at, window_ends_at
 from app.security.rate_limit import Limit
 from app.services import gates as svc
-from app.services import outings
+from app.services import outings, rules
 
 router = APIRouter(tags=["gates"])
 
@@ -20,11 +21,30 @@ KIOSK_PER_IP = Limit(max_hits=120, window_seconds=60)
 
 
 @router.get("/campus")
-async def campus(_me: CurrentUser, session: SessionDep) -> CampusOut:
-    """Tonight's curfew, for the student's Today screen (admins change it in Settings)."""
-    curfew = (await svc.campus_settings(session)).curfew
+async def campus(me: CurrentUser, session: SessionDep) -> CampusOut:
+    """Today's outing rules for this student (their hostel's rule set, or the campus default)."""
+    now = datetime.now(UTC)
+    try:
+        w = await rules.today_window(session, me, now)
+    except rules.Refused:  # rules not set up: fall back to the old single curfew
+        curfew = (await svc.campus_settings(session)).curfew
+        return CampusOut(curfew=curfew.strftime("%H:%M"), curfew_at=svc.curfew_today(curfew, now))
+    hostel = await session.get(Hostel, me.hostel_id) if me.hostel_id else None
     return CampusOut(
-        curfew=curfew.strftime("%H:%M"), curfew_at=svc.curfew_today(curfew, datetime.now(UTC))
+        curfew=w.return_by.astimezone(rules.IST).strftime("%H:%M"),
+        curfew_at=w.return_by,
+        today=TodayRulesOut(
+            day=w.day,
+            day_type=w.day_type.value,
+            label=w.label,
+            rule_set=w.rule_set,
+            hostel=hostel.name if hostel else None,
+            opens_at=w.opens,
+            return_by=w.return_by,
+            late_until=w.late_until,
+            max_minutes=w.max_minutes,
+            needs_form=w.needs_form,
+        ),
     )
 
 
@@ -46,13 +66,6 @@ async def scan(
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You just scanned. Check Today to see your status."
         ) from None
-    except svc.NeedsReturnTime:
-        raise HTTPException(
-            status.HTTP_428_PRECONDITION_REQUIRED,
-            detail="It's past curfew. Choose when you'll be back, then scan again.",
-        ) from None
-    except outings.InvalidReturnTime as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)) from None
     except outings.AlreadyOut:  # a parallel request opened an outing first
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You're already checked out."
