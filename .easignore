@@ -1,0 +1,40 @@
+# What EAS Build uploads (from the repository root). When this file exists EAS ignores every
+# .gitignore, and it applies nested .gitignore files only approximately anyway, so the rules for
+# the mobile build live here in full. Only apps/mobile is needed to build the app.
+
+# Other apps and local tooling
+backend/
+apps/web/
+.github/
+.claude/
+.vscode/
+.idea/
+
+# Secrets: EAS environment variables provide the build's settings
+.env
+.env.*
+!.env.example
+**/google-services.json
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+
+# Dependencies and generated files (EAS installs and prebuilds on its own machine)
+node_modules/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+apps/mobile/.kotlin/
+apps/mobile/expo-env.d.ts
+*.apk
+*.aab
+*.tsbuildinfo
+.metro-health-check*
+npm-debug.*
+.DS_Store
+Thumbs.db

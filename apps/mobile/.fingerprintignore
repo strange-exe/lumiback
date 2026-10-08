@@ -1,0 +1,5 @@
+# The runtime version is a fingerprint of native inputs; local and EAS builds must agree on it.
+# A local Android build rewrites library manifests in place (React Native's Gradle plugin strips
+# their `package=` attribute), which EAS's fresh install never sees. A real native dependency
+# change still changes that package's package.json, which stays in the fingerprint.
+node_modules/**/android/src/main/AndroidManifest.xml
