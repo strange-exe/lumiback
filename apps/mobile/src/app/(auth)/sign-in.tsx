@@ -62,7 +62,7 @@ export default function SignIn(): ReactNode {
             autoComplete="email"
             keyboardType="email-address"
             textContentType="emailAddress"
-            placeholder="abhinesh.gangwar@geu.ac.in"
+            placeholder="student_id@geu.ac.in"
             returnKeyType="next"
             onSubmitEditing={() => passwordRef.current?.focus()}
           />

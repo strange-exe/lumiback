@@ -20,7 +20,7 @@ export function SignInForm({ email }: { email?: string }): ReactNode {
         type="email"
         autoComplete="email"
         inputMode="email"
-        placeholder="abhinesh.gangwar@geu.ac.in"
+        placeholder="student_id@geu.ac.in"
         defaultValue={state.fields?.email ?? email}
         required
       />

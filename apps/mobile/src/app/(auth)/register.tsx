@@ -58,7 +58,7 @@ export default function Register(): ReactNode {
           autoCapitalize="none"
           autoComplete="email"
           keyboardType="email-address"
-          placeholder="abhinesh.gangwar@geu.ac.in"
+          placeholder="student_id@geu.ac.in"
           hint="We'll send a 6-digit code to confirm it's yours."
         />
         <Field

@@ -28,7 +28,7 @@ export function RegisterForm(): ReactNode {
         type="email"
         autoComplete="email"
         inputMode="email"
-        placeholder="abhinesh.gangwar@geu.ac.in"
+        placeholder="student_id@geu.ac.in"
         defaultValue={state.fields?.email}
         hint="We'll send a 6-digit code to confirm it's yours."
         required
