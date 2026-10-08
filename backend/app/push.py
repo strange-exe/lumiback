@@ -109,7 +109,12 @@ async def notify_user(
     try:
         async with sessionmaker() as session:
             tokens = list(
-                await session.scalars(select(PushToken.token).where(PushToken.user_id == user_id))
+                await session.scalars(
+                    select(PushToken.token).where(
+                        PushToken.user_id == user_id,
+                        ~PushToken.muted.contains([message.channel]),  # muted on that phone
+                    )
+                )
             )
             if not tokens:
                 return

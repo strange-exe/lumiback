@@ -23,9 +23,11 @@ def push(client) -> MemoryPushSender:
     return sender
 
 
-def register_token(client, headers, token=TOKEN):
+def register_token(client, headers, token=TOKEN, muted=()):
     r = client.post(
-        "/devices/push-token", json={"token": token, "platform": "android"}, headers=headers
+        "/devices/push-token",
+        json={"token": token, "platform": "android", "muted": list(muted)},
+        headers=headers,
     )
     assert r.status_code == 204, r.text
 
@@ -121,7 +123,10 @@ def test_follow_request_and_approval_are_pushed(client, push):
     assert push.outbox[-1] == (
         [OTHER],
         PushMessage(
-            title="Riya approved you", body="You can see their live location now.", url="/live"
+            title="Riya approved you",
+            body="You can see their live location now.",
+            url="/live",
+            channel="share-status",
         ),
     )
 
@@ -159,6 +164,31 @@ def test_a_failing_sender_never_breaks_the_request(client):
     share = open_share(client, riya)
     code = client.post(f"/sessions/{share['id']}/codes", headers=riya).json()["code"]
     assert client.post("/codes/redeem", json={"code": code}, headers=arjun).status_code == 200
+
+
+def test_muted_channels_are_skipped_per_phone(client, db, push):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    _, arjun = signup(client, "arjun@example.com", "Arjun")
+    register_token(client, riya, TOKEN, muted=["follow-requests"])
+    register_token(client, riya, "ExponentPushToken[riyaTablet003]")  # her other device
+    share = open_share(client, riya)
+    code = client.post(f"/sessions/{share['id']}/codes", headers=riya).json()["code"]
+    client.post("/codes/redeem", json={"code": code}, headers=arjun)
+    assert push.outbox[-1][0] == ["ExponentPushToken[riyaTablet003]"]
+
+    register_token(client, riya, TOKEN, muted=[])  # switched back on
+    stored = db.execute(text("SELECT muted FROM push_tokens WHERE token = :t"), {"t": TOKEN})
+    assert stored.scalar_one() == []
+
+
+def test_unknown_channels_cant_be_muted(client):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    r = client.post(
+        "/devices/push-token",
+        json={"token": TOKEN, "platform": "android", "muted": ["everything"]},
+        headers=riya,
+    )
+    assert r.status_code == 422
 
 
 # ---------- Expo sender ----------

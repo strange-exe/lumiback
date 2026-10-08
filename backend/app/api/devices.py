@@ -17,11 +17,13 @@ async def register(body: PushTokenIn, me: CurrentUser, session: SessionDep) -> R
     """Idempotent. A token moves to whoever signed in on that phone most recently, so a shared
     or handed-down phone never pushes one student's notifications to another."""
     existing = await session.scalar(select(PushToken).where(PushToken.token == body.token))
+    muted = sorted(set(body.muted))
     if existing is None:
-        session.add(PushToken(user_id=me.id, token=body.token, platform=body.platform))
+        session.add(PushToken(user_id=me.id, token=body.token, platform=body.platform, muted=muted))
     else:
         existing.user_id = me.id
         existing.platform = body.platform
+        existing.muted = muted
         existing.last_seen_at = datetime.now(UTC)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

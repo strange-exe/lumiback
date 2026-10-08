@@ -446,3 +446,7 @@ class PushTokenIn(Input):
         str, StringConstraints(pattern=r"^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,200}\]$")
     ]
     platform: Literal["android", "ios"]
+    # Channels switched off in the app's notification settings; pushes on them are skipped.
+    muted: list[Literal["follow-requests", "return-reminders", "share-status"]] = Field(
+        default_factory=list, max_length=3
+    )

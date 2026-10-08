@@ -26,6 +26,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 HASH_BYTES = 32  # SHA-256 / HMAC-SHA256 digest size
@@ -267,6 +268,8 @@ class PushToken(Base):
     )
     token: Mapped[str] = mapped_column(String(255), unique=True)
     platform: Mapped[str] = mapped_column(String(16))
+    # Notification channels the student switched off in the app (e.g. "follow-requests").
+    muted: Mapped[list[str]] = mapped_column(ARRAY(String(32)), server_default=text("'{}'"))
     created_at: Mapped[datetime] = created_at()
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

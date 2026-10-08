@@ -208,6 +208,7 @@ async def approve_viewer(
                 title=f"{sharer.name if sharer else 'They'} approved you",
                 body="You can see their live location now.",
                 url="/live",
+                channel="share-status",
             ),
         )
     return await svc.sharer_view(session, share)
