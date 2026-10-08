@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, type ReactNode } from "react";
 
 import { Field, FormError } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { register } from "@/features/auth/actions";
 import type { FormState } from "@/lib/types";
@@ -33,10 +34,9 @@ export function RegisterForm(): ReactNode {
         hint="We'll send a 6-digit code to confirm it's yours."
         required
       />
-      <Field
+      <PasswordField
         label="Password"
         name="password"
-        type="password"
         autoComplete="new-password"
         hint="At least 10 characters. Avoid your name or email."
         required

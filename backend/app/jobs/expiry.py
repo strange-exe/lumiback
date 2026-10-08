@@ -29,7 +29,7 @@ from app.models import (
 from app.push import PushMessage, PushSender, notify_user
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
-from app.services import verification
+from app.services import password_reset, verification
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ class SweepResult:
     deleted_pending_signups: int = 0
     overdue_notified: int = 0
     deleted_scans: int = 0
+    deleted_password_resets: int = 0
 
 
 async def sweep(
@@ -115,6 +116,7 @@ async def sweep(
         )
         hits = await delete_old_hits(session, now)
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
+        resets = await password_reset.delete_expired(session, now)  # unused reset codes
         late = list(
             await session.execute(
                 update(Outing)
@@ -159,6 +161,7 @@ async def sweep(
         pending,
         overdue_notified=len(late),
         deleted_scans=scans.rowcount,
+        deleted_password_resets=resets,
     )
 
 

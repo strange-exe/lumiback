@@ -132,3 +132,51 @@ export async function deleteAccount(_: FormState, form: FormData): Promise<FormS
   await clearTokens();
   redirect("/sign-in?deleted=1");
 }
+
+/** Forgot password, step 1: the API answers the same whether or not the account exists. */
+export async function requestPasswordReset(_: FormState, form: FormData): Promise<FormState> {
+  const email = text(form, "email").toLowerCase();
+  if (!email.includes("@")) return { error: "Enter your university email.", fields: { email } };
+  try {
+    await callBackend("/auth/forgot-password", {
+      method: "POST",
+      body: { email },
+      clientIp: await visitorIp(),
+    });
+  } catch (error) {
+    return failure(error, { email });
+  }
+  redirect(`/forgot-password?sent=1&email=${encodeURIComponent(email)}`);
+}
+
+/** Step 2: the emailed code sets a new password (signing out every device), then sign in here. */
+export async function resetPassword(_: FormState, form: FormData): Promise<FormState> {
+  const email = text(form, "email").toLowerCase();
+  const code = text(form, "code").replace(/\s/g, "");
+  const password = form.get("password");
+  if (!/^\d{6}$/.test(code)) return { error: "Enter the 6-digit code from your email." };
+  if (typeof password !== "string" || !password) return { error: "Choose a new password." };
+  const clientIp = await visitorIp();
+  try {
+    await callBackend("/auth/reset-password", {
+      method: "POST",
+      body: { email, code, password },
+      clientIp,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+  let tokens: TokenPair;
+  try {
+    tokens = await callBackend<TokenPair>("/auth/login", {
+      method: "POST",
+      body: { email, password },
+      clientIp,
+    });
+  } catch {
+    // The password is changed; if signing in fails right now, let them do it by hand.
+    redirect(`/sign-in?reset=${encodeURIComponent(email)}`);
+  }
+  await storeTokens(tokens);
+  redirect("/home");
+}

@@ -10,7 +10,7 @@ export const API = "http://127.0.0.1:8100";
 export async function signIn(page: Page, who = STUDENT): Promise<void> {
   await page.goto("/sign-in");
   await page.getByLabel("University email").fill(who.email);
-  await page.getByLabel("Password").fill(who.password);
+  await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/home$/);
 }

@@ -5,7 +5,7 @@ import { Linking, View } from "react-native";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
-import { Button, Field, FormError, Screen, T } from "@/ui/kit";
+import { Button, Field, FormError, PasswordField, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 const PRIVACY_URL = `${WEB_URL}/privacy`;
@@ -61,11 +61,10 @@ export default function Register(): ReactNode {
           placeholder="student_id@geu.ac.in"
           hint="We'll send a 6-digit code to confirm it's yours."
         />
-        <Field
+        <PasswordField
           label="Password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           autoComplete="new-password"
           hint="At least 10 characters. Avoid your name or email."
         />

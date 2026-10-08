@@ -4,6 +4,7 @@ import { CaretDown } from "@phosphor-icons/react";
 import { useActionState, type ReactNode } from "react";
 
 import { Field, FormError } from "@/components/ui/Field";
+import { PasswordField } from "@/components/ui/PasswordField";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { deleteAccount } from "@/features/auth/actions";
 import type { FormState } from "@/lib/types";
@@ -29,13 +30,7 @@ export function DeleteAccountForm(): ReactNode {
           This erases your account, outings, shares and everything tied to them, right away. Anyone
           following you loses access. It can&apos;t be undone.
         </p>
-        <Field
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-        />
+        <PasswordField label="Password" name="password" autoComplete="current-password" required />
         <Field
           label='Type "delete" to confirm'
           name="confirm"

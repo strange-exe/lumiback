@@ -5,7 +5,7 @@ import { type TextInput, View } from "react-native";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Illustration } from "@/ui/illustration";
-import { Button, Field, FormError, Notice, Screen, T } from "@/ui/kit";
+import { Button, Field, FormError, Notice, PasswordField, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 export default function SignIn(): ReactNode {
@@ -61,22 +61,31 @@ export default function SignIn(): ReactNode {
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
-            textContentType="emailAddress"
             placeholder="student_id@geu.ac.in"
             returnKeyType="next"
             onSubmitEditing={() => passwordRef.current?.focus()}
           />
-          <Field
+          <PasswordField
             ref={passwordRef}
             label="Password"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
             autoComplete="current-password"
-            textContentType="password"
             returnKeyType="go"
             onSubmitEditing={() => void submit()}
           />
+          <Link
+            href={{ pathname: "/forgot-password", params: { email: email.trim() } }}
+            style={{
+              alignSelf: "flex-end",
+              color: c.accent,
+              fontWeight: "700",
+              paddingVertical: 4,
+            }}
+            accessibilityRole="link"
+          >
+            Forgot password?
+          </Link>
           <FormError message={error} />
           <Button
             label="Sign in"

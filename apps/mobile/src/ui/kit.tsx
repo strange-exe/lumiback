@@ -1,7 +1,10 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { forwardRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -81,18 +84,26 @@ export function Screen({
   const c = useColors();
   return (
     <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: c.page }}>
-      <ScrollView
-        contentContainerStyle={{
-          padding: layout.gutter,
-          paddingBottom: layout.dockClearance,
-          gap: layout.section,
-          flexGrow: 1,
-        }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={refreshControl}
+      {/* Apps draw edge to edge, so Android no longer shrinks the window for the keyboard:
+          shrink the page ourselves, and the scroll view keeps the focused field in sight. */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {children}
-      </ScrollView>
+        <ScrollView
+          contentContainerStyle={{
+            padding: layout.gutter,
+            paddingBottom: layout.dockClearance,
+            gap: layout.section,
+            flexGrow: 1,
+          }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          refreshControl={refreshControl}
+        >
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -267,40 +278,112 @@ export function Button({
   );
 }
 
-/** Labelled input: the label is always visible (placeholders are examples, not labels). */
-export const Field = forwardRef<TextInput, TextInputProps & { label: string; hint?: string }>(
-  function Field({ label, hint, style, ...input }, ref) {
-    const c = useColors();
-    return (
-      <View style={{ gap: space(1.5) }}>
-        <T tone="label">{label}</T>
+type FieldProps = TextInputProps & {
+  label: string;
+  hint?: string;
+  /** Drawn inside the box on the right (e.g. the show-password button). */
+  trailing?: ReactNode;
+};
+
+/**
+ * Labelled input: the label is always visible (placeholders are examples, not labels).
+ * The box shows focus (accent border), and the caret, selection and handles use the accent
+ * instead of Android's default teal.
+ */
+export const Field = forwardRef<TextInput, FieldProps>(function Field(
+  { label, hint, style, trailing, onFocus, onBlur, ...input },
+  ref,
+) {
+  const c = useColors();
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={{ gap: space(1.5) }}>
+      <T tone="label">{label}</T>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          minHeight: 52,
+          borderRadius: radius.control,
+          borderCurve: "continuous",
+          borderWidth: focused ? 2 : 1,
+          // Keep the text from shifting when the border thickens on focus.
+          paddingHorizontal: focused ? space(4) - 1 : space(4),
+          backgroundColor: c.raised,
+          borderColor: focused ? c.accent : c.line,
+        }}
+      >
         <TextInput
           ref={ref}
           accessibilityLabel={label}
           accessibilityHint={hint}
           placeholderTextColor={c.muted}
+          cursorColor={c.accent}
+          selectionHandleColor={c.accent}
+          selectionColor={`${c.accent}55`}
+          underlineColorAndroid="transparent"
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
           style={[
             {
-              minHeight: 52,
-              borderRadius: radius.control,
-              borderCurve: "continuous",
-              borderWidth: 1,
-              paddingHorizontal: space(4),
+              flex: 1,
+              minHeight: 50,
+              paddingVertical: space(3),
               fontFamily: fonts.regular,
               fontSize: 16,
-              backgroundColor: c.raised,
-              borderColor: c.line,
               color: c.ink,
             },
             style,
           ]}
           {...input}
         />
-        {hint ? <T tone="caption">{hint}</T> : null}
+        {trailing}
       </View>
-    );
-  },
-);
+      {hint ? <T tone="caption">{hint}</T> : null}
+    </View>
+  );
+});
+
+/** A password field with a show/hide button, so a typo can be checked before submitting. */
+export const PasswordField = forwardRef<
+  TextInput,
+  Omit<FieldProps, "secureTextEntry" | "trailing">
+>(function PasswordField(props, ref) {
+  const c = useColors();
+  const [visible, setVisible] = useState(false);
+  return (
+    <Field
+      ref={ref}
+      {...props}
+      secureTextEntry={!visible}
+      autoCapitalize="none"
+      autoCorrect={false}
+      trailing={
+        <Pressable
+          onPress={() => setVisible((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel={visible ? "Hide password" : "Show password"}
+          hitSlop={8}
+          style={{
+            width: 44,
+            height: 44,
+            marginRight: -space(2),
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name={visible ? "eye-off-outline" : "eye-outline"} size={22} color={c.muted} />
+        </Pressable>
+      }
+    />
+  );
+});
 
 export function FormError({ message }: { message: string | null }): ReactNode {
   const c = useColors();

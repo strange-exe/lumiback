@@ -17,13 +17,41 @@ test.describe("signed out", () => {
   test("wrong password shows a calm, generic error", async ({ page }) => {
     await page.goto("/sign-in");
     await page.getByLabel("University email").fill(STUDENT.email);
-    await page.getByLabel("Password").fill("not-the-password-1");
+    await page.getByLabel("Password", { exact: true }).fill("not-the-password-1");
     await page.getByRole("button", { name: "Sign in" }).click();
     const form = page.getByRole("region", { name: "Sign in" });
     await expect(form.getByRole("alert")).toHaveText("Invalid email or password");
     // The form resets after its action; only the password should need typing again.
     await expect(form.getByLabel("University email")).toHaveValue(STUDENT.email);
-    await expect(form.getByLabel("Password")).toHaveValue("");
+    await expect(form.getByLabel("Password", { exact: true })).toHaveValue("");
+  });
+
+  test("the password can be shown while typing", async ({ page }) => {
+    await page.goto("/sign-in");
+    const password = page.getByLabel("Password", { exact: true });
+    await password.fill("check-my-typing");
+    await expect(password).toHaveAttribute("type", "password");
+    await page.getByRole("button", { name: "Show password" }).click();
+    await expect(password).toHaveAttribute("type", "text");
+    await expect(password).toHaveValue("check-my-typing");
+    await page.getByRole("button", { name: "Hide password" }).click();
+    await expect(password).toHaveAttribute("type", "password");
+  });
+
+  test("forgot password: ask for a code, a wrong code is refused", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("link", { name: "Forgot password?" }).click();
+    await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+    await page.getByLabel("University email").fill(STUDENT.email);
+    await page.getByRole("button", { name: "Send code" }).click();
+    await expect(page.getByRole("heading", { name: "Check your inbox" })).toBeVisible();
+    await expect(page.getByText(`If ${STUDENT.email} has an account`)).toBeVisible();
+
+    await page.getByLabel("Code").fill("000000");
+    await page.getByLabel("New password", { exact: true }).fill("a-brand-new-passphrase");
+    await page.getByRole("button", { name: "Set new password" }).click();
+    const form = page.getByRole("region", { name: "Check your inbox" });
+    await expect(form.getByRole("alert")).toHaveText("Invalid or expired code");
   });
 
   test("tokens live only in httpOnly cookies", async ({ page, context }) => {

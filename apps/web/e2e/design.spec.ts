@@ -55,6 +55,19 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("heading", { name: "Create your account" }),
   },
   {
+    name: "forgot-password",
+    auth: false,
+    prepare: async (page) => void (await page.goto("/forgot-password")),
+    primary: (page) => page.getByRole("button", { name: "Send code" }),
+  },
+  {
+    name: "forgot-password-code",
+    auth: false,
+    prepare: async (page) =>
+      void (await page.goto("/forgot-password?sent=1&email=new.student%40geu.ac.in")),
+    primary: (page) => page.getByRole("button", { name: "Set new password" }),
+  },
+  {
     name: "verify",
     auth: false,
     prepare: async (page) => void (await page.goto("/verify?email=new.student%40geu.ac.in")),

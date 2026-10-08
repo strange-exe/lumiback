@@ -61,7 +61,6 @@ export default function Verify(): ReactNode {
           onChangeText={setCode}
           keyboardType="number-pad"
           autoComplete="one-time-code"
-          textContentType="oneTimeCode"
           maxLength={7}
           placeholder="482915"
           style={{ fontSize: 24, letterSpacing: 6 }}

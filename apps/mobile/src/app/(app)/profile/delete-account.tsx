@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { stopSending } from "@/location/task";
 import { syncReturnReminders } from "@/notify/notify";
-import { Button, Card, Field, FormError, Screen, T } from "@/ui/kit";
+import { Button, Card, Field, FormError, PasswordField, Screen, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 export default function DeleteAccount(): ReactNode {
@@ -44,11 +44,10 @@ export default function DeleteAccount(): ReactNode {
         </T>
       </View>
       <Card style={{ borderColor: c.danger }}>
-        <Field
+        <PasswordField
           label="Password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           autoComplete="current-password"
         />
         <Field

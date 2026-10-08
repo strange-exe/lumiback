@@ -23,6 +23,7 @@ from app.schemas import (
     RefreshIn,
     RegisteredOut,
     RegisterIn,
+    ResetPasswordIn,
     TokenOut,
     UserOut,
     VerifyEmailIn,
@@ -30,7 +31,7 @@ from app.schemas import (
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
-from app.services import refresh_tokens, verification
+from app.services import password_reset, refresh_tokens, verification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,6 +43,9 @@ VERIFY_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 RESEND_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
 RESEND_PER_IP = Limit(max_hits=10, window_seconds=3600)
 DELETE_FAILURES_PER_USER = Limit(max_hits=5, window_seconds=3600)
+FORGOT_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
+FORGOT_PER_IP = Limit(max_hits=10, window_seconds=3600)
+RESET_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -139,6 +143,58 @@ async def resend_verification(
     except verification.EmailNotSent:
         raise EMAIL_NOT_SENT from None
     return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(
+    body: EmailIn,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    mailer: MailerDep,
+) -> Response:
+    """Emails a reset code if a verified account uses this address. Always 202: the response
+    never says which emails have accounts."""
+    email = body.email.lower()
+    await enforce(limiter, "forgot:ip", client_ip(request), FORGOT_PER_IP)
+    await enforce(limiter, "forgot:email", email, FORGOT_PER_EMAIL)
+    try:
+        await password_reset.start(session, email, settings.code_pepper.get_secret_value(), mailer)
+    except password_reset.EmailNotSent:
+        raise EMAIL_NOT_SENT from None
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    body: ResetPasswordIn,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+) -> Response:
+    """Sets a new password with the emailed code and signs out every device. The app then signs
+    in with the new password. Each code allows 5 tries."""
+    ip = client_ip(request)
+    try:
+        await limiter.check("reset:ip", ip, RESET_FAILURES_PER_IP)
+    except RateLimited as e:
+        raise too_many(e) from None
+    try:
+        await password_reset.finish(
+            session, body.email, body.code, body.password, settings.code_pepper.get_secret_value()
+        )
+    except password_reset.ResetFailed:
+        await limiter.record("reset:ip", ip)
+        raise INVALID_CODE from None
+    except password_reset.WeakPassword as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Password {e.problem}"
+        ) from None
+    # A locked-out login (too many wrong passwords) shouldn't outlive the reset that fixes it.
+    await limiter.reset("login:email", body.email.lower())
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/login")

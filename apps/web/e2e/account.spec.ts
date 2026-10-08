@@ -35,7 +35,7 @@ test.describe("signed out", () => {
   test("deleting an account needs the password, then erases it for good", async ({ page }) => {
     await page.goto("/sign-in");
     await page.getByLabel("University email").fill(DELETABLE.email);
-    await page.getByLabel("Password").fill(DELETABLE.password);
+    await page.getByLabel("Password", { exact: true }).fill(DELETABLE.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/home$/);
 
@@ -44,17 +44,17 @@ test.describe("signed out", () => {
     await page.getByText("Delete account").click();
 
     const form = page.locator("details form");
-    await form.getByLabel("Password").fill("not-my-password-1");
+    await form.getByLabel("Password", { exact: true }).fill("not-my-password-1");
     await form.getByLabel('Type "delete" to confirm').fill("delete");
     await form.getByRole("button", { name: "Delete my account" }).click();
     await expect(form.getByRole("alert")).toHaveText("That password isn't right");
 
-    await form.getByLabel("Password").fill(DELETABLE.password);
+    await form.getByLabel("Password", { exact: true }).fill(DELETABLE.password);
     await form.getByRole("button", { name: "Delete my account" }).click();
     await expect(page.getByText("Your account and all its data were deleted.")).toBeVisible();
 
     await page.getByLabel("University email").fill(DELETABLE.email);
-    await page.getByLabel("Password").fill(DELETABLE.password);
+    await page.getByLabel("Password", { exact: true }).fill(DELETABLE.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("main").getByRole("alert")).toHaveText("Invalid email or password");
   });

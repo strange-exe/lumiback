@@ -62,6 +62,13 @@ class VerifyEmailIn(Input):
     code: str = Field(pattern=r"^\d{6}$")
 
 
+class ResetPasswordIn(Input):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+    # Strength is checked after the code (it needs the account's name), see password_reset.py.
+    password: str = Field(max_length=MAX_LENGTH)  # never stripped or altered
+
+
 class DeleteAccountIn(Input):
     password: str = Field(max_length=1024)  # re-entered: a stolen session alone cannot delete
 

@@ -34,3 +34,20 @@ def verification_email(
         "Nobody can use the account without this code.\n"
     )
     return Email(to=to, subject=f"{code} is your Lumiback code", body=text)
+
+
+def password_reset_email(
+    *, to: str, name: str, code: str, minutes: int, requested_at: datetime | None = None
+) -> Email:
+    """Same plain-text shape (and subject) as the sign-up code, which reaches the inbox."""
+    first = name.split()[0] if name.split() else "there"
+    when = ist_stamp(requested_at or datetime.now(UTC))
+    text = (
+        f"Hi {first},\n\n"
+        f"Your Lumiback password reset code is {code}.\n"
+        f"It expires in {minutes} minutes. Requested at {when}.\n\n"
+        "Lumiback will never ask for this code by phone, chat or email. Don't share it.\n\n"
+        "If you did not ask to reset your password, you can ignore this email. "
+        "Your password stays the same unless this code is used.\n"
+    )
+    return Email(to=to, subject=f"{code} is your Lumiback code", body=text)
