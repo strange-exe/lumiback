@@ -6,8 +6,11 @@ import type { ReactNode } from "react";
 
 const SECTIONS = [
   { href: "/admin", label: "Register" },
+  { href: "/admin/requests", label: "Requests" },
+  { href: "/admin/escalations", label: "Escalations" },
   { href: "/admin/scans", label: "Scans" },
   { href: "/admin/gates", label: "Gates" },
+  { href: "/admin/rules", label: "Rules" },
   { href: "/admin/people", label: "People" },
   { href: "/admin/settings", label: "Settings" },
 ] as const;

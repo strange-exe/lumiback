@@ -1,49 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
-import { ApiError, callBackend } from "@/lib/backend";
-import { accessToken } from "@/lib/session";
+import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
+import { callBackend } from "@/lib/backend";
 import type { FormState, GateCreated } from "@/lib/types";
 
 /** Gate forms also hand back a kiosk token, the one time it exists in plain text. */
 export interface GateFormState extends FormState {
   kiosk?: { gate: string; token: string } | null;
-}
-
-/** Every action re-checks the session; the backend re-checks the admin role. */
-async function tokenOrSignIn(): Promise<string> {
-  const token = await accessToken();
-  if (!token) redirect("/sign-in");
-  return token;
-}
-
-function text(form: FormData, name: string): string {
-  const value = form.get(name);
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function number(form: FormData, name: string): number | null {
-  const raw = text(form, name);
-  if (raw === "") return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
-}
-
-async function attempt<T>(
-  call: () => Promise<T>,
-  fields?: Record<string, string>,
-): Promise<{ ok: T } | { error: FormState }> {
-  try {
-    return { ok: await call() };
-  } catch (error) {
-    if (error instanceof ApiError) {
-      if (error.status === 401) redirect("/sign-in");
-      return { error: { error: error.detail, fields } };
-    }
-    throw error;
-  }
 }
 
 // ---------- gates ----------
@@ -127,11 +92,8 @@ export async function newKioskLink(_: GateFormState, form: FormData): Promise<Ga
 
 export async function saveSettings(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
-  const fields = { curfew: text(form, "curfew"), retention: text(form, "retention") };
+  const fields = { retention: text(form, "retention") };
   const days = number(form, "retention");
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(fields.curfew)) {
-    return { error: "Choose the curfew time.", fields };
-  }
   if (days === null || days < 7 || days > 730) {
     return { error: "Keep gate scans for between 7 and 730 days.", fields };
   }
@@ -140,13 +102,13 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
       callBackend("/admin/settings", {
         method: "PUT",
         token,
-        body: { curfew: fields.curfew, scan_retention_days: Math.round(days) },
+        body: { scan_retention_days: Math.round(days) },
       }),
     fields,
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/settings");
-  return { error: null, notice: "Saved. New tap-outs use this curfew." };
+  return { error: null, notice: "Saved." };
 }
 
 export async function setRole(_: FormState, form: FormData): Promise<FormState> {

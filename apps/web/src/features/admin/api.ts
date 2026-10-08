@@ -5,9 +5,14 @@ import type {
   AdminOuting,
   AdminOverview,
   AdminScanPage,
+  AdminRequest,
   AdminUser,
   CampusSettings,
+  Escalation,
   Gate,
+  Holiday,
+  Hostel,
+  RuleSet,
   ScanResult,
 } from "@/lib/types";
 
@@ -42,5 +47,25 @@ export const adminApi = {
 
   users(token: string, q: string): Promise<AdminUser[]> {
     return callBackend<AdminUser[]>(`/admin/users?q=${encodeURIComponent(q)}`, { token });
+  },
+
+  requests(token: string): Promise<AdminRequest[]> {
+    return callBackend<AdminRequest[]>("/admin/requests", { token });
+  },
+
+  escalations(token: string, state: "open" | "all" = "open"): Promise<Escalation[]> {
+    return callBackend<Escalation[]>(`/admin/escalations?state=${state}`, { token });
+  },
+
+  ruleSets(token: string): Promise<RuleSet[]> {
+    return callBackend<RuleSet[]>("/admin/rule-sets", { token });
+  },
+
+  hostels(token: string): Promise<Hostel[]> {
+    return callBackend<Hostel[]>("/admin/hostels", { token });
+  },
+
+  holidays(token: string, year: number): Promise<Holiday[]> {
+    return callBackend<Holiday[]>(`/admin/holidays?year=${year}`, { token });
   },
 };

@@ -17,14 +17,6 @@ export function SettingsForm({ current }: { current: CampusSettings }): ReactNod
       className="flex flex-col gap-5 rounded-sheet border border-line bg-surface p-5 sm:p-6"
     >
       <Field
-        label="Hostel curfew (IST)"
-        name="curfew"
-        type="time"
-        required
-        defaultValue={state.fields?.curfew ?? current.curfew}
-        hint="A student tapping out is due back by tonight's curfew unless they pick an earlier time. After curfew, they must pick one."
-      />
-      <Field
         label="Keep gate scans for (days)"
         name="retention"
         type="number"

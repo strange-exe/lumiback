@@ -178,6 +178,24 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("button", { name: "Make admin" }).first(),
   },
   {
+    name: "admin-requests",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/requests")),
+    primary: (page) => page.getByRole("heading", { name: "Outing requests" }),
+  },
+  {
+    name: "admin-escalations",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/escalations")),
+    primary: (page) => page.getByRole("heading", { name: "Escalations", level: 1 }),
+  },
+  {
+    name: "admin-rules",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/rules")),
+    primary: (page) => page.getByRole("heading", { name: "Outing rules" }),
+  },
+  {
     name: "admin-settings",
     auth: "admin",
     prepare: async (page) => void (await page.goto("/admin/settings")),

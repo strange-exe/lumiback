@@ -52,6 +52,10 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
             {overview.active_gates === 1 ? "gate" : "gates"} taking scans
           </p>
         </div>
+        <NeedsAction
+          escalations={overview.open_escalations ?? 0}
+          requests={overview.pending_requests ?? 0}
+        />
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-sheet border border-line bg-line sm:grid-cols-4">
           {stats.map((stat) => (
             <div key={stat.label} className="flex flex-col-reverse gap-1 bg-surface px-5 py-4">
@@ -127,10 +131,15 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
             <td className="col-span-2 min-w-0 md:py-3.5 md:pr-4">
               <p className="truncate font-bold text-ink">{o.name}</p>
               <p className="truncate text-sm text-muted">
-                {[o.roll_no, o.destination ? `to ${o.destination}` : null]
+                {[o.roll_no, o.hostel, o.destination ? `to ${o.destination}` : null]
                   .filter(Boolean)
                   .join(" · ") || o.email}
               </p>
+              {o.late_reason ? (
+                <p className="text-sm text-ink">
+                  <span className="font-bold text-accent">Later return:</span> {o.late_reason}
+                </p>
+              ) : null}
             </td>
             <td className="text-sm md:py-3.5 md:pr-4">
               <p className="tabular-nums text-ink">{formatWhen(o.left_at)}</p>
@@ -141,20 +150,65 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
               {formatWhen(o.expected_return_at)}
             </td>
             <td className="col-span-2 text-sm font-bold md:py-3.5">
-              {o.status === "overdue" ? (
-                <span className="inline-flex rounded-full bg-danger-soft px-2.5 py-1 text-danger">
-                  Overdue {formatMinutes(o.late_minutes)}
-                </span>
-              ) : (
-                <span className="inline-flex rounded-full bg-accent-soft px-2.5 py-1 text-accent">
-                  Out
-                </span>
-              )}
+              <span className="flex flex-wrap gap-1.5">
+                {o.status === "overdue" ? (
+                  <span className="inline-flex rounded-full bg-danger-soft px-2.5 py-1 text-danger">
+                    Overdue {formatMinutes(o.late_minutes)}
+                  </span>
+                ) : (
+                  <span className="inline-flex rounded-full bg-accent-soft px-2.5 py-1 text-accent">
+                    Out
+                  </span>
+                )}
+                {o.late_reply ? (
+                  <span className="inline-flex rounded-full bg-line px-2.5 py-1 text-ink">
+                    {o.late_reply === "safe" ? "Says they're safe" : "On the way"}
+                  </span>
+                ) : null}
+                {o.on_request ? (
+                  <span className="inline-flex rounded-full bg-good-soft px-2.5 py-1 text-good">
+                    Approved form
+                  </span>
+                ) : null}
+              </span>
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** What can't wait: late students who didn't answer, and requests waiting for a decision. */
+function NeedsAction({
+  escalations,
+  requests,
+}: {
+  escalations: number;
+  requests: number;
+}): ReactNode {
+  if (!escalations && !requests) return null;
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      {escalations ? (
+        <Link
+          href="/admin/escalations"
+          className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-danger px-4 font-bold text-surface hover:brightness-110"
+        >
+          {escalations} late {escalations === 1 ? "student isn't" : "students aren't"} answering
+          <span aria-hidden="true">→</span>
+        </Link>
+      ) : null}
+      {requests ? (
+        <Link
+          href="/admin/requests"
+          className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-accent-soft px-4 font-bold text-accent hover:brightness-95"
+        >
+          {requests} outing {requests === 1 ? "request" : "requests"} to decide
+          <span aria-hidden="true">→</span>
+        </Link>
+      ) : null}
+    </div>
   );
 }
 

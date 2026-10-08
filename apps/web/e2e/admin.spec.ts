@@ -5,15 +5,18 @@ import { expect, test, type APIRequestContext, type Browser, type Page } from "@
 import { ADMIN_STATE, STUDENT_STATE } from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";
 
-/** The seeded student's access token, read from the session the setup project saved. */
-function studentToken(): string {
-  const state = JSON.parse(readFileSync(STUDENT_STATE, "utf8")) as {
+/** An access token from a session the setup project saved. */
+function tokenFrom(file: string): string {
+  const state = JSON.parse(readFileSync(file, "utf8")) as {
     cookies: { name: string; value: string }[];
   };
   const cookie = state.cookies.find((c) => c.name === "outing_at");
-  if (!cookie) throw new Error("student session has no access token");
+  if (!cookie) throw new Error(`${file} has no access token`);
   return cookie.value;
 }
+
+const studentToken = (): string => tokenFrom(STUDENT_STATE);
+const adminToken = (): string => tokenFrom(ADMIN_STATE);
 
 /** Open a gate's kiosk in a fresh, signed-out browser and return the code it shows. */
 async function openKiosk(browser: Browser, token: string): Promise<{ page: Page; qr: string }> {
@@ -142,16 +145,104 @@ test.describe("as an admin", () => {
     await kiosk.page.context().close();
   });
 
-  test("change the curfew", async ({ page }) => {
+  test("change how long gate scans are kept", async ({ page }) => {
     await page.goto("/admin/settings");
-    await page.getByLabel("Hostel curfew (IST)").fill("22:00");
+    const days = page.getByLabel("Keep gate scans for (days)");
+    await days.fill("90");
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByText("Saved. New tap-outs use this curfew.")).toBeVisible();
+    await expect(page.getByText("Saved.")).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Hostel curfew (IST)")).toHaveValue("22:00");
-    await page.getByLabel("Hostel curfew (IST)").fill("21:30");
+    await expect(days).toHaveValue("90");
+    await days.fill("180");
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByText("Saved. New tap-outs use this curfew.")).toBeVisible();
+    await expect(page.getByText("Saved.")).toBeVisible();
+  });
+
+  test("outing rules: add a hostel with its warden, mark a holiday", async ({ page }) => {
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.goto("/admin/rules");
+    await expect(page.getByRole("heading", { name: "Outing rules" })).toBeVisible();
+    await expect(page.getByText("Default for students without a hostel")).toBeVisible();
+
+    const hostels = page.getByRole("region", { name: "Hostels" });
+    const blank = hostels.locator("form").last();
+    await blank.getByLabel("Hostel").fill("Hostel 7");
+    await blank.getByLabel("Warden", { exact: true }).fill("Mr. Negi");
+    await blank.getByLabel("Warden's phone").fill("98765 00000");
+    await blank.getByRole("button", { name: "Add hostel" }).click();
+    await expect(hostels.getByText("Added Hostel 7.")).toBeVisible();
+    const saved = hostels.locator("form").filter({ has: page.locator('input[value="Hostel 7"]') });
+    await expect(saved.getByLabel("Warden's phone")).toHaveValue("+919876500000"); // dialable
+    await hostels.getByRole("button", { name: "Remove" }).first().click();
+    await expect(page.locator('input[value="Hostel 7"]')).toHaveCount(0);
+
+    const holidays = page.getByRole("region", { name: "Holidays" });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    await holidays.getByLabel("Date").fill(tomorrow);
+    await holidays.getByLabel("Holiday").fill("Founders' Day");
+    await holidays.getByRole("button", { name: "Add holiday" }).click();
+    await expect(holidays.getByRole("listitem").filter({ hasText: "Founders' Day" })).toBeVisible();
+    await holidays
+      .getByRole("listitem")
+      .filter({ hasText: "Founders' Day" })
+      .getByRole("button", { name: "Remove" })
+      .click();
+    await expect(holidays.getByText("No upcoming holidays.")).toBeVisible();
+  });
+
+  test("a weekend request: the student asks, an admin approves", async ({ page, request }) => {
+    const admin = { Authorization: `Bearer ${adminToken()}` };
+    const student = { Authorization: `Bearer ${studentToken()}` };
+    await makeSureStudentIsIn(request, studentToken());
+    const sets = (await (
+      await request.get(`${API}/admin/rule-sets`, { headers: admin })
+    ).json()) as {
+      id: string;
+      name: string;
+      days: Record<string, unknown>[];
+    }[];
+    const rules = sets[0]!;
+    const withForm = (needs: boolean) => ({
+      name: rules.name,
+      days: rules.days.map((d) => ({ ...d, needs_form: needs, max_minutes: needs ? 180 : null })),
+    });
+    const put = (needs: boolean) =>
+      request.put(`${API}/admin/rule-sets/${rules.id}`, { headers: admin, data: withForm(needs) });
+    expect((await put(true)).ok()).toBe(true);
+    try {
+      const sent = await request.post(`${API}/outings/request`, {
+        headers: student,
+        data: {
+          purpose: "Shopping at Pacific Mall",
+          phone: "9876543210",
+          emergency_name: "Sunita Sharma",
+          emergency_relation: "Mother",
+          emergency_phone: "9123456789",
+        },
+      });
+      expect(sent.status(), await sent.text()).toBe(201);
+
+      await page.goto("/admin");
+      await page.getByRole("link", { name: "1 outing request to decide" }).click();
+      const card = page.getByRole("article").filter({ hasText: "Riya Sharma" });
+      await expect(card).toContainText("Shopping at Pacific Mall");
+      await expect(card.getByRole("link", { name: "+91 91234 56789" })).toHaveAttribute(
+        "href",
+        "tel:+919123456789",
+      );
+      await page.screenshot({ path: "e2e/shots/after/admin-request-pending.png", fullPage: true });
+      await card.getByRole("button", { name: "Decline" }).click();
+      await expect(card.getByRole("alert")).toHaveText("Say why, so the student knows what to do.");
+      await card.getByRole("button", { name: "Approve" }).click();
+      await expect(card).toContainText("Approved by Asha Rawat");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({
+        path: "e2e/shots/after/admin-request-approved-mobile.png",
+        fullPage: true,
+      });
+    } finally {
+      await put(false);
+    }
   });
 
   test("promote someone to admin and back", async ({ page }) => {

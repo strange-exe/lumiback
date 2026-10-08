@@ -125,6 +125,8 @@ export interface AdminOverview {
   scans_today: number;
   rejected_today: number;
   active_gates: number;
+  pending_requests?: number;
+  open_escalations?: number;
 }
 
 export interface AdminOuting {
@@ -141,6 +143,13 @@ export interface AdminOuting {
   late_minutes: number;
   out_via: "self" | "gate";
   out_gate: string | null;
+  hostel?: string | null;
+  /** Took the later return option (weekday 8:30 PM), and why. */
+  late_reason?: string | null;
+  /** The answer to the "are you OK?" alert, if any. */
+  late_reply?: LateReply | null;
+  /** A weekend/holiday outing an admin approved. */
+  on_request?: boolean;
 }
 
 export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";
@@ -179,9 +188,111 @@ export interface GateCreated {
 }
 
 export interface CampusSettings {
-  /** "HH:MM", IST */
-  curfew: string;
+  /** "HH:MM", IST. Superseded by rule sets. */
+  curfew: string | null;
   scan_retention_days: number;
+}
+
+// ---------- outing rules (admin) ----------
+
+export type DayType = "weekday" | "saturday" | "sunday" | "holiday";
+export type LateReply = "on_my_way" | "safe";
+
+export interface DayRule {
+  day_type: DayType;
+  /** "HH:MM", IST */
+  opens_at: string;
+  return_by: string;
+  late_until: string | null;
+  max_minutes: number | null;
+  needs_form: boolean;
+}
+
+export interface RuleSet {
+  id: string;
+  name: string;
+  is_default: boolean;
+  hostels: string[];
+  days: DayRule[];
+}
+
+export interface Hostel {
+  id: string;
+  name: string;
+  rule_set_id: string;
+  rule_set: string;
+  warden_name: string | null;
+  warden_phone: string | null;
+  students: number;
+}
+
+export interface Holiday {
+  /** "YYYY-MM-DD" */
+  day: string;
+  name: string;
+}
+
+export type RequestStatus = "pending" | "approved" | "declined" | "cancelled";
+
+export interface AdminRequest {
+  id: string;
+  student_id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  hostel: string | null;
+  day: string;
+  purpose: string;
+  phone: string;
+  emergency_name: string;
+  emergency_relation: string;
+  emergency_phone: string;
+  requested_minutes: number | null;
+  max_minutes: number | null;
+  status: RequestStatus;
+  note: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  used: boolean;
+}
+
+export interface LastSeen {
+  kind: "live" | "gate";
+  at: string;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  gate: string | null;
+  mock_since: string | null;
+}
+
+export interface Escalation {
+  id: string;
+  created_at: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  hostel: string | null;
+  warden_name: string | null;
+  warden_phone: string | null;
+  phone: string | null;
+  emergency_name: string | null;
+  emergency_relation: string | null;
+  emergency_phone: string | null;
+  destination: string | null;
+  purpose: string | null;
+  left_at: string;
+  expected_return_at: string;
+  returned_at: string | null;
+  late_minutes: number;
+  alert_at: string | null;
+  late_reply: LateReply | null;
+  late_replied_at: string | null;
+  last_seen: LastSeen | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  note: string | null;
 }
 
 export interface AdminUser {
