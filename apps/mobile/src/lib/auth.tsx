@@ -12,6 +12,8 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, TokenPair, User } from "@/lib/types";
+import { syncPush } from "@/notify/notify";
+import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
 type Status = "loading" | "signedOut" | "signedIn";
 
@@ -55,7 +57,10 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     const me = await api<User>("/auth/me");
     setUser(me);
     setStatus("signedIn");
+    void syncPush();
   }, []);
+
+  useEffect(() => (status === "signedIn" ? watchPushToken() : undefined), [status]);
 
   useEffect(() => {
     const off = onSignedOut(() => {
@@ -130,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const signOut = useCallback(async () => {
+    await unregisterPush(); // while still signed in: the server checks who owns the token
     const token = await storedRefreshToken();
     if (token) {
       // Revoke on the server too; a failure must not keep the student signed in here.
@@ -144,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const deleteAccount = useCallback(async (password: string) => {
     await api("/auth/delete-account", { method: "POST", body: { password } });
+    await forgetPushToken();
     await clearTokens();
   }, []);
 

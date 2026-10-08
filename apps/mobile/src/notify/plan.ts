@@ -60,3 +60,19 @@ const ENDED: Record<string, string> = {
 export function endedMessage(reason: string | null): string {
   return (reason ? ENDED[reason] : undefined) ?? "Your live share has ended.";
 }
+
+/** Server push channels (match the Android channels and backend PushMessage.channel). */
+export type PushChannel = "follow-requests" | "return-reminders" | "share-status";
+
+/** Channels the student switched off, sent with the push token so the server skips them. */
+export function mutedChannels(prefs: {
+  followRequests: boolean;
+  returnReminders: boolean;
+  shareStatus: boolean;
+}): PushChannel[] {
+  const muted: PushChannel[] = [];
+  if (!prefs.followRequests) muted.push("follow-requests");
+  if (!prefs.returnReminders) muted.push("return-reminders");
+  if (!prefs.shareStatus) muted.push("share-status");
+  return muted;
+}

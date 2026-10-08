@@ -5,11 +5,13 @@ import { Platform } from "react-native";
 
 import { loadPrefs } from "@/lib/prefs";
 import { endedMessage, RETURN_DUE, RETURN_SOON, returnReminders } from "@/notify/plan";
+import { registerPush } from "@/notify/push";
 
 /**
- * Local notifications only: everything we notify about is known on this phone, either from the
- * location service that runs while sharing (join requests, share ended) or from the outing
- * (return reminders). No push server or Firebase project is needed.
+ * Local notifications for what this phone knows itself: the location service that runs while
+ * sharing (join requests, share ended) and the outing (return reminders). Server push (see
+ * push.ts) adds what only the server knows, and replaces the local join-request alert once this
+ * phone has a push token, so nothing arrives twice.
  *
  * Reminders are scheduled with Android's inexact alarms: without the exact-alarm permission
  * (which Play reserves for alarm and calendar apps) they can land a few minutes late in doze.
@@ -61,9 +63,20 @@ function ensureChannels(): Promise<void> {
 export async function allowNotifications(): Promise<boolean> {
   await ensureChannels();
   const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
+  if (current.granted) {
+    void registerPush();
+    return true;
+  }
   if (!current.canAskAgain) return false;
-  return (await Notifications.requestPermissionsAsync()).granted;
+  const granted = (await Notifications.requestPermissionsAsync()).granted;
+  if (granted) void registerPush();
+  return granted;
+}
+
+/** After sign-in and at launch: register for server push if notifications are already allowed. */
+export async function syncPush(): Promise<void> {
+  await ensureChannels().catch(() => undefined); // Android needs a channel before a token
+  await registerPush();
 }
 
 async function show(channelId: string, content: Notifications.NotificationContentInput) {

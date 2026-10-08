@@ -54,10 +54,9 @@ export default function Today(): ReactNode {
     return { outing, summary };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
-  // The dock's Scan button lands here with a fresh `at`; until gate scanning ships it opens
-  // the trip sheet (when out, the card already shows "I'm back").
+  // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
   const { action, at } = useLocalSearchParams<{ action?: string; at?: string }>();
-  const scanRequest = action === "scan" ? (at ?? null) : null;
+  const logRequest = action === "log" ? (at ?? null) : null;
   const first = user?.name.split(" ")[0] ?? "";
   const initials = (user?.name ?? "")
     .split(/\s+/)
@@ -107,7 +106,7 @@ export default function Today(): ReactNode {
       ) : data?.outing ? (
         <Out outing={data.outing} onChange={reload} />
       ) : (
-        <AtHostel onDone={reload} scanRequest={scanRequest} />
+        <AtHostel onDone={reload} logRequest={logRequest} />
       )}
       <FormError message={error} />
 
@@ -174,19 +173,19 @@ function Hero({ children, art }: { children: ReactNode; art: "gate" | "lantern-l
 
 function AtHostel({
   onDone,
-  scanRequest,
+  logRequest,
 }: {
   onDone: () => Promise<void>;
-  scanRequest: string | null;
+  logRequest: string | null;
 }): ReactNode {
   const c = useColors();
   const [tapped, setTapped] = useState(false);
-  // A Scan tap opens the sheet once: it stays "handled" after closing until the next tap.
+  // A request opens the sheet once: it stays "handled" after closing until the next one.
   const [handled, setHandled] = useState<string | null>(null);
-  const open = tapped || (scanRequest !== null && scanRequest !== handled);
+  const open = tapped || (logRequest !== null && logRequest !== handled);
   const setOpen = (next: boolean): void => {
     setTapped(next);
-    if (!next) setHandled(scanRequest);
+    if (!next) setHandled(logRequest);
   };
   return (
     <>
@@ -197,17 +196,29 @@ function AtHostel({
             Heading out?
           </Text>
           <Text style={[type.body, { color: c.heroMuted }]}>
-            Log your trip so you&apos;re covered. We&apos;ll remind you before you&apos;re due back.
+            Scan the code at the gate to tap out. We&apos;ll remind you before you&apos;re due back.
           </Text>
         </View>
-        <Button
-          label="Log a trip"
-          icon={<Ionicons name="exit-outline" size={20} color={c.onAccent} />}
-          onPress={() => {
-            haptic.tap();
-            setOpen(true);
-          }}
-        />
+        <View style={{ gap: space(2) }}>
+          <Button
+            label="Scan at the gate"
+            icon={<Ionicons name="scan" size={20} color={c.onAccent} />}
+            onPress={() => {
+              haptic.tap();
+              router.push("/scan");
+            }}
+          />
+          <Button
+            label="Log a trip without scanning"
+            variant="onHeroOutline"
+            accessibilityLabel="Log a trip without scanning (self-reported)"
+            style={{ minHeight: 44 }}
+            onPress={() => {
+              haptic.tap();
+              setOpen(true);
+            }}
+          />
+        </View>
       </Hero>
       <LogTripSheet open={open} onClose={() => setOpen(false)} onDone={onDone} />
     </>
@@ -375,10 +386,20 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
       </View>
 
       <Button
+        label="Scan to tap in"
+        icon={<Ionicons name="scan" size={18} color={c.onAccent} />}
+        onPress={() => {
+          haptic.tap();
+          router.push("/scan");
+        }}
+      />
+      <Button
         label="I'm back"
+        variant="onHeroOutline"
+        accessibilityLabel="I'm back, without scanning (self-reported)"
         busy={busy === "return"}
         busyLabel="Marking…"
-        icon={<Ionicons name="home" size={18} color={c.onAccent} />}
+        style={{ minHeight: 44 }}
         onPress={() => void act("return", () => api("/outings/current/return", { method: "POST" }))}
       />
       <View style={{ flexDirection: "row", gap: space(2) }}>

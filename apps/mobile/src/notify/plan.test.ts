@@ -1,4 +1,11 @@
-import { endedMessage, newRequests, RETURN_DUE, RETURN_SOON, returnReminders } from "@/notify/plan";
+import {
+  endedMessage,
+  mutedChannels,
+  newRequests,
+  RETURN_DUE,
+  RETURN_SOON,
+  returnReminders,
+} from "@/notify/plan";
 
 const due = "2026-10-07T20:30:00+05:30";
 const dueMs = new Date(due).getTime();
@@ -50,5 +57,16 @@ describe("endedMessage", () => {
     expect(endedMessage("something_new")).toBe("Your live share has ended.");
     expect(endedMessage(null)).toBe("Your live share has ended.");
     expect(endedMessage("")).toBe("Your live share has ended.");
+  });
+});
+
+describe("mutedChannels", () => {
+  it("lists exactly the switched-off channels", () => {
+    const on = { followRequests: true, returnReminders: true, shareStatus: true };
+    expect(mutedChannels(on)).toEqual([]);
+    expect(mutedChannels({ ...on, followRequests: false })).toEqual(["follow-requests"]);
+    expect(
+      mutedChannels({ followRequests: false, returnReminders: false, shareStatus: false }),
+    ).toEqual(["follow-requests", "return-reminders", "share-status"]);
   });
 });

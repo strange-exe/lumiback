@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#f4efe6",
+    "backgroundColor": "#fafafb",
     "android": {
       "package": "codes.abhinesh.lumiback",
       "adaptiveIcon": {
@@ -79,6 +79,12 @@
         "projectId": "a8196cc1-95f6-4017-b4b0-41d506d4be76"
       }
     },
-    "owner": "strange-exe"
+    "owner": "strange-exe",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a8196cc1-95f6-4017-b4b0-41d506d4be76"
+    }
   }
 }

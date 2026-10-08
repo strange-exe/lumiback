@@ -4,6 +4,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Linking, Switch } from "react-native";
 
 import { setPrefs, usePrefs, type Prefs } from "@/lib/prefs";
+import { registerPush } from "@/notify/push";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Row, Screen, Section, T } from "@/ui/kit";
@@ -43,7 +44,8 @@ export default function NotificationSettings(): ReactNode {
 
   const toggle = (key: Toggle, value: boolean): void => {
     haptic.tap();
-    void setPrefs({ [key]: value } as Partial<Prefs>);
+    // Server push follows the same switches: re-register with the new muted channels.
+    void setPrefs({ [key]: value } as Partial<Prefs>).then(() => registerPush());
   };
 
   return (

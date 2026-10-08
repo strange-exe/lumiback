@@ -1,3 +1,4 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { RefreshControl, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -185,13 +186,14 @@ function Row({
         : late
           ? { label: `${formatMinutes(outing.late_minutes)} late`, tone: "danger" as const }
           : { label: "On time", tone: "good" as const };
+  const via = outing.out_via === "gate" ? "Verified at gate" : "Self-reported";
 
   return (
     <View
       accessible
       accessibilityLabel={`${outing.destination ?? "Outing"}, left ${formatTime(outing.left_at)}${
         outing.returned_at ? `, back ${formatTime(outing.returned_at)}` : ""
-      }, ${chip.label}`}
+      }, ${chip.label}, ${via}`}
       style={{
         backgroundColor: c.surface,
         borderColor: c.line,
@@ -217,6 +219,14 @@ function Row({
           {outing.returned_at ? ` – ${formatTime(outing.returned_at)}` : ""}
           {outing.duration_minutes != null ? `  ·  ${formatMinutes(outing.duration_minutes)}` : ""}
         </T>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
+          {outing.out_via === "gate" ? (
+            <Ionicons name="shield-checkmark" size={13} color={c.good} />
+          ) : null}
+          <T tone="caption" style={{ color: outing.out_via === "gate" ? c.good : c.muted }}>
+            {via}
+          </T>
+        </View>
       </View>
       <StatusChip label={chip.label} tone={chip.tone} />
     </View>

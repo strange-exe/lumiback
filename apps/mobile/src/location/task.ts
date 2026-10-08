@@ -5,6 +5,7 @@ import * as TaskManager from "expo-task-manager";
 import { api, ApiError } from "@/lib/api";
 import type { ShareSession } from "@/lib/types";
 import { notifyFollowRequest, notifyShareEnded } from "@/notify/notify";
+import { hasPushToken } from "@/notify/push";
 import { newRequests } from "@/notify/plan";
 
 /**
@@ -62,7 +63,10 @@ async function checkRequests(share: ActiveShare): Promise<void> {
   if (view.status !== "active") return endedElsewhere(share);
   const fresh = newRequests(view.viewers, share.notified ?? []);
   if (fresh.length === 0) return;
-  for (const viewer of fresh) await notifyFollowRequest(viewer.name);
+  // With server push the request already arrived as a push; don't show it twice.
+  if (!(await hasPushToken())) {
+    for (const viewer of fresh) await notifyFollowRequest(viewer.name);
+  }
   await saveShare({ ...share, notified: [...(share.notified ?? []), ...fresh.map((v) => v.id)] });
 }
 

@@ -78,6 +78,30 @@ npm start                         # then open the dev client and scan the QR cod
 npm test && npm run lint && npm run typecheck
 ```
 
+**A standalone app (no PC needed).** The `preview` profile builds an installable APK in Expo's
+cloud with the JavaScript bundled in. It reads `EXPO_PUBLIC_API_URL` from the EAS project's
+environment variables (`npx eas-cli env:list preview`), not from your local `.env`:
+
+```bash
+npx eas-cli build --profile preview --platform android
+```
+
+**Updates without a new APK.** JavaScript-only changes ship over the air with `expo-updates`;
+installed apps download them on launch and use them from the next start. A new build is needed only
+when native code changes (new native modules, permissions, app config); `runtimeVersion` uses the
+`fingerprint` policy, so an update never reaches a build it isn't compatible with.
+
+```bash
+npx eas-cli update --channel preview --environment preview --message "What changed"
+```
+
+**Push notifications (optional).** Android delivers push through Firebase. Create a Firebase
+project with an Android app `codes.abhinesh.lumiback`, download `google-services.json`, and upload it
+as a file variable: `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value
+./google-services.json --environment preview --environment production --visibility secret`. Then
+upload the FCM service-account key with `npx eas-cli credentials`. Until then the app uses local
+notifications only.
+
 ## Deploying (Render + Cloudflare)
 
 `render.yaml` describes two free Render web services: `lumiback-api` (FastAPI) and

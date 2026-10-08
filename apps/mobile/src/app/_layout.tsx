@@ -46,9 +46,17 @@ function Navigator(): ReactNode {
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-      <Stack
-        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.page } }}
-      />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.page } }}>
+        {/* The gate scanner rises over whichever tab it was opened from. */}
+        <Stack.Screen
+          name="scan"
+          options={{
+            presentation: "fullScreenModal",
+            animation: "slide_from_bottom",
+            contentStyle: { backgroundColor: colors.hero },
+          }}
+        />
+      </Stack>
     </>
   );
 }

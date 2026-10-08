@@ -24,8 +24,7 @@ const RIGHT = ["history", "profile"];
 
 /**
  * Floating dock: four destinations and the raised Scan action in the middle (tap in/out at the
- * gate). Until gate scanning ships, Scan opens the trip action on Today, so it always does
- * something real.
+ * gate). Scan opens the full-screen scanner (src/app/scan.tsx) from any tab.
  */
 export function Dock({ state, navigation }: DockProps): ReactNode {
   const c = useColors();
@@ -97,10 +96,7 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           <Press
             onPress={() => {
               haptic.tap();
-              router.navigate({
-                pathname: "/today",
-                params: { action: "scan", at: String(Date.now()) },
-              });
+              router.push("/scan");
             }}
             accessibilityLabel="Scan at the gate"
             style={{

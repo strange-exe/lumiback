@@ -30,6 +30,16 @@ export interface Outing {
   status: OutingStatus;
   late_minutes: number;
   duration_minutes: number | null;
+  /** "gate": scanned at a gate with a GPS check; "self": logged in the app. */
+  out_via: "self" | "gate";
+  in_via: "self" | "gate" | null;
+}
+
+/** POST /gates/scan */
+export interface GateScanned {
+  direction: "out" | "in";
+  gate: string;
+  outing: Outing;
 }
 
 export interface OutingPage {
