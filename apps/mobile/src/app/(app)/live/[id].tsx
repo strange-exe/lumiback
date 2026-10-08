@@ -13,7 +13,7 @@ import { haptic } from "@/ui/haptics";
 import { Button, Card, Heading, T } from "@/ui/kit";
 import { LiveMap } from "@/ui/LiveMap";
 import { MockNotice } from "@/ui/MockNotice";
-import { layout, space, useColors } from "@/ui/theme";
+import { layout, space, useColors, useDockClearance } from "@/ui/theme";
 
 const POLL_MS = 5_000;
 const WAITING = "Waiting for the sharer to approve you"; // backend AWAITING_APPROVAL detail
@@ -29,6 +29,7 @@ export default function Watch(): ReactNode {
   const { id = "" } = useLocalSearchParams<{ id: string }>();
   const c = useColors();
   const now = useNow();
+  const clearance = useDockClearance(); // the dock floats over this pushed screen too
   const [view, setView] = useState<View_>({ kind: "loading" });
   const share = useRef<Watching | null>(null);
   const wasPending = useRef(false);
@@ -92,11 +93,13 @@ export default function Watch(): ReactNode {
   const first = name.split(" ")[0] ?? name;
 
   return (
-    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: c.page }}>
+    <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: c.page }}>
       <Stack.Screen
         options={{ title: shown.kind === "live" ? `Following ${first}` : "Live location" }}
       />
-      <ScrollView contentContainerStyle={{ padding: layout.gutter, gap: space(5) }}>
+      <ScrollView
+        contentContainerStyle={{ padding: layout.gutter, paddingBottom: clearance, gap: space(5) }}
+      >
         {shown.kind === "loading" ? (
           <T tone="muted">Opening…</T>
         ) : shown.kind === "pending" ? (

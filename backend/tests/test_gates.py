@@ -112,6 +112,22 @@ def test_tap_out_defaults_to_tonights_curfew(client, db, gate, riya):
     assert expected == curfew_today(datetime.strptime("23:59", "%H:%M").time(), now)
 
 
+def test_students_can_read_tonights_curfew(client, db, riya):
+    set_curfew(db, "22:15")
+    r = client.get("/campus", headers=riya)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["curfew"] == "22:15"
+    at = datetime.fromisoformat(body["curfew_at"])
+    assert at.utcoffset() == timedelta(hours=5, minutes=30)  # on the campus clock
+    assert (at.hour, at.minute) == (22, 15)
+    assert at == curfew_today(datetime.strptime("22:15", "%H:%M").time(), datetime.now(UTC))
+
+
+def test_campus_rules_need_a_signed_in_user(client):
+    assert client.get("/campus").status_code == 401
+
+
 def test_after_curfew_the_student_must_choose_a_return_time(client, db, gate, riya):
     set_curfew(db, "00:00")  # always in the past today
     qr = kiosk_qr(client, gate["kiosk_token"])

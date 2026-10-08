@@ -1,4 +1,5 @@
 import { useColorScheme, type TextStyle } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * White, black and deep cobalt (chosen 2026-10-07; see .claude/DESIGN-mobile-v2.md).
@@ -89,8 +90,20 @@ export const type = {
 
 export const radius = { control: 14, sheet: 24, pill: 999 } as const;
 export const space = (n: number): number => n * 4;
-/** Screen edge padding, the gap between sections, and room kept clear for the floating dock. */
-export const layout = { gutter: 20, section: 28, dockClearance: 112 } as const;
+/** Screen edge padding and the gap between sections. */
+export const layout = { gutter: 20, section: 28 } as const;
+
+/** The floating dock: its height, and how far it floats above the system navigation. */
+export const dock = { height: 68, lift: 10 } as const;
+
+/**
+ * Room a scrolling page keeps clear at the bottom so its end can scroll above the dock. Depends
+ * on the system navigation: 3-button navigation is about twice as tall as the gesture bar, so a
+ * fixed number hid the end of every page on those phones.
+ */
+export function useDockClearance(): number {
+  return useSafeAreaInsets().bottom + dock.lift + dock.height + space(6);
+}
 
 export function useColors(): Colors {
   return useColorScheme() === "dark" ? dark : light;

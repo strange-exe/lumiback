@@ -337,6 +337,17 @@ class GateScanOut(BaseModel):
     outing: OutingOut
 
 
+class CampusOut(BaseModel):
+    """What every student may know about campus rules: tonight's curfew, on the campus clock."""
+
+    curfew: str  # "21:30", IST
+    curfew_at: datetime  # today's curfew as an instant (IST offset)
+
+    @field_serializer("curfew_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
 class KioskOut(BaseModel):
     gate_id: uuid.UUID
     gate_name: str

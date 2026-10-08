@@ -5,6 +5,7 @@ import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { curfewLine, type Campus } from "@/lib/curfew";
 import {
   clockParts,
   expectedReturn,
@@ -13,7 +14,7 @@ import {
   formatTime,
   progress,
 } from "@/lib/time";
-import type { Outing, OutingSummary } from "@/lib/types";
+import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
@@ -21,6 +22,7 @@ import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
 import { Button, Chips, Clock, Field, FormError, Press, Screen, StatusChip, T } from "@/ui/kit";
 import { FadeIn } from "@/ui/motion";
+import { OutingRow } from "@/ui/OutingRow";
 import { Sheet } from "@/ui/sheet";
 import { fonts, radius, space, type, useColors } from "@/ui/theme";
 
@@ -37,21 +39,28 @@ function message(e: unknown): string {
 
 interface TodayData {
   outing: Outing | null;
+  // The rest is nice to have: Today never fails because of it.
   summary: OutingSummary | null;
+  campus: Campus | null;
+  recent: Outing[] | null;
 }
 
 export default function Today(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
   const load = useCallback(async (): Promise<TodayData> => {
-    const [outing, summary] = await Promise.all([
+    const [outing, summary, campus, page] = await Promise.all([
       api<Outing | null>("/outings/current"),
-      api<OutingSummary>("/outings/summary").catch(() => null), // nice to have, never blocking
+      api<OutingSummary>("/outings/summary").catch(() => null),
+      api<Campus>("/campus").catch(() => null),
+      api<OutingPage>("/outings?limit=4").catch(() => null),
     ]);
     // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
     // outing changed on the web or one that just ended.
     void syncReturnReminders(outing?.expected_return_at ?? null);
-    return { outing, summary };
+    // The trip in progress is already the status card; Recent lists finished ones.
+    const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
+    return { outing, summary, campus, recent };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
@@ -109,6 +118,7 @@ export default function Today(): ReactNode {
         <AtHostel onDone={reload} logRequest={logRequest} />
       )}
       <FormError message={error} />
+      {data?.campus ? <Tonight campus={data.campus} /> : null}
 
       <View style={{ gap: space(3) }}>
         <T tone="label" style={{ color: c.muted }}>
@@ -130,7 +140,11 @@ export default function Today(): ReactNode {
         </View>
       </View>
 
-      {data?.summary && data.summary.total > 0 ? <Stats summary={data.summary} /> : null}
+      {loading ? null : data?.recent && data.recent.length > 0 ? (
+        <Recent outings={data.recent} summary={data.summary} />
+      ) : data?.summary?.total === 0 ? (
+        <HowItWorks />
+      ) : null}
     </Screen>
   );
 }
@@ -480,38 +494,151 @@ function QuickAction({
   );
 }
 
-function Stats({ summary }: { summary: OutingSummary }): ReactNode {
+/** Tonight's curfew: the one campus rule every trip is planned around. */
+function Tonight({ campus }: { campus: Campus }): ReactNode {
   const c = useColors();
-  const onTime = summary.on_time_rate == null ? "–" : `${Math.round(summary.on_time_rate * 100)}%`;
+  const now = useNow(30_000);
+  if (!now) return null; // the first tick lands right after mount
+  const line = curfewLine(campus, now);
   return (
-    <Press
-      onPress={() => router.navigate("/history")}
-      accessibilityLabel={`${summary.total} outings, ${onTime} back on time. Open history.`}
+    <View
+      accessible
+      accessibilityLabel={`Tonight: ${line.title}. ${line.detail}`}
       style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space(3),
         backgroundColor: c.surface,
         borderColor: c.line,
         borderWidth: 1,
         borderRadius: radius.sheet,
         borderCurve: "continuous",
-        padding: space(5),
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space(4),
+        padding: space(4),
       }}
     >
-      <View style={{ flex: 1, gap: 2 }}>
-        <T tone="caption">Back on time</T>
-        <T tone="title" style={{ color: c.good, fontVariant: ["tabular-nums"] }}>
-          {onTime}
-        </T>
+      <View
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 12,
+          backgroundColor: c.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name="moon" size={18} color={c.accent} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <T tone="caption">Outings</T>
-        <T tone="title" style={{ fontVariant: ["tabular-nums"] }}>
-          {summary.total}
+        <T tone="label" style={{ fontSize: 15 }}>
+          {line.title}
+        </T>
+        <T tone="caption" style={line.urgent ? { color: c.danger } : undefined}>
+          {line.detail}
         </T>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={c.muted} />
-    </Press>
+    </View>
+  );
+}
+
+/** The last few finished trips, with the on-time rate; the full list is on History. */
+function Recent({
+  outings,
+  summary,
+}: {
+  outings: Outing[];
+  summary: OutingSummary | null;
+}): ReactNode {
+  const c = useColors();
+  const rate =
+    summary?.on_time_rate == null ? null : `${Math.round(summary.on_time_rate * 100)}% on time`;
+  return (
+    <View style={{ gap: space(3) }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <T tone="label" style={{ color: c.muted }}>
+          Recent trips
+        </T>
+        <Press
+          onPress={() => router.navigate("/history")}
+          accessibilityLabel={`${rate ? `${rate}. ` : ""}See all trips in History`}
+          hitSlop={8}
+          style={{ flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 }}
+        >
+          <T tone="label" style={{ color: c.accent, fontVariant: ["tabular-nums"] }}>
+            {rate ? `${rate} · See all` : "See all"}
+          </T>
+          <Ionicons name="chevron-forward" size={16} color={c.accent} />
+        </Press>
+      </View>
+      <View>
+        {outings.map((o, i) => (
+          <OutingRow key={o.id} outing={o} first={i === 0} last={i === outings.length - 1} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const STEPS = [
+  {
+    title: "Scan the code on the gate tablet",
+    detail: "Your phone checks that you're really at the gate.",
+  },
+  { title: "Choose when you'll be back", detail: "Tonight's curfew is filled in for you." },
+  {
+    title: "Scan again when you're back",
+    detail: "The trip is saved as verified at the gate.",
+  },
+] as const;
+
+/** First run, before any trips: what the main action does, in three steps. */
+function HowItWorks(): ReactNode {
+  const c = useColors();
+  return (
+    <View style={{ gap: space(3) }}>
+      <T tone="label" style={{ color: c.muted }}>
+        How tapping out works
+      </T>
+      <View
+        style={{
+          backgroundColor: c.surface,
+          borderColor: c.line,
+          borderWidth: 1,
+          borderRadius: radius.sheet,
+          borderCurve: "continuous",
+          padding: space(5),
+          gap: space(4),
+        }}
+      >
+        {STEPS.map((step, i) => (
+          <View
+            key={step.title}
+            accessible
+            accessibilityLabel={`Step ${i + 1}: ${step.title}. ${step.detail}`}
+            style={{ flexDirection: "row", gap: space(3) }}
+          >
+            <View
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: c.accentSoft,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: c.accent }}>
+                {i + 1}
+              </Text>
+            </View>
+            <View style={{ flex: 1, gap: 2, paddingTop: 3 }}>
+              <T tone="label" style={{ fontSize: 15 }}>
+                {step.title}
+              </T>
+              <T tone="caption">{step.detail}</T>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }

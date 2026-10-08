@@ -1,15 +1,15 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { RefreshControl, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, ApiError } from "@/lib/api";
-import { formatDay, formatMinutes, formatTime } from "@/lib/time";
+import { formatDay } from "@/lib/time";
 import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { Illustration } from "@/ui/illustration";
-import { Button, FormError, Heading, StatusChip, T } from "@/ui/kit";
-import { layout, radius, space, useColors } from "@/ui/theme";
+import { Button, FormError, Heading, T } from "@/ui/kit";
+import { OutingRow } from "@/ui/OutingRow";
+import { layout, radius, space, useColors, useDockClearance } from "@/ui/theme";
 
 interface FirstPage {
   summary: OutingSummary;
@@ -30,6 +30,7 @@ function byDay(items: Outing[]): { title: string; data: Outing[] }[] {
 
 export default function History(): ReactNode {
   const c = useColors();
+  const clearance = useDockClearance();
   const load = useCallback(async (): Promise<FirstPage> => {
     const [summary, page] = await Promise.all([
       api<OutingSummary>("/outings/summary"),
@@ -83,7 +84,7 @@ export default function History(): ReactNode {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={{
           padding: layout.gutter,
-          paddingBottom: layout.dockClearance,
+          paddingBottom: clearance,
           flexGrow: 1,
         }}
         refreshControl={
@@ -135,7 +136,7 @@ export default function History(): ReactNode {
           </T>
         )}
         renderItem={({ item, index, section }) => (
-          <Row outing={item} first={index === 0} last={index === section.data.length - 1} />
+          <OutingRow outing={item} first={index === 0} last={index === section.data.length - 1} />
         )}
         ListEmptyComponent={
           loading ? null : (
@@ -164,71 +165,5 @@ export default function History(): ReactNode {
         }
       />
     </SafeAreaView>
-  );
-}
-
-function Row({
-  outing,
-  first,
-  last,
-}: {
-  outing: Outing;
-  first: boolean;
-  last: boolean;
-}): ReactNode {
-  const c = useColors();
-  const late = outing.late_minutes > 0;
-  const chip =
-    outing.status === "overdue"
-      ? { label: "Overdue", tone: "danger" as const }
-      : outing.status === "out"
-        ? { label: "Out now", tone: "accent" as const }
-        : late
-          ? { label: `${formatMinutes(outing.late_minutes)} late`, tone: "danger" as const }
-          : { label: "On time", tone: "good" as const };
-  const via = outing.out_via === "gate" ? "Verified at gate" : "Self-reported";
-
-  return (
-    <View
-      accessible
-      accessibilityLabel={`${outing.destination ?? "Outing"}, left ${formatTime(outing.left_at)}${
-        outing.returned_at ? `, back ${formatTime(outing.returned_at)}` : ""
-      }, ${chip.label}, ${via}`}
-      style={{
-        backgroundColor: c.surface,
-        borderColor: c.line,
-        borderWidth: 1,
-        borderTopWidth: first ? 1 : 0,
-        borderTopLeftRadius: first ? radius.sheet : 0,
-        borderTopRightRadius: first ? radius.sheet : 0,
-        borderBottomLeftRadius: last ? radius.sheet : 0,
-        borderBottomRightRadius: last ? radius.sheet : 0,
-        paddingHorizontal: space(4),
-        paddingVertical: space(4),
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space(3),
-      }}
-    >
-      <View style={{ flex: 1, gap: space(1) }}>
-        <T tone="label" numberOfLines={1} style={{ fontSize: 16, lineHeight: 22 }}>
-          {outing.destination ?? "Outing"}
-        </T>
-        <T tone="caption" style={{ fontVariant: ["tabular-nums"] }}>
-          {formatTime(outing.left_at)}
-          {outing.returned_at ? ` – ${formatTime(outing.returned_at)}` : ""}
-          {outing.duration_minutes != null ? `  ·  ${formatMinutes(outing.duration_minutes)}` : ""}
-        </T>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
-          {outing.out_via === "gate" ? (
-            <Ionicons name="shield-checkmark" size={13} color={c.good} />
-          ) : null}
-          <T tone="caption" style={{ color: outing.out_via === "gate" ? c.good : c.muted }}>
-            {via}
-          </T>
-        </View>
-      </View>
-      <StatusChip label={chip.label} tone={chip.tone} />
-    </View>
   );
 }

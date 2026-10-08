@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
-import { fonts, useColors } from "@/ui/theme";
+import { dock, fonts, useColors } from "@/ui/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 /** The props a custom tab bar receives, taken from Tabs itself (the type is not exported). */
@@ -76,14 +76,14 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
   return (
     <View
       pointerEvents="box-none"
-      style={{ position: "absolute", left: 16, right: 16, bottom: insets.bottom + 10 }}
+      style={{ position: "absolute", left: 16, right: 16, bottom: insets.bottom + dock.lift }}
     >
       <View
         accessibilityRole="tablist"
         style={{
           flexDirection: "row",
           alignItems: "center",
-          height: 68,
+          height: dock.height,
           paddingHorizontal: 6,
           borderRadius: 34,
           borderCurve: "continuous",

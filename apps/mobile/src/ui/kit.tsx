@@ -15,10 +15,10 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useReducedMotion } from "@/ui/motion";
-import { fonts, layout, radius, space, type, useColors } from "@/ui/theme";
+import { fonts, layout, radius, space, type, useColors, useDockClearance } from "@/ui/theme";
 
 /** Scale-down on press: a physical "push" (native driver; off with reduced motion). */
 export function Press({
@@ -82,6 +82,10 @@ export function Screen({
   refreshControl?: React.ComponentProps<typeof ScrollView>["refreshControl"];
 }): ReactNode {
   const c = useColors();
+  const clearance = useDockClearance();
+  const insets = useSafeAreaInsets();
+  // With a "bottom" edge the safe area already adds the inset; don't count it twice.
+  const bottom = edges.includes("bottom") ? clearance - insets.bottom : clearance;
   return (
     <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: c.page }}>
       {/* Apps draw edge to edge, so Android no longer shrinks the window for the keyboard:
@@ -93,7 +97,7 @@ export function Screen({
         <ScrollView
           contentContainerStyle={{
             padding: layout.gutter,
-            paddingBottom: layout.dockClearance,
+            paddingBottom: bottom,
             gap: layout.section,
             flexGrow: 1,
           }}

@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.api.deps import CurrentUser, LimiterDep, SessionDep, SettingsDep, client_ip, enforce
-from app.schemas import GateScanIn, GateScanOut, KioskOut
+from app.schemas import CampusOut, GateScanIn, GateScanOut, KioskOut
 from app.security.gate_codes import gate_code, qr_payload, window_at, window_ends_at
 from app.security.rate_limit import Limit
 from app.services import gates as svc
@@ -17,6 +17,15 @@ router = APIRouter(tags=["gates"])
 SCANS_PER_USER = Limit(max_hits=30, window_seconds=600)
 # A kiosk refreshes every few seconds; this only stops someone hammering the endpoint.
 KIOSK_PER_IP = Limit(max_hits=120, window_seconds=60)
+
+
+@router.get("/campus")
+async def campus(_me: CurrentUser, session: SessionDep) -> CampusOut:
+    """Tonight's curfew, for the student's Today screen (admins change it in Settings)."""
+    curfew = (await svc.campus_settings(session)).curfew
+    return CampusOut(
+        curfew=curfew.strftime("%H:%M"), curfew_at=svc.curfew_today(curfew, datetime.now(UTC))
+    )
 
 
 @router.post("/gates/scan")
