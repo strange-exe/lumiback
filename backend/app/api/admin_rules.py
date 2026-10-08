@@ -1,8 +1,9 @@
-"""Admin: outing rule sets, hostels, holidays, and today's weekend/holiday requests."""
+"""Admin: outing rule sets, hostels, holidays, today's weekend/holiday requests, and
+escalations for late students who didn't answer the app's alert."""
 
 import uuid
 from datetime import UTC, date, datetime, time
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import delete, func, select
@@ -14,6 +15,8 @@ from app.push import PushMessage
 from app.schemas import (
     AdminRequestOut,
     DayRuleIO,
+    EscalationOut,
+    EscalationResolveIn,
     HolidayIO,
     HostelIn,
     HostelOut,
@@ -22,7 +25,7 @@ from app.schemas import (
     RuleSetOut,
 )
 from app.services import admin as audit_svc
-from app.services import requests, rules
+from app.services import escalations, requests, rules
 from app.services.gates import campus_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -354,4 +357,27 @@ async def delete_holiday(day: date, me: AdminUser, session: SessionDep) -> None:
         raise NOT_FOUND
     await session.delete(holiday)
     audit_svc.audit(session, me, "holiday:delete", f"{day} {holiday.name}")
+    await session.commit()
+
+
+# ---------- escalations (late students who didn't answer the alert) ----------
+
+
+@router.get("/escalations")
+async def list_escalations(
+    me: AdminUser, session: SessionDep, state: Literal["open", "all"] = "open"
+) -> list[EscalationOut]:
+    """Reading a student's live position here is logged on their share's access log."""
+    return await escalations.listing(session, me, open_only=state == "open")
+
+
+@router.post("/escalations/{escalation_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
+async def resolve_escalation(
+    escalation_id: uuid.UUID, body: EscalationResolveIn, me: AdminUser, session: SessionDep
+) -> None:
+    try:
+        await escalations.resolve(session, me, escalation_id, body.note)
+    except escalations.NotFound:
+        raise NOT_FOUND from None
+    audit_svc.audit(session, me, "escalation:resolve", str(escalation_id))
     await session.commit()

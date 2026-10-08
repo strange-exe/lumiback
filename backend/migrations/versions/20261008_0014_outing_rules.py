@@ -212,7 +212,6 @@ def upgrade() -> None:
     )
     op.add_column("outings", sa.Column("request_id", sa.Uuid(), nullable=True))
     op.add_column("outings", sa.Column("late_reason", sa.String(length=200), nullable=True))
-    op.add_column("outings", sa.Column("late_alert_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column(
         "outings",
         sa.Column(
@@ -264,6 +263,26 @@ def upgrade() -> None:
         f"result IN ({', '.join(repr(r) for r in SCAN_RESULTS)}, 'not_allowed')",
     )
 
+    # Admins following up an escalation may read a late student's live position; the read is
+    # logged on that share like any viewer's, so the student sees it.
+    op.add_column("access_log", sa.Column("admin_id", sa.Uuid(), nullable=True))
+    op.create_foreign_key(
+        op.f("fk_access_log_admin_id_users"),
+        "access_log",
+        "users",
+        ["admin_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.alter_column("access_log", "viewer_id", existing_type=sa.Uuid(), nullable=True)
+    op.drop_constraint(op.f("ck_access_log_access_channel"), "access_log", type_="check")
+    op.create_check_constraint(
+        op.f("ck_access_log_access_channel"), "access_log", "channel IN ('http', 'ws', 'admin')"
+    )
+    op.create_check_constraint(
+        op.f("ck_access_log_who_viewed"), "access_log", "viewer_id IS NOT NULL OR channel = 'admin'"
+    )
+
     for table in (
         "holidays",
         "rule_sets",
@@ -306,6 +325,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DELETE FROM access_log WHERE channel = 'admin'")
+    op.drop_constraint(op.f("ck_access_log_who_viewed"), "access_log", type_="check")
+    op.drop_constraint(op.f("ck_access_log_access_channel"), "access_log", type_="check")
+    op.create_check_constraint(
+        op.f("ck_access_log_access_channel"), "access_log", "channel IN ('http', 'ws')"
+    )
+    op.alter_column("access_log", "viewer_id", existing_type=sa.Uuid(), nullable=False)
+    op.drop_constraint(op.f("fk_access_log_admin_id_users"), "access_log", type_="foreignkey")
+    op.drop_column("access_log", "admin_id")
     op.execute("DELETE FROM gate_scans WHERE result = 'not_allowed'")
     op.drop_constraint(op.f("ck_gate_scans_scan_result"), "gate_scans", type_="check")
     op.create_check_constraint(
@@ -323,7 +351,6 @@ def downgrade() -> None:
     op.drop_column("outings", "late_replied_at")
     op.drop_constraint(op.f("ck_outings_late_reply"), "outings", type_="check")
     op.drop_column("outings", "late_reply")
-    op.drop_column("outings", "late_alert_at")
     op.drop_column("outings", "late_reason")
     op.drop_column("outings", "request_id")
     op.drop_constraint(

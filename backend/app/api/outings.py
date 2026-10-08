@@ -8,7 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import CurrentUser, SessionDep
+from app.models import LateReply
 from app.schemas import (
+    LateReplyIn,
     OutingCreateIn,
     OutingExtendIn,
     OutingOut,
@@ -17,8 +19,8 @@ from app.schemas import (
     OutingRequestOut,
     OutingSummary,
 )
+from app.services import escalations, requests, rules
 from app.services import outings as svc
-from app.services import requests, rules
 
 router = APIRouter(prefix="/outings", tags=["outings"])
 
@@ -133,3 +135,13 @@ async def cancel_request(request_id: uuid.UUID, me: CurrentUser, session: Sessio
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="This request was already used or closed"
         ) from None
+
+
+@router.post("/current/late-reply")
+async def late_reply(body: LateReplyIn, me: CurrentUser, session: SessionDep) -> OutingOut:
+    """The answer to "you're late, are you OK?": stops the escalation to the hostel office."""
+    try:
+        outing = await escalations.reply(session, me.id, LateReply(body.reply))
+    except escalations.NotOut:
+        raise NOT_OUT from None
+    return svc.to_out(outing, datetime.now(UTC))

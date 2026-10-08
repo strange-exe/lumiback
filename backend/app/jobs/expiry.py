@@ -15,11 +15,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.email import Email, Mailer
 from app.models import (
     CampusSettings,
     GateScan,
     Location,
-    Outing,
     RefreshToken,
     SessionStatus,
     ShareCode,
@@ -29,7 +29,7 @@ from app.models import (
 from app.push import PushMessage, PushSender, notify_user
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
-from app.services import password_reset, verification
+from app.services import escalations, password_reset, verification
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,6 @@ TAB_IDLE = timedelta(minutes=5)
 # App shares report from a background service; if it stops (app killed, phone off) for this long,
 # the share ends. Longer than tabs: Android may batch updates while the phone sleeps.
 APP_IDLE = timedelta(minutes=15)
-# The phone's own reminders fire at the due time; this later push says "you're really late",
-# once per outing, and reaches the student even if reminders were turned off on the phone.
-OVERDUE_PUSH_AFTER = timedelta(minutes=30)
 DEFAULT_SCAN_RETENTION_DAYS = 180
 
 
@@ -60,10 +57,15 @@ class SweepResult:
     overdue_notified: int = 0
     deleted_scans: int = 0
     deleted_password_resets: int = 0
+    escalated: int = 0
 
 
 async def sweep(
-    sessionmaker: async_sessionmaker[AsyncSession], hub: Hub, push: PushSender | None = None
+    sessionmaker: async_sessionmaker[AsyncSession],
+    hub: Hub,
+    push: PushSender | None = None,
+    mailer: Mailer | None = None,
+    web_url: str = "",
 ) -> SweepResult:
     now = datetime.now(UTC)
     async with sessionmaker() as session:
@@ -117,18 +119,9 @@ async def sweep(
         hits = await delete_old_hits(session, now)
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
         resets = await password_reset.delete_expired(session, now)  # unused reset codes
-        late = list(
-            await session.execute(
-                update(Outing)
-                .where(
-                    Outing.returned_at.is_(None),
-                    Outing.overdue_notified_at.is_(None),
-                    Outing.expected_return_at < now - OVERDUE_PUSH_AFTER,
-                )
-                .values(overdue_notified_at=now)
-                .returning(Outing.student_id)
-            )
-        )
+        late = await escalations.send_alerts(session, now)
+        opened = await escalations.open_escalations(session, now)
+        admins = await escalations.admin_ids(session) if opened else []
         retention = await session.scalar(select(CampusSettings.scan_retention_days))
         scans = await session.execute(
             delete(GateScan).where(
@@ -140,18 +133,50 @@ async def sweep(
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
     if push is not None:
-        for (student_id,) in late:
+        for student_id in late:
             await notify_user(
                 sessionmaker,
                 push,
                 student_id,
                 PushMessage(
-                    title="You're past your return time",
-                    body="Mark yourself back, or add time so nobody worries.",
+                    title="You're 30 min late. Are you OK?",
+                    body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
+                    "is told.",
                     url="/today",
                     channel="return-reminders",
+                    urgent=True,
                 ),
             )
+        for admin_id, _ in admins:
+            await notify_user(
+                sessionmaker,
+                push,
+                admin_id,
+                PushMessage(
+                    title="A late student isn't answering",
+                    body="Open Escalations in the admin area to follow up.",
+                    url="/today",
+                    channel="return-reminders",
+                    urgent=True,
+                ),
+            )
+    if mailer is not None and opened:
+        for _, email in admins:
+            try:
+                await mailer.send(
+                    Email(
+                        to=email,
+                        subject=f"Lumiback: {len(opened)} late student(s) not answering",
+                        body=(
+                            f"{len(opened)} student(s) are over 40 minutes late and didn't "
+                            "answer the app's alert.\n\n"
+                            f"Follow up in Admin > Escalations: {web_url}/admin/escalations\n\n"
+                            "Contacts and the last known position are on that page.\n"
+                        ),
+                    )
+                )
+            except Exception:
+                logger.exception("escalation email failed")
     return SweepResult(
         expired,
         closed_tabs,
@@ -160,6 +185,7 @@ async def sweep(
         hits,
         pending,
         overdue_notified=len(late),
+        escalated=len(opened),
         deleted_scans=scans.rowcount,
         deleted_password_resets=resets,
     )
@@ -169,11 +195,13 @@ async def run_forever(
     sessionmaker: async_sessionmaker[AsyncSession],
     hub: Hub,
     push: PushSender | None = None,
+    mailer: Mailer | None = None,
+    web_url: str = "",
     interval: float = INTERVAL_SECONDS,
 ) -> None:
     while True:
         try:
-            result = await sweep(sessionmaker, hub, push)
+            result = await sweep(sessionmaker, hub, push, mailer, web_url)
             if result.expired_sessions or result.closed_tabs:
                 logger.info(
                     "ended %d expired and %d idle tab-live share sessions",

@@ -48,7 +48,13 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         )
         sweeper = (
             asyncio.create_task(
-                expiry.run_forever(app.state.sessionmaker, app.state.hub, app.state.push)
+                expiry.run_forever(
+                    app.state.sessionmaker,
+                    app.state.hub,
+                    app.state.push,
+                    app.state.mailer,
+                    settings.web_url,
+                )
             )
             if start_jobs
             else None

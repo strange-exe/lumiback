@@ -106,6 +106,7 @@ class ViewerStatus(enum.StrEnum):
 class AccessChannel(enum.StrEnum):
     HTTP = "http"
     WS = "ws"
+    ADMIN = "admin"  # an admin following up a late student's escalation (no viewer row)
 
 
 class UserRole(enum.StrEnum):
@@ -213,7 +214,7 @@ class Outing(Base):
     in_gate_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("gates.id", ondelete="SET NULL")
     )
-    # Set when the "you're overdue" push went out, so it is sent once per outing.
+    # When the "you're late, are you OK?" alert went out (once per outing).
     overdue_notified_at: Mapped[datetime | None]
     # The approved weekend/holiday request this outing was allowed by.
     request_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -221,8 +222,8 @@ class Outing(Base):
     )
     # Weekday 8:30 PM option (where the hostel allows it): the student's reason, shown to admins.
     late_reason: Mapped[str | None] = mapped_column(String(200))
-    # Late follow-up: "are you OK?" push at 30 min late, the student's answer, and escalation.
-    late_alert_at: Mapped[datetime | None]
+    # Late follow-up: the "are you OK?" alert goes out at 30 min late (overdue_notified_at);
+    # the student's answer, if any. No answer within minutes and it's escalated.
     late_reply: Mapped[LateReply | None] = mapped_column(str_enum(LateReply, "late_reply"))
     late_replied_at: Mapped[datetime | None]
 
@@ -652,13 +653,20 @@ class Location(Base):
 
 class AccessLog(Base):
     __tablename__ = "access_log"
-    __table_args__ = (Index("ix_access_log_session_viewed", "session_id", "viewed_at"),)
+    __table_args__ = (
+        Index("ix_access_log_session_viewed", "session_id", "viewed_at"),
+        CheckConstraint("viewer_id IS NOT NULL OR channel = 'admin'", name="who_viewed"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     session_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("share_sessions.id", ondelete="CASCADE")
     )
-    viewer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("share_viewers.id", ondelete="CASCADE"))
+    viewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("share_viewers.id", ondelete="CASCADE")
+    )
+    # Set for admin reads (escalations); viewer_id is set for everyone else.
+    admin_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     channel: Mapped[AccessChannel] = mapped_column(str_enum(AccessChannel, "access_channel"))
     viewed_at: Mapped[datetime] = created_at()
 

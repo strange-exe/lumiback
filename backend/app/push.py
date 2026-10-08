@@ -31,6 +31,9 @@ class PushMessage:
     body: str
     url: str  # app route to open on tap, e.g. "/live"
     channel: str = "follow-requests"  # Android channel created by the app
+    # Safety messages (late alerts, escalations) reach every device, even where the student
+    # muted that channel's everyday reminders.
+    urgent: bool = False
 
 
 class PushSender(Protocol):
@@ -106,16 +109,12 @@ async def notify_user(
     message: PushMessage,
 ) -> None:
     """Send to every device the user is signed in on. Safe to run as a background task."""
+    query = select(PushToken.token).where(PushToken.user_id == user_id)
+    if not message.urgent:  # muted on that phone (urgent safety messages still go through)
+        query = query.where(~PushToken.muted.contains([message.channel]))
     try:
         async with sessionmaker() as session:
-            tokens = list(
-                await session.scalars(
-                    select(PushToken.token).where(
-                        PushToken.user_id == user_id,
-                        ~PushToken.muted.contains([message.channel]),  # muted on that phone
-                    )
-                )
-            )
+            tokens = list(await session.scalars(query))
             if not tokens:
                 return
             dead = await sender.send(tokens, message)

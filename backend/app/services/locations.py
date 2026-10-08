@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import (
     AccessChannel,
@@ -110,21 +111,36 @@ async def log_access(
 async def access_log(
     session: AsyncSession, share_id: uuid.UUID, limit: int = 200
 ) -> list[AccessLogEntry]:
+    admin = aliased(User)
     rows = await session.execute(
-        select(AccessLog, ShareViewer, User.name)
-        .join(ShareViewer, ShareViewer.id == AccessLog.viewer_id)
+        select(AccessLog, ShareViewer, User.name, admin.name)
+        .outerjoin(ShareViewer, ShareViewer.id == AccessLog.viewer_id)
         .outerjoin(User, User.id == ShareViewer.viewer_user_id)
+        .outerjoin(admin, admin.id == AccessLog.admin_id)
         .where(AccessLog.session_id == share_id)
         .order_by(AccessLog.viewed_at.desc(), AccessLog.id.desc())
         .limit(limit)
     )
-    return [
-        AccessLogEntry(
-            viewer_id=viewer.id,
-            viewer_name=name if viewer.viewer_user_id else (viewer.guest_label or "Guest"),
-            kind="user" if viewer.viewer_user_id else "guest",
-            channel=entry.channel.value,
-            viewed_at=entry.viewed_at,
+    out = []
+    for entry, viewer, name, admin_name in rows:
+        if viewer is None:  # an admin, following up a late-return escalation
+            out.append(
+                AccessLogEntry(
+                    viewer_id=None,
+                    viewer_name=f"{admin_name or 'An admin'} (hostel office)",
+                    kind="admin",
+                    channel=entry.channel.value,
+                    viewed_at=entry.viewed_at,
+                )
+            )
+            continue
+        out.append(
+            AccessLogEntry(
+                viewer_id=viewer.id,
+                viewer_name=name if viewer.viewer_user_id else (viewer.guest_label or "Guest"),
+                kind="user" if viewer.viewer_user_id else "guest",
+                channel=entry.channel.value,
+                viewed_at=entry.viewed_at,
+            )
         )
-        for entry, viewer, name in rows
-    ]
+    return out

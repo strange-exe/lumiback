@@ -217,9 +217,9 @@ class SessionLocationOut(BaseModel):
 
 
 class AccessLogEntry(BaseModel):
-    viewer_id: uuid.UUID
+    viewer_id: uuid.UUID | None  # None for an admin following up an escalation
     viewer_name: str
-    kind: Literal["user", "guest"]
+    kind: Literal["user", "guest", "admin"]
     channel: str
     viewed_at: datetime
 
@@ -699,3 +699,71 @@ class AdminRequestOut(BaseModel):
     @field_serializer("decided_at", "created_at")
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
+
+
+# ---------- late follow-up and escalations ----------
+
+
+class LateReplyIn(Input):
+    reply: Literal["on_my_way", "safe"]
+
+
+class LastSeenOut(BaseModel):
+    """Where a late student was last known to be. Never collected for this: an active live
+    share's latest real position, or else the last gate they scanned."""
+
+    kind: Literal["live", "gate"]
+    at: datetime
+    lat: float | None = None
+    lng: float | None = None
+    accuracy_m: float | None = None
+    gate: str | None = None
+    mock_since: datetime | None = None  # the share has a newer fix flagged as mock location
+
+    @field_serializer("at", "mock_since")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class EscalationOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    name: str
+    email: str
+    roll_no: str | None
+    hostel: str | None
+    warden_name: str | None
+    warden_phone: str | None
+    phone: str | None
+    emergency_name: str | None
+    emergency_relation: str | None
+    emergency_phone: str | None
+    destination: str | None
+    purpose: str | None
+    left_at: datetime
+    expected_return_at: datetime
+    returned_at: datetime | None
+    late_minutes: int
+    alert_at: datetime | None
+    late_reply: Literal["on_my_way", "safe"] | None
+    late_replied_at: datetime | None
+    last_seen: LastSeenOut | None
+    resolved_by: str | None
+    resolved_at: datetime | None
+    note: str | None
+
+    @field_serializer(
+        "created_at",
+        "left_at",
+        "expected_return_at",
+        "returned_at",
+        "alert_at",
+        "late_replied_at",
+        "resolved_at",
+    )
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class EscalationResolveIn(Input):
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
