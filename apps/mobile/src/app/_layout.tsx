@@ -17,6 +17,7 @@ import { loadPrefs } from "@/lib/prefs";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
 import { useColors } from "@/ui/theme";
+import { UpdatePrompt } from "@/updates/UpdatePrompt";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -57,6 +58,7 @@ function Navigator(): ReactNode {
           }}
         />
       </Stack>
+      <UpdatePrompt />
     </>
   );
 }
