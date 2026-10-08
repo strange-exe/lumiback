@@ -470,7 +470,10 @@ class ShareViewer(Base):
 
 
 class Location(Base):
-    """Latest position only (one row per session, upserted). Deleted when the session ends."""
+    """Latest positions only, deleted when the session ends: at most two rows per session, the
+    latest real fix and the latest fix Android flagged as coming from a mock-location app. While
+    a mock app runs, the phone has no real fix to give, so viewers see the last real one beside
+    the fake one instead of a lie on its own."""
 
     __tablename__ = "locations"
     __table_args__ = (
@@ -482,6 +485,7 @@ class Location(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("share_sessions.id", ondelete="CASCADE"), primary_key=True
     )
+    mocked: Mapped[bool] = mapped_column(primary_key=True, server_default=text("false"))
     lat: Mapped[float] = mapped_column(Float)
     lng: Mapped[float] = mapped_column(Float)
     accuracy_m: Mapped[float] = mapped_column(Float)

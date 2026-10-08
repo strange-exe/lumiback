@@ -89,6 +89,9 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
             lng: latest.coords.longitude,
             accuracy_m: Math.max(0, latest.coords.accuracy ?? 0),
             recorded_at: new Date(latest.timestamp).toISOString(),
+            // Android's flag for a fix from a mock-location app: the server keeps it apart so
+            // viewers see it in red beside the last real position, never in its place.
+            mocked: latest.mocked ?? false,
           },
         });
       } catch (e) {

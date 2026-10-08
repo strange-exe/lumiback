@@ -11,6 +11,7 @@ import {
 
 const SIGNED_OUT = { cookies: [], origins: [] };
 const SHARER = "Riya Sharma"; // the seeded e2e student
+const BACKEND = "http://127.0.0.1:8100"; // the e2e API started by playwright.config.ts
 
 /** A friend with no account, in their own browser. */
 async function guestPage(browser: Browser): Promise<Page> {
@@ -104,6 +105,53 @@ test.describe("live sharing", () => {
       guest.getByRole("heading", { name: `${SHARER} removed you from their share.` }),
     ).toBeVisible();
     await stopSharing(page);
+    await guest.context().close();
+  });
+
+  test("a faked location shows in red beside the last real one", async ({ page, browser }) => {
+    await startSharing(page);
+    const code = await newJoinCode(page);
+    const guest = await guestPage(browser);
+    const guestErrors = watchForErrors(guest);
+    await joinAsGuest(guest, code, "Didi");
+    await page.getByRole("button", { name: "Approve Didi (guest)" }).click({ timeout: 10_000 });
+    await expect(guest.getByText(/^Live · updated/)).toBeVisible();
+
+    // What the Android app sends while a mock-location app runs (browsers can't tell). Dated a
+    // minute ahead (within the API's clock-skew allowance) so it stays newer than the real fixes
+    // this tab keeps sending during the test.
+    const sessionId = new URL(guest.url()).pathname.split("/").pop();
+    const token = (await page.context().cookies()).find((c) => c.name === "outing_at")?.value;
+    const put = await page.request.put(`${BACKEND}/sessions/${sessionId}/location`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        lat: 30.3256,
+        lng: 78.0437,
+        accuracy_m: 5,
+        recorded_at: new Date(Date.now() + 60_000).toISOString(),
+        mocked: true,
+      },
+    });
+    expect(put.status()).toBe(204);
+
+    const alert = guest.getByRole("alert").filter({ hasText: "Location is being faked" });
+    await expect(alert).toBeVisible({ timeout: 10_000 });
+    await expect(alert).toContainText(
+      /the other dot is the last real one, from .+, [\d.]+ km away/,
+    );
+    await expect(guest.getByText("Location faked by a mock-location app")).toBeVisible();
+    await expect(
+      guest.getByRole("region", { name: /A faked location is shown in red/ }),
+    ).toBeVisible();
+    await expect(guest.locator(".live-dot.is-fake")).toHaveCount(1);
+    // The "Open in Google Maps" link keeps pointing at the real position, never the fake one.
+    await expect(guest.getByRole("link", { name: "Open in Google Maps" })).not.toHaveAttribute(
+      "href",
+      /30\.3256/,
+    );
+
+    await stopSharing(page);
+    expect(guestErrors).toEqual([]);
     await guest.context().close();
   });
 

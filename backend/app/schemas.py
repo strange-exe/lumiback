@@ -195,6 +195,7 @@ class LocationIn(Input):
     lng: float = Field(ge=-180, le=180)
     accuracy_m: float = Field(ge=0, le=100_000)
     recorded_at: AwareDatetime  # device time with offset; naive timestamps are rejected
+    mocked: bool = False  # Android's mock-location flag; app versions before it never send it
 
 
 class LocationOut(BaseModel):
@@ -207,7 +208,10 @@ class LocationOut(BaseModel):
 
 class SessionLocationOut(BaseModel):
     session_id: uuid.UUID
-    location: LocationOut | None  # None until the sharer's first update
+    location: LocationOut | None  # latest real fix; None until the sharer's first one
+    # Latest fix from a mock-location app, kept apart so it is never shown as the real position.
+    # Older than `location`: the mock app was used earlier in this share and has been turned off.
+    mocked_location: LocationOut | None = None
 
 
 class AccessLogEntry(BaseModel):

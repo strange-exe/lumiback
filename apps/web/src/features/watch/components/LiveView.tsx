@@ -8,7 +8,8 @@ import { LiveMap } from "@/components/map/LiveMap";
 import { formatTime } from "@/features/outings/time";
 import { TERMINAL, type WatchEvent } from "@/features/watch/events";
 import { ago } from "@/lib/ago";
-import type { LiveLocation, Watching } from "@/lib/types";
+import { formatDistance, mockState, type Positions } from "@/lib/mock";
+import type { Watching } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
 
 type Phase = "connecting" | "pending" | "live" | "ended" | "gone" | "offline";
@@ -30,7 +31,7 @@ function endedText(reason: string, name: string): string {
 
 export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   const [phase, setPhase] = useState<Phase>("connecting");
-  const [location, setLocation] = useState<LiveLocation | null>(null);
+  const [positions, setPositions] = useState<Positions>({ location: null });
   const [share, setShare] = useState<Watching | null>(null);
   const [reason, setReason] = useState("ended");
   const [connection, setConnection] = useState(0); // bump to reconnect after going offline
@@ -43,17 +44,17 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
         break;
       case "live":
         setPhase("live");
-        setLocation(event.location);
+        setPositions({ location: event.location, mocked_location: event.mocked_location });
         if (event.share) setShare(event.share);
         break;
       case "ended":
         setPhase("ended");
-        setLocation(null); // never leave a last position on screen after access ends
+        setPositions({ location: null }); // never leave a last position on screen after access ends
         setReason(event.reason);
         break;
       case "gone":
         setPhase("gone");
-        setLocation(null);
+        setPositions({ location: null });
         break;
     }
   }, []);
@@ -77,7 +78,11 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
     return () => source.close();
   }, [sessionId, handle, connection]);
 
+  const { location } = positions;
+  const mock = mockState(positions);
+  const fake = mock.kind === "now" ? mock.fake : null;
   const name = share?.sharer.name ?? "They";
+  const first = share ? (share.sharer.name.split(" ")[0] ?? share.sharer.name) : null;
   const recordedAt = location ? Date.parse(location.recorded_at) : null;
   const paused = recordedAt !== null && now > 0 && now - recordedAt > STALE_MS;
 
@@ -139,19 +144,23 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
     );
   }
 
-  const status = !location
-    ? "Waiting for their first location…"
-    : paused
-      ? `Paused · last update ${ago(recordedAt ?? 0, now)}. Their phone may be locked or offline.`
-      : `Live · updated ${now ? ago(recordedAt ?? 0, now) : "just now"}`;
+  const status = fake
+    ? "Location faked by a mock-location app"
+    : !location
+      ? "Waiting for their first location…"
+      : paused
+        ? `Paused · last update ${ago(recordedAt ?? 0, now)}. Their phone may be locked or offline.`
+        : `Live · updated ${now ? ago(recordedAt ?? 0, now) : "just now"}`;
 
   return (
     <section aria-labelledby="watch-heading" className="flex flex-col gap-5">
       <div>
-        <p className="flex items-center gap-2 text-sm font-bold text-accent">
+        <p
+          className={`flex items-center gap-2 text-sm font-bold ${fake ? "text-danger" : "text-accent"}`}
+        >
           <span
             aria-hidden="true"
-            className={`size-2.5 rounded-full ${location && !paused ? "bg-accent" : "bg-muted"}`}
+            className={`size-2.5 rounded-full ${fake ? "bg-danger" : location && !paused ? "bg-accent" : "bg-muted"}`}
           />
           <span aria-live="polite">{status}</span>
         </p>
@@ -164,13 +173,34 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
       </div>
       <LiveMap
         point={location}
-        paused={paused}
-        label={
+        fake={fake}
+        paused={paused || fake !== null}
+        label={[
           location
-            ? `Map of ${name === "They" ? "their" : `${name}'s`} location, accurate to about ${Math.round(location.accuracy_m)} metres.`
-            : "Map. Waiting for their first location."
-        }
+            ? `Map of ${name === "They" ? "their" : `${name}'s`} ${fake ? "last real " : ""}location, accurate to about ${Math.round(location.accuracy_m)} metres.`
+            : "Map. No real location yet.",
+          fake ? "A faked location is shown in red." : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       />
+      {mock.kind === "now" && (
+        <div role="alert" className="flex flex-col gap-1 rounded-control bg-danger-soft px-4 py-3">
+          <p className="font-bold text-danger">Location is being faked</p>
+          <p className="text-sm leading-relaxed text-ink">
+            {mock.real
+              ? `${first ? `${first}'s` : "Their"} phone is using an app that fakes its location. Red is the faked position; the other dot is the last real one, from ${now ? ago(Date.parse(mock.real.recorded_at), now) : "earlier"}${mock.apartM === null ? "" : `, ${formatDistance(mock.apartM)} away`}.`
+              : `${first ? `${first}'s` : "Their"} phone has used an app that fakes its location since this share began, so there's no real position to show. Red is the faked one.`}
+          </p>
+        </div>
+      )}
+      {mock.kind === "earlier" && (
+        <p className="text-sm text-muted">
+          <strong className="text-danger">Heads up:</strong> {first ? `${first}'s` : "Their"} phone
+          used a mock-location app at {formatTime(mock.at)}. Positions since then aren&apos;t
+          flagged as fake.
+        </p>
+      )}
       {location && (
         <a
           href={`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`}

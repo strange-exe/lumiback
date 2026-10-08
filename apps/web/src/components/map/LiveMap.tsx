@@ -13,16 +13,24 @@ export interface MapPoint {
 
 interface LiveMapProps {
   point: MapPoint | null;
+  /** A position from a mock-location app: a red dot, framed together with the real one. */
+  fake?: MapPoint | null;
   /** No fresh fix for a while: the dot greys out instead of glowing. */
   paused: boolean;
   /** Text equivalent of what the map shows (the map itself is not the only carrier). */
   label: string;
 }
 
-interface Layers {
-  map: LeafletMap;
+interface Spot {
   marker: Marker;
   circle: Circle;
+}
+
+interface Layers {
+  map: LeafletMap;
+  real: Spot;
+  fake: Spot;
+  framed: string; // which dots were last framed; a change re-frames the view once
 }
 
 // OpenStreetMap's standard tiles: no key, attribution required, fine for light use (see the
@@ -34,58 +42,94 @@ const ATTRIBUTION =
 const CAMPUS: [number, number] = [30.2687, 77.9947]; // Graphic Era, Dehradun: until the first fix
 const CLOSE_ZOOM = 16;
 
-/** Move the dot and its accuracy circle; re-centre on the first fix or when it leaves view. */
-function place(layers: Layers, point: MapPoint | null, paused: boolean, first: boolean): void {
-  const { map, marker, circle } = layers;
+function put(map: LeafletMap, { marker, circle }: Spot, point: MapPoint | null): void {
   if (!point) {
     marker.remove();
     circle.remove();
     return;
   }
   const at: [number, number] = [point.lat, point.lng];
-  const wasHidden = !map.hasLayer(marker);
   marker.setLatLng(at).addTo(map);
   circle.setLatLng(at).setRadius(Math.max(point.accuracy_m, 5)).addTo(map);
-  marker.getElement()?.classList.toggle("is-paused", paused);
-  if (first || wasHidden) map.setView(at, CLOSE_ZOOM, { animate: false });
-  else if (!map.getBounds().pad(-0.15).contains(at)) map.panTo(at);
+}
+
+/** Move the dots; frame them when one appears or vanishes, or when one leaves the view. */
+function place(
+  layers: Layers,
+  point: MapPoint | null,
+  fake: MapPoint | null,
+  paused: boolean,
+): void {
+  const { map } = layers;
+  put(map, layers.real, point);
+  put(map, layers.fake, fake);
+  layers.real.marker.getElement()?.classList.toggle("is-paused", paused);
+  const at = [point, fake]
+    .filter((p): p is MapPoint => p !== null)
+    .map((p): [number, number] => [p.lat, p.lng]);
+  if (at.length === 0) return;
+  const key = `${point ? "r" : ""}${fake ? "f" : ""}`;
+  const fits = at.every((ll) => map.getBounds().pad(-0.15).contains(ll));
+  if (key === layers.framed && fits) return;
+  const jump = key !== layers.framed;
+  layers.framed = key;
+  if (at.length > 1) map.fitBounds(at, { padding: [36, 36], maxZoom: CLOSE_ZOOM, animate: !jump });
+  else if (jump) map.setView(at[0], CLOSE_ZOOM, { animate: false });
+  else map.panTo(at[0]);
 }
 
 /**
  * One live dot with its accuracy circle. Leaflet (~40 KB gzip) is imported only once this
  * component mounts, so no other screen pays for it, and it never runs during server rendering.
  */
-export function LiveMap({ point, paused, label }: LiveMapProps): ReactNode {
+export function LiveMap({ point, fake = null, paused, label }: LiveMapProps): ReactNode {
   const container = useRef<HTMLDivElement>(null);
   const layers = useRef<Layers | null>(null);
-  const latest = useRef({ point, paused });
+  const latest = useRef({ point, fake, paused });
 
   useEffect(() => {
-    latest.current = { point, paused };
-    if (layers.current) place(layers.current, point, paused, false);
-  }, [point, paused]);
+    latest.current = { point, fake, paused };
+    if (layers.current) place(layers.current, point, fake, paused);
+  }, [point, fake, paused]);
 
   useEffect(() => {
     let cancelled = false;
+    let resize: ResizeObserver | null = null;
     void import("leaflet").then((L) => {
       if (cancelled || !container.current) return;
       const map = L.map(container.current).setView(CAMPUS, 13);
       L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19, className: "live-tiles" }).addTo(
         map,
       );
-      layers.current = {
-        map,
+      const spot = (kind: string): Spot => ({
         marker: L.marker(CAMPUS, {
-          icon: L.divIcon({ className: "live-dot", iconSize: [22, 22] }),
+          icon: L.divIcon({ className: `live-dot ${kind}`, iconSize: [22, 22] }),
           keyboard: false,
           interactive: false,
         }),
-        circle: L.circle(CAMPUS, { radius: 5, className: "live-accuracy", interactive: false }),
-      };
-      place(layers.current, latest.current.point, latest.current.paused, true);
+        circle: L.circle(CAMPUS, {
+          radius: 5,
+          className: `live-accuracy ${kind}`,
+          interactive: false,
+        }),
+      });
+      layers.current = { map, real: spot(""), fake: spot("is-fake"), framed: "" };
+      const { point, fake, paused } = latest.current;
+      place(layers.current, point, fake, paused);
+      // The box can still be settling (styles arriving, fonts, a rotation). Leaflet caches its
+      // size, so tell it, and frame the dots again: fitting two dots depends on the real size.
+      resize = new ResizeObserver(() => {
+        if (!layers.current) return;
+        map.invalidateSize({ animate: false });
+        layers.current.framed = "";
+        const now = latest.current;
+        place(layers.current, now.point, now.fake, now.paused);
+      });
+      resize.observe(container.current);
     });
     return () => {
       cancelled = true;
+      resize?.disconnect();
       layers.current?.map.remove();
       layers.current = null;
     };

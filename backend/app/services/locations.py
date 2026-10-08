@@ -1,6 +1,7 @@
 """Latest-location storage and the access log.
 
-Only one row per session is ever kept (upsert). It is deleted when the session ends.
+At most two rows per session are kept (upsert): the latest real fix and the latest mock-location
+fix. Both are deleted when the session ends.
 """
 
 import uuid
@@ -19,7 +20,7 @@ from app.models import (
     ShareViewer,
     User,
 )
-from app.schemas import AccessLogEntry, LocationIn, LocationOut
+from app.schemas import AccessLogEntry, LocationIn, LocationOut, SessionLocationOut
 
 STALE_AFTER = timedelta(seconds=60)
 MAX_CLOCK_SKEW = timedelta(minutes=2)
@@ -61,7 +62,7 @@ async def upsert(session: AsyncSession, share_id: uuid.UUID, body: LocationIn) -
         insert(Location)
         .values(session_id=share_id, **values)
         .on_conflict_do_update(
-            index_elements=["session_id"],
+            index_elements=["session_id", "mocked"],  # real and mock fixes never replace each other
             set_=values,
             # Out-of-order delivery must never replace a newer fix with an older one.
             where=Location.recorded_at < body.recorded_at,
@@ -70,16 +71,32 @@ async def upsert(session: AsyncSession, share_id: uuid.UUID, body: LocationIn) -
     await session.commit()
 
 
-async def latest(session: AsyncSession, share_id: uuid.UUID) -> LocationOut | None:
-    loc = await session.get(Location, share_id, populate_existing=True)
-    if loc is None:
-        return None
-    return LocationOut(
-        lat=loc.lat,
-        lng=loc.lng,
-        accuracy_m=loc.accuracy_m,
-        recorded_at=loc.recorded_at,
-        stale=datetime.now(UTC) - loc.recorded_at > STALE_AFTER,
+async def latest(session: AsyncSession, share_id: uuid.UUID) -> SessionLocationOut:
+    """The latest real fix and, kept apart, the latest mock-location fix (if any)."""
+    rows = (
+        (
+            await session.execute(
+                select(Location)
+                .where(Location.session_id == share_id)
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = datetime.now(UTC)
+    by_kind = {
+        loc.mocked: LocationOut(
+            lat=loc.lat,
+            lng=loc.lng,
+            accuracy_m=loc.accuracy_m,
+            recorded_at=loc.recorded_at,
+            stale=now - loc.recorded_at > STALE_AFTER,
+        )
+        for loc in rows
+    }
+    return SessionLocationOut(
+        session_id=share_id, location=by_kind.get(False), mocked_location=by_kind.get(True)
     )
 
 

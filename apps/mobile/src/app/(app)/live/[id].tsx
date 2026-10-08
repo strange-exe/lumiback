@@ -6,11 +6,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ago } from "@/lib/ago";
 import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/time";
-import type { LiveLocation, Watching } from "@/lib/types";
+import type { Watching } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
+import { mockState, type Positions } from "@/location/mock";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Heading, T } from "@/ui/kit";
 import { LiveMap } from "@/ui/LiveMap";
+import { MockNotice } from "@/ui/MockNotice";
 import { layout, space, useColors } from "@/ui/theme";
 
 const POLL_MS = 5_000;
@@ -19,7 +21,7 @@ const WAITING = "Waiting for the sharer to approve you"; // backend AWAITING_APP
 type View_ =
   | { kind: "loading" }
   | { kind: "pending" }
-  | { kind: "live"; share: Watching; location: LiveLocation | null }
+  | { kind: "live"; share: Watching; positions: Positions }
   | { kind: "ended"; reason: string }
   | { kind: "offline"; previous: View_ };
 
@@ -33,11 +35,20 @@ export default function Watch(): ReactNode {
 
   const poll = useCallback(async (): Promise<boolean> => {
     try {
-      share.current ??= await api<Watching>(`/sessions/${id}`);
-      const { location } = await api<{ location: LiveLocation | null }>(`/sessions/${id}/location`);
+      if (!share.current) {
+        const described = await api<Partial<Watching>>(`/sessions/${id}`);
+        if (!described.sharer) {
+          // Our own share (e.g. a link to it): the owner's view has no `sharer`. Show it where
+          // owners manage it instead of a follower's page.
+          router.replace("/live");
+          return false;
+        }
+        share.current = described as Watching;
+      }
+      const positions = await api<Positions>(`/sessions/${id}/location`);
       if (wasPending.current) haptic.success(); // just approved
       wasPending.current = false;
-      setView({ kind: "live", share: share.current, location });
+      setView({ kind: "live", share: share.current, positions });
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 403 && e.detail === WAITING) {
@@ -108,7 +119,7 @@ export default function Watch(): ReactNode {
             <Button label="Back to Follow" variant="secondary" onPress={() => router.back()} />
           </>
         ) : shown.kind === "live" ? (
-          <Live first={first} share={shown.share} location={shown.location} now={now} />
+          <Live first={first} share={shown.share} positions={shown.positions} now={now} />
         ) : null}
 
         {view.kind === "offline" ? (
@@ -124,40 +135,48 @@ export default function Watch(): ReactNode {
 function Live({
   first,
   share,
-  location,
+  positions,
   now,
 }: {
   first: string;
   share: Watching;
-  location: LiveLocation | null;
+  positions: Positions;
   now: number;
 }): ReactNode {
   const c = useColors();
+  const { location } = positions;
+  const mock = mockState(positions);
+  const fake = mock.kind === "now" ? mock.fake : null;
   const updated = location ? ago(new Date(location.recorded_at).getTime(), now) : null;
   const stale = !location || location.stale;
 
   return (
     <>
       <Heading
-        eyebrow={stale ? "Paused" : "Live"}
-        tone={stale ? "muted" : "good"}
+        eyebrow={fake ? "Location faked" : stale ? "Paused" : "Live"}
+        tone={fake ? "danger" : stale ? "muted" : "good"}
         title={`${first}'s way back`}
         lede={`Sharing until ${formatTime(share.ends_at)}.`}
       />
       <LiveMap
         point={location}
-        paused={stale}
+        fake={fake}
+        paused={stale || fake !== null}
         height={340}
-        label={
+        label={[
           location
-            ? `${first}'s location, updated ${updated}, accurate to about ${Math.round(location.accuracy_m)} metres`
-            : `Map, waiting for ${first}'s first location`
-        }
+            ? `${first}'s last real location, updated ${updated}, accurate to about ${Math.round(location.accuracy_m)} metres`
+            : `Map, no real location from ${first} yet`,
+          fake ? "A faked location is shown in red" : null,
+        ]
+          .filter(Boolean)
+          .join(". ")}
       />
+      <MockNotice state={mock} first={first} now={now} />
       <Card>
         <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space(3) }}>
           <View style={{ flex: 1 }}>
-            <T tone="small">Last update</T>
+            <T tone="small">{fake ? "Last real update" : "Last update"}</T>
             <T tone="heading">{updated ?? "Not yet"}</T>
           </View>
           <View style={{ flex: 1, alignItems: "flex-end" }}>
@@ -165,7 +184,7 @@ function Live({
             <T tone="heading">{location ? `±${Math.round(location.accuracy_m)} m` : "–"}</T>
           </View>
         </View>
-        {stale ? (
+        {stale && !fake ? (
           <T tone="small" style={{ color: c.muted }}>
             {location
               ? `${first}'s phone hasn't sent a new position for a while. It may be in a pocket with no signal.`

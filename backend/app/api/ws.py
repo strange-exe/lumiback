@@ -5,7 +5,8 @@ Protocol (JSON messages):
             must be the first message, within AUTH_TIMEOUT seconds        (else close 4401)
   server -> {"type": "ready"}
   client -> {"type": "subscribe", "session_id": "..."} / {"type": "unsubscribe", ...}
-  server -> {"type": "subscribed", "session_id", "location"} | {"type": "pending", "session_id"}
+  server -> {"type": "subscribed", "session_id", "location", "mocked_location"}
+            | {"type": "pending", "session_id"}
             {"type": "granted", ...} | {"type": "location", ...} | {"type": "ended", "reason"}
 
 Authorization is re-checked against the database for EVERY event before anything is sent,
@@ -40,10 +41,6 @@ CLOSE_PROTOCOL = 4400
 CLOSE_UNAUTHENTICATED = 4401
 CLOSE_ACCESS_ENDED = 4403
 CLOSE_NOT_FOUND = 4404
-
-
-def _location_json(loc) -> dict | None:
-    return loc.model_dump(mode="json") if loc else None
 
 
 def _ended_reason(access: Access) -> str:
@@ -93,14 +90,14 @@ class Connection:
     def token_expired(self) -> bool:
         return self.token_expires_at is not None and datetime.now(UTC) >= self.token_expires_at
 
-    async def _check(self, session_id: uuid.UUID) -> tuple[Access, dict | None]:
+    async def _check(self, session_id: uuid.UUID) -> tuple[Access, dict]:
         """Fresh DB session per check: never trust cached authorization."""
         async with self.app.state.sessionmaker() as db:
             access = await resolve_access(db, session_id, self.principal)
-            location = None
+            positions: dict = {}  # session_id, location, mocked_location
             if access.role in (Role.SHARER, Role.VIEWER):
-                location = _location_json(await loc_svc.latest(db, session_id))
-            return access, location
+                positions = (await loc_svc.latest(db, session_id)).model_dump(mode="json")
+            return access, positions
 
     async def _log(self, session_id: uuid.UUID, access: Access) -> None:
         if access.role is Role.VIEWER and access.viewer is not None:
@@ -115,14 +112,12 @@ class Connection:
         if len(self.subscriptions) >= MAX_SUBSCRIPTIONS:
             await self.send({"type": "error", "detail": "too many subscriptions"})
             return
-        access, location = await self._check(session_id)
+        access, positions = await self._check(session_id)
         match access.role:
             case Role.SHARER | Role.VIEWER:
                 self._attach(session_id)
                 await self._log(session_id, access)
-                await self.send(
-                    {"type": "subscribed", "session_id": str(session_id), "location": location}
-                )
+                await self.send({"type": "subscribed", **positions})
             case Role.PENDING:
                 self._attach(session_id)
                 self.pending.add(session_id)
@@ -170,18 +165,14 @@ class Connection:
             await self.close(CLOSE_UNAUTHENTICATED, "token expired")
             return
 
-        access, location = await self._check(session_id)
+        access, positions = await self._check(session_id)
         if access.role in (Role.SHARER, Role.VIEWER):
             if session_id in self.pending:  # just approved
                 self.pending.discard(session_id)
                 await self._log(session_id, access)
-                await self.send(
-                    {"type": "granted", "session_id": str(session_id), "location": location}
-                )
+                await self.send({"type": "granted", **positions})
             elif isinstance(event, LocationUpdated):
-                await self.send(
-                    {"type": "location", "session_id": str(session_id), "location": location}
-                )
+                await self.send({"type": "location", **positions})
             return
         if access.role is Role.PENDING:
             return  # still waiting; nothing to send

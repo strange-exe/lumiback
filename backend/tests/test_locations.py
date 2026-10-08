@@ -94,6 +94,37 @@ def test_strangers_and_unknown_sessions_get_404(client, shared):
     assert r.status_code == 404
 
 
+def test_mock_fix_is_kept_beside_the_last_real_one(client, shared, db):
+    """A mock-location app replaces the phone's fix, so the last real one stays visible."""
+    put(client, shared, fix(lat=30.3, ago=timedelta(seconds=20)))
+    put(client, shared, fix(lat=12.9, mocked=True))
+    put(client, shared, fix(lat=13.0, mocked=True, ago=timedelta(seconds=5)))  # late, older
+    body = get(client, shared, "arjun").json()
+    assert body["location"]["lat"] == 30.3
+    assert body["mocked_location"]["lat"] == 12.9
+    assert db.execute(text("SELECT count(*) FROM locations")).scalar_one() == 2
+
+    # Turning the mock app off: real fixes resume; the mock one stays as a record of it.
+    put(client, shared, fix(lat=30.31))
+    body = get(client, shared, "arjun").json()
+    assert body["location"]["lat"] == 30.31
+    assert body["mocked_location"]["lat"] == 12.9
+    assert body["location"]["recorded_at"] > body["mocked_location"]["recorded_at"]
+
+
+def test_clients_that_never_send_the_flag_are_treated_as_real(client, shared):
+    put(client, shared, fix(lat=30.2))  # no "mocked" key: app versions before the flag
+    body = get(client, shared, "arjun").json()
+    assert body["location"]["lat"] == 30.2 and body["mocked_location"] is None
+
+
+def test_stop_deletes_mock_fixes_too(client, shared, db):
+    put(client, shared, fix())
+    put(client, shared, fix(mocked=True))
+    client.post(f"/sessions/{shared['id']}/stop", headers=shared["riya"])
+    assert db.execute(text("SELECT count(*) FROM locations")).scalar_one() == 0
+
+
 def test_stop_cuts_reads_and_writes(client, shared, db):
     put(client, shared, fix())
     client.post(f"/sessions/{shared['id']}/stop", headers=shared["riya"])

@@ -15,8 +15,15 @@ const CLOSE_UNAUTHENTICATED = 4401;
 interface BackendMessage {
   type?: string;
   location?: LiveLocation | null;
+  mocked_location?: LiveLocation | null;
   reason?: string;
 }
+
+const positions = (data: BackendMessage): Extract<WatchEvent, { type: "live" }> => ({
+  type: "live",
+  location: data.location ?? null,
+  mocked_location: data.mocked_location ?? null,
+});
 
 const encoder = new TextEncoder();
 const frame = (event: WatchEvent): Uint8Array =>
@@ -70,9 +77,10 @@ export async function GET(
       const describe = async (): Promise<Watching | undefined> => {
         if (described) return undefined;
         described = true;
-        return callBackend<Watching>(`/sessions/${id}`, { token, guestToken: guest }).catch(
-          () => undefined,
-        );
+        // The sharer opening their own share gets the owner's view, which has no `sharer`.
+        return callBackend<Partial<Watching>>(`/sessions/${id}`, { token, guestToken: guest })
+          .then((s) => (s.sharer ? (s as Watching) : undefined))
+          .catch(() => undefined);
       };
 
       socket = new WebSocket(BACKEND_WS);
@@ -97,10 +105,10 @@ export async function GET(
             break;
           case "subscribed":
           case "granted":
-            send({ type: "live", location: data.location ?? null, share: await describe() });
+            send({ ...positions(data), share: await describe() });
             break;
           case "location":
-            send({ type: "live", location: data.location ?? null });
+            send(positions(data));
             break;
           case "ended":
             send({ type: "ended", reason: data.reason ?? "ended" });

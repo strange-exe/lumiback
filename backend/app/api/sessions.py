@@ -221,7 +221,8 @@ LOCATION_UPDATES_PER_SESSION = Limit(max_hits=120, window_seconds=60)
 async def put_location(
     body: LocationIn, share: OwnSession, session: SessionDep, hub: HubDep, limiter: LimiterDep
 ) -> Response:
-    """Sharer's device reports its latest position. Only the latest is kept."""
+    """Sharer's device reports its latest position. Only the latest real and the latest
+    mock-location fix are kept."""
     await enforce(limiter, "location:session", str(share.id), LOCATION_UPDATES_PER_SESSION)
     try:
         await loc_svc.upsert(session, share.id, body)
@@ -253,9 +254,7 @@ async def get_location(
             raise ACCESS_ENDED
         case _:
             raise NOT_FOUND
-    return SessionLocationOut(
-        session_id=session_id, location=await loc_svc.latest(session, session_id)
-    )
+    return await loc_svc.latest(session, session_id)
 
 
 @router.get("/{session_id}/access-log")

@@ -8,14 +8,16 @@ import { api, ApiError } from "@/lib/api";
 import { WEB_URL } from "@/lib/config";
 import { inviteMessage, whatsappUrl } from "@/lib/invite";
 import { formatTime } from "@/lib/time";
-import type { JoinCode, LiveLocation, ShareSession, Viewer } from "@/lib/types";
+import type { JoinCode, ShareSession, Viewer } from "@/lib/types";
 import { useData } from "@/lib/use-data";
+import { mockState, type Positions } from "@/location/mock";
 import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
 import { Button, Card, Chips, FormError, Heading, Screen, Section, StatusChip, T } from "@/ui/kit";
 import { LiveMap } from "@/ui/LiveMap";
+import { MockNotice } from "@/ui/MockNotice";
 import { Sheet } from "@/ui/sheet";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 
@@ -46,10 +48,10 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
     // The share ended elsewhere (web, expiry, idle close): make sure the service is off too.
     if (!active && sending) await stopSending();
     // What viewers see: the last position the server has (sharers can read their own).
-    const location = active
-      ? (await api<{ location: LiveLocation | null }>(`/sessions/${active.id}/location`)).location
-      : null;
-    return { active, sending: Boolean(active) && sending, location };
+    const positions: Positions = active
+      ? await api<Positions>(`/sessions/${active.id}/location`)
+      : { location: null };
+    return { active, sending: Boolean(active) && sending, positions };
   }, []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
 
@@ -80,7 +82,7 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
           key={data.active.id}
           share={data.active}
           sending={data.sending}
-          location={data.location}
+          positions={data.positions}
           onChange={refetch}
         />
       ) : (
@@ -197,15 +199,18 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
 function Live({
   share,
   sending,
-  location,
+  positions,
   onChange,
 }: {
   share: ShareSession;
   sending: boolean;
-  location: LiveLocation | null;
+  positions: Positions;
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
+  const { location } = positions;
+  const mock = mockState(positions);
+  const fake = mock.kind === "now" ? mock.fake : null;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -263,18 +268,28 @@ function Live({
       <View>
         <LiveMap
           point={location}
-          paused={!sending || !location || location.stale}
+          fake={fake}
+          paused={!sending || !location || location.stale || fake !== null}
           height={240}
-          label={
+          label={[
             location
-              ? `Your shared location, accurate to about ${Math.round(location.accuracy_m)} metres`
-              : "Map, waiting for your first location"
-          }
+              ? `Your last real location, accurate to about ${Math.round(location.accuracy_m)} metres`
+              : "Map, no real location yet",
+            fake ? "Your faked location is shown in red" : null,
+          ]
+            .filter(Boolean)
+            .join(". ")}
         />
         <View style={{ position: "absolute", top: space(3), left: space(3) }}>
-          <StatusChip label={sending ? "● Live" : "Paused"} tone={sending ? "good" : "accent"} />
+          {fake && sending ? (
+            <StatusChip label="● Faked" tone="danger" />
+          ) : (
+            <StatusChip label={sending ? "● Live" : "Paused"} tone={sending ? "good" : "accent"} />
+          )}
         </View>
       </View>
+
+      <MockNotice state={mock} />
 
       {!sending ? (
         <Card style={{ borderColor: c.accent }}>

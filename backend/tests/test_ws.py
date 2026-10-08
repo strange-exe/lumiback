@@ -16,12 +16,13 @@ from tests.conftest import FAKE_SECRET
 from tests.helpers import befriend, login, share_with, signup
 
 
-def fix(lat=30.3165):
+def fix(lat=30.3165, **extra):
     return {
         "lat": lat,
         "lng": 78.03,
         "accuracy_m": 10,
         "recorded_at": datetime.now(UTC).isoformat(),
+        **extra,
     }
 
 
@@ -118,6 +119,16 @@ def test_viewer_gets_snapshot_then_live_updates_and_is_logged(connect, client, s
     client.put(f"/sessions/{shared['id']}/location", json=fix(lat=30.5), headers=shared["riya"])
     update = ws.receive_json()
     assert update["type"] == "location" and update["location"]["lat"] == 30.5
+    assert update["session_id"] == shared["id"] and update["mocked_location"] is None
+
+    # A mock-location fix arrives beside the real one, never in its place.
+    client.put(
+        f"/sessions/{shared['id']}/location",
+        json=fix(lat=12.9, mocked=True),
+        headers=shared["riya"],
+    )
+    update = ws.receive_json()
+    assert update["location"]["lat"] == 30.5 and update["mocked_location"]["lat"] == 12.9
 
     log = client.get(f"/sessions/{shared['id']}/access-log", headers=shared["riya"]).json()
     assert [(e["viewer_name"], e["channel"]) for e in log] == [("Arjun", "ws")]
