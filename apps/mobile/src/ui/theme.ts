@@ -16,9 +16,10 @@ const light = {
   accent: "#1f3fd1",
   onAccent: "#ffffff",
   accentSoft: "#e9edfc",
-  good: "#1e8a5a",
+  // Same as the web: AA (4.5:1) as text on their soft backgrounds, not just on white.
+  good: "#187349",
   goodSoft: "#e3f3eb",
-  danger: "#c8372d",
+  danger: "#b8322a",
   dangerSoft: "#fbe6e4",
   /** The status card: near-black in light mode, a lifted panel in dark mode. */
   hero: "#0b0c10",
@@ -41,7 +42,8 @@ const dark: typeof light = {
   muted: "#9ca1ac",
   line: "#23262e",
   accent: "#5b78ff",
-  onAccent: "#ffffff",
+  // White on this lighter cobalt is only 3.8:1; near-black is 5.3:1 (AA), as on the web.
+  onAccent: "#08090c",
   accentSoft: "#161d3d",
   good: "#5fd39b",
   goodSoft: "#12261d",
