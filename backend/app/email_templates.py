@@ -2,8 +2,10 @@
 
 History: a controlled test against Graphic Era's Microsoft 365 (2026-10-06) sent the same code
 email four ways; both HTML variants (hidden preheader, dark-mode <style> block, dashed code box,
-marketing lines) landed in Junk, while plain text reached the Inbox. So codes went out as plain
-text, and HTML stays off (HTML_EMAILS) until a new single-variable inbox test passes.
+marketing lines) landed in Junk, while plain text reached the Inbox. This design was tested the
+same way on 2026-10-08 (plain text, HTML with a plain code, HTML with a boxed code; same sender
+and subject shape) and all three reached the Inbox, so HTML_EMAILS is on. Rerun that test
+(.claude/scripts/html_inbox_test.py) before changing the layout, sender or subject.
 
 The HTML here is built for filters as much as for people: one table column, inline styles only,
 system fonts, no images, no links, no hidden text, no <style> block, and the same words as the
@@ -20,8 +22,8 @@ from html import escape
 from app.email import Email
 from app.schemas import IST
 
-# Off until the HTML version is shown to reach a Microsoft 365 inbox (see module docstring).
-HTML_EMAILS = False
+# On since the 2026-10-08 Microsoft 365 inbox test (see module docstring).
+HTML_EMAILS = True
 
 INK = "#0b0c10"
 MUTED = "#5b606b"

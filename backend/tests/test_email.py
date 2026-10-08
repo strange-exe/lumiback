@@ -10,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.email import Email, ResendMailer, build_message
-from app.email_templates import ist_stamp, verification_email
+from app.email_templates import ist_stamp, password_reset_email, verification_email
 
 REQUESTED = datetime(2026, 10, 6, 17, 11, tzinfo=UTC)  # 10:41 PM IST
 
@@ -26,11 +26,32 @@ def test_code_is_in_subject_and_body():
     assert "expires in 15 minutes" in email.body.lower()
 
 
-def test_code_email_is_plain_text_only():
-    """HTML versions landed in GEU's Outlook Junk; plain text reached the Inbox (2026-10-06)."""
+def test_code_email_is_text_plus_inbox_tested_html():
+    """This HTML passed the GEU Microsoft 365 inbox test (2026-10-08); text stays first."""
     email = make()
-    assert email.html is None
-    assert build_message(email, "x@y.z").get_content_type() == "text/plain"
+    assert email.html is not None
+    assert build_message(email, "x@y.z").get_content_type() == "multipart/alternative"
+    # Same words in both parts, and the traits the inbox test passed with.
+    assert "048291" in email.html
+    assert "Your Lumiback verification code is" in email.html
+    assert "Lumiback will never ask for this code" in email.html
+    for risky in ("<img", "<a ", "href=", "<style", "display:none"):
+        assert risky not in email.html
+
+
+def test_html_escapes_what_people_typed():
+    email = make(name="<b>Riya</b> Sharma", to="riya@geu.ac.in")
+    assert "<b>Riya</b>" not in (email.html or "")
+    assert "&lt;b&gt;Riya&lt;/b&gt;" in (email.html or "")
+
+
+def test_password_reset_email_matches_the_code_email():
+    email = password_reset_email(
+        to="riya@geu.ac.in", name="Riya", code="112233", minutes=15, requested_at=REQUESTED
+    )
+    assert email.subject == "112233 is your Lumiback code"
+    assert "Your Lumiback password reset code is 112233." in email.body
+    assert email.html is not None and "Reset your password" in email.html
 
 
 def test_request_time_is_shown_in_ist():
@@ -97,7 +118,7 @@ def test_resend_mailer_posts_the_email_over_https():
     assert seen["body"]["to"] == ["riya@geu.ac.in"]
     assert seen["body"]["subject"] == "048291 is your Lumiback code"
     assert "048291" in seen["body"]["text"]
-    assert "html" not in seen["body"]  # codes go out as plain text
+    assert "048291" in seen["body"]["html"]  # the HTML version travels alongside the text
 
 
 def test_resend_mailer_raises_when_resend_refuses():
