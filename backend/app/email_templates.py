@@ -199,10 +199,15 @@ def password_reset_email(
 # ---------- notices: late alerts, request decisions, admin escalations ----------
 #
 # Students with the app get a push instead; these go to students who only use the website
-# (and to admins). Plain text reached the GEU inbox on 2026-10-09; the HTML version (same words,
-# the shared layout, one action link) stays off until its own inbox test passes.
+# (and to admins). Each kind sends HTML only after it reached the GEU Microsoft 365 inbox on
+# its own (tests on 2026-10-09, one email at a time):
+# - "approved" (brand-first subject, two paragraphs, button) and "escalation": Inbox.
+# - "late": every HTML version went to Junk, with a button, a text link or no link; urgency in
+#   HTML reads as phishing. Plain text reached the Inbox, and a missed alert is worse than a
+#   plain one, so it stays plain text.
+# - "declined": add it here once its own test passes.
 
-NOTICE_HTML = False
+HTML_NOTICES = frozenset({"approved", "escalation"})
 
 GOOD = "#187349"
 DANGER = "#b8322a"
@@ -215,6 +220,7 @@ TONE = {"alert": DANGER, "good": GOOD, "neutral": MUTED}
 class Notice:
     """The words of a notice; rendered once as text and once as HTML."""
 
+    kind: str  # "late" | "approved" | "declined" | "escalation" (see HTML_NOTICES)
     to: str
     subject: str
     greeting: str  # "Hi Riya,"
@@ -278,7 +284,7 @@ def _notice_html(n: Notice, *, link: str | None = None) -> str:
 
 def notice_email(n: Notice, *, html: bool | None = None, link: str | None = None) -> Email:
     """Plain text always; the HTML alternative when enabled (or forced, for inbox tests)."""
-    with_html = NOTICE_HTML if html is None else html
+    with_html = n.kind in HTML_NOTICES if html is None else html
     return Email(
         to=n.to,
         subject=n.subject,
@@ -289,6 +295,7 @@ def notice_email(n: Notice, *, html: bool | None = None, link: str | None = None
 
 def late_alert_notice(*, to: str, name: str, due_at: datetime, web_url: str) -> Notice:
     return Notice(
+        kind="late",
         to=to,
         subject="Lumiback: are you OK? You're 30 minutes past your return time",
         greeting=f"Hi {_first(name)},",
@@ -320,6 +327,7 @@ def request_decision_notice(
 ) -> Notice:
     if approved:
         return Notice(
+            kind="approved",
             to=to,
             subject="Lumiback: your outing request is approved",
             greeting=f"Hi {_first(name)},",
@@ -336,6 +344,7 @@ def request_decision_notice(
             reason="you asked the hostel office for an outing",
         )
     return Notice(
+        kind="declined",
         to=to,
         subject="Lumiback: your outing request was declined",
         greeting=f"Hi {_first(name)},",
@@ -365,6 +374,7 @@ def escalation_notice(*, to: str, count: int, web_url: str) -> Notice:
     """To admins. Names and numbers stay behind the sign-in: the email only points there."""
     students = "1 late student isn't" if count == 1 else f"{count} late students aren't"
     return Notice(
+        kind="escalation",
         to=to,
         subject=f"Lumiback: {count} late student(s) not answering",
         greeting="Hello,",

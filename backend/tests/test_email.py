@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from app.email import Email, ResendMailer, build_message
 from app.email_templates import (
-    NOTICE_HTML,
+    HTML_NOTICES,
     escalation_email,
     ist_stamp,
     late_alert_email,
@@ -204,10 +204,20 @@ def test_late_alert_says_when_and_where_to_answer():
     assert "within 10 minutes" in email.body
 
 
-def test_notices_are_plain_text_until_their_inbox_test_passes():
-    assert NOTICE_HTML is False
-    email = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
-    assert email.html is None
+def test_only_inbox_tested_notices_send_html():
+    """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09)."""
+    assert HTML_NOTICES == {"approved", "escalation"}
+    late = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
+    assert late.html is None  # every HTML version went to Junk: the safety alert stays plain
+    declined = request_decision_email(
+        to="riya@geu.ac.in", name="Riya", approved=False, note=None, web_url=WEB
+    )
+    assert declined.html is None  # until its own test passes
+    approved = request_decision_email(
+        to="riya@geu.ac.in", name="Riya", approved=True, note=None, web_url=WEB
+    )
+    assert approved.html and escape("Today's outing is approved") in approved.html
+    assert escalation_email(to="warden@geu.ac.in", count=1, web_url=WEB).html
 
 
 @pytest.mark.parametrize("link", ["button", "text"])
