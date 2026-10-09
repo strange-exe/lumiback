@@ -98,6 +98,12 @@ test("automated mail is forwarded but never answered", () => {
   assert.match(worker.automatedReason("x@y.z", headers({ Precedence: "bulk" })), /Precedence: bulk/);
 });
 
+test("web visits get a plain 404, not an exception", async () => {
+  const res = worker.default.fetch(new Request("https://example.workers.dev/"));
+  assert.equal(res.status, 404);
+  assert.match(await res.text(), /only receives email/);
+});
+
 test("forwards first, then replies once; a refused reply doesn't lose the email", async () => {
   const calls = [];
   const message = {

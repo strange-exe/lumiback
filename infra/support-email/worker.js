@@ -146,6 +146,15 @@ export function buildReply({ from, to, subject, messageId, now = new Date(), id 
 }
 
 export default {
+  // The Worker only handles email; its workers.dev address answers web visits with a plain
+  // 404 instead of a "Worker threw exception" page (and an error in the logs).
+  fetch() {
+    return new Response("Not found. This address only receives email.", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  },
+
   async email(message, env) {
     // Forward first: a person always gets the message, even if the auto-reply fails.
     await message.forward(env.FORWARD_TO);
