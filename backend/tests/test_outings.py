@@ -84,6 +84,16 @@ def test_form_days_need_an_approved_request(client, riya, db):
     assert "need an approved request" in r.json()["detail"]
 
 
+def test_no_form_evening_needs_no_request_and_has_no_maximum(client, riya, db):
+    rules = set_rules(db, "open", max_minutes=60, needs_form=True, free=True)
+    r = client.post("/outings", json={}, headers=riya)
+    assert r.status_code == 201, r.text
+    assert parse(r.json()["expected_return_at"]).strftime("%H:%M") == rules["return_by"]
+    today = client.get("/campus", headers=riya).json()["today"]
+    assert today["needs_form"] is True
+    assert today["no_form_from"].endswith("+05:30")
+
+
 @pytest.mark.parametrize(
     "body",
     [

@@ -74,6 +74,10 @@ async def create(session: AsyncSession, student: User, body: OutingRequestIn) ->
     window = await rules.today_window(session, student, now)
     if not window.needs_form:
         raise rules.Refused(f"{window.label} outings don't need a request. Just scan at the gate.")
+    if window.no_form_from is not None and window.free_at(now) and now < window.return_by:
+        raise rules.Refused(
+            f"From {rules.clock(window.no_form_from)} no request is needed. Just scan at the gate."
+        )
     if now >= window.return_by:
         raise rules.Refused(
             f"{window.label} outings end at {rules.clock(window.return_by)}. Try again tomorrow."

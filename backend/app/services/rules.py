@@ -7,7 +7,9 @@ campus default. A rule set has one DayRule per day type: weekday, Saturday, Sund
 - Tap-out is allowed from `opens_at` until `return_by`.
 - Back by `return_by`; later than that is recorded as late (and highlighted to admins).
 - `max_minutes` caps the outing (weekends), never past `return_by`.
-- `needs_form`: an approved outing request for the day is required (checked by the caller).
+- `needs_form`: an approved outing request for the day is required (checked by the caller),
+  except from `no_form_from` on: that part of the day works like a weekday evening (no form,
+  no maximum).
 - Once out, the return time never changes (no extensions).
 
 The pure functions below take everything as arguments, so the rules are tested without a
@@ -53,10 +55,18 @@ class Window:
     return_by: datetime
     max_minutes: int | None
     needs_form: bool
+    no_form_from: datetime | None = None
 
     @property
     def label(self) -> str:
         return self.holiday or LABEL[self.day_type]
+
+    def free_at(self, now: datetime) -> bool:
+        """In the no-form part of a form day."""
+        return self.needs_form and self.no_form_from is not None and now >= self.no_form_from
+
+    def form_needed_at(self, now: datetime) -> bool:
+        return self.needs_form and not self.free_at(now)
 
 
 def ist_date(now: datetime) -> date:
@@ -84,6 +94,7 @@ def window_of(rule: DayRule, rule_set: str, day: date, holiday: str | None) -> W
         return_by=at(day, rule.return_by),
         max_minutes=rule.max_minutes,
         needs_form=rule.needs_form,
+        no_form_from=at(day, rule.no_form_from) if rule.no_form_from else None,
     )
 
 
@@ -100,7 +111,7 @@ def return_time(w: Window, now: datetime, *, requested_minutes: int | None = Non
     if now >= w.return_by:
         raise Refused(f"{w.label} outings end at {clock(w.return_by)}. Try again tomorrow.")
     latest = w.return_by
-    if w.max_minutes is not None:
+    if w.max_minutes is not None and not w.free_at(now):
         minutes = min(w.max_minutes, requested_minutes or w.max_minutes)
         latest = min(latest, now + timedelta(minutes=minutes))
     if latest < now + MIN_AHEAD:

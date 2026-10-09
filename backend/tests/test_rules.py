@@ -85,6 +85,27 @@ def test_weekend_shorter_on_request_but_never_longer():
     assert return_time(w, ist(SUN, "11:00"), requested_minutes=600) == ist(SUN, "16:00")
 
 
+def boys_sunday() -> DayRule:
+    rule = weekend(DayType.SUNDAY)
+    rule.no_form_from = time(18)
+    return rule
+
+
+def test_no_form_evening_on_a_form_day():
+    w = win(boys_sunday(), SUN)
+    assert w.form_needed_at(ist(SUN, "17:59"))
+    assert not w.form_needed_at(ist(SUN, "18:00"))
+    # Before the evening an approved form's maximum applies; in the evening, only "back by".
+    assert return_time(w, ist(SUN, "11:00")) == ist(SUN, "14:00")
+    assert return_time(w, ist(SUN, "18:00")) == ist(SUN, "20:00")
+
+
+def test_form_days_without_an_evening_always_need_the_form():
+    w = win(weekend(DayType.SUNDAY), SUN)
+    assert w.form_needed_at(ist(SUN, "19:00"))
+    assert not win(weekday()).form_needed_at(ist(THU, "18:30"))
+
+
 def test_holiday_label_uses_its_name():
     w = win(weekend(DayType.HOLIDAY, 300), THU, holiday="Diwali")
     with pytest.raises(Refused, match="Diwali outings start at 10:00 AM"):

@@ -79,7 +79,7 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
         </p>
 
         <div className="-mx-5 overflow-x-auto px-5 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[520px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3 font-normal">
@@ -94,8 +94,11 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
                 <th scope="col" className="py-2 pr-3 font-normal">
                   Max hours
                 </th>
-                <th scope="col" className="py-2 font-normal">
+                <th scope="col" className="py-2 pr-3 font-normal">
                   Form + approval
+                </th>
+                <th scope="col" className="py-2 font-normal">
+                  No form from
                 </th>
               </tr>
             </thead>
@@ -140,7 +143,7 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
                         className={input}
                       />
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 pr-3">
                       <input
                         id={key}
                         type="checkbox"
@@ -150,6 +153,15 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
                         className="size-5 accent-[var(--accent)]"
                       />
                     </td>
+                    <td className="py-2">
+                      <input
+                        type="time"
+                        name={`${d.day_type}.no_form_from`}
+                        defaultValue={d.no_form_from ?? ""}
+                        aria-label={`${DAY_LABEL[d.day_type]}: no form needed from (form days only; empty: always needed)`}
+                        className={input}
+                      />
+                    </td>
                   </tr>
                 );
               })}
@@ -157,8 +169,10 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
           </table>
         </div>
         <p className="text-sm text-muted">
-          Coming back after &ldquo;Back by&rdquo; is recorded as late and listed on the Register.
-          Holidays are the dates in the list below, whatever day they fall on.
+          Coming back after &ldquo;Back by&rdquo; is recorded as late and listed on the Register. On
+          form days, &ldquo;No form from&rdquo; lets students go out without one from that time
+          until &ldquo;Back by&rdquo;, with no maximum, like a weekday evening. Holidays are the
+          dates in the list below, whatever day they fall on.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton pendingLabel="Saving…">Save rules</SubmitButton>

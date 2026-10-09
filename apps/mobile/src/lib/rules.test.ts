@@ -1,4 +1,4 @@
-import { plannedReturn, rulesLine } from "./rules";
+import { formNeededAt, plannedReturn, rulesLine } from "./rules";
 import type { TodayRules } from "./types";
 
 const at = (hhmm: string) => `2026-10-08T${hhmm}:00+05:30`;
@@ -57,6 +57,24 @@ test("form days say so, with their limit", () => {
     title: "Up to 5 h, back by 8:00 PM",
     detail: "Outings close in 9 h · Needs an approved form",
   });
+});
+
+test("boys' Sunday: a form in the day, none from 6 PM", () => {
+  const boys: TodayRules = { ...sunday, max_minutes: 180, no_form_from: at("18:00") };
+  expect(formNeededAt(boys, ms("17:59"))).toBe(true);
+  expect(formNeededAt(boys, ms("18:00"))).toBe(false);
+  expect(formNeededAt(sunday, ms("19:00"))).toBe(true);
+  expect(rulesLine(boys, ms("11:00"))).toMatchObject({
+    title: "Up to 3 h, back by 8:00 PM",
+    detail: "Outings close in 9 h · Needs an approved form until 6:00 PM",
+  });
+  expect(rulesLine(boys, ms("18:30"))).toMatchObject({
+    title: "Back by 8:00 PM",
+    detail: "Outings close in 1 h 30 min · No form needed now",
+  });
+  // The evening has no maximum, like a weekday.
+  expect(plannedReturn(boys, ms("11:00")).getTime()).toBe(ms("14:00"));
+  expect(plannedReturn(boys, ms("18:00")).getTime()).toBe(ms("20:00"));
 });
 
 test("planned return matches the server's rule", () => {

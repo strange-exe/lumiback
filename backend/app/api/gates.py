@@ -43,6 +43,7 @@ async def campus(me: CurrentUser, session: SessionDep) -> CampusOut:
             return_by=w.return_by,
             max_minutes=w.max_minutes,
             needs_form=w.needs_form,
+            no_form_from=w.no_form_from,
         ),
     )
 

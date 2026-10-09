@@ -126,6 +126,13 @@ def test_weekday_rules_need_no_request(client, db, riya):
     assert "don't need a request" in r.json()["detail"]
 
 
+def test_no_request_in_the_no_form_evening(client, db, riya):
+    set_rules(db, "open", needs_form=True, free=True)
+    r = send(client, riya)
+    assert r.status_code == 403
+    assert "no request is needed" in r.json()["detail"]
+
+
 def test_requests_only_until_the_window_closes(client, db, riya):
     set_rules(db, "closed", needs_form=True)
     assert send(client, riya).status_code == 403
@@ -233,6 +240,38 @@ def test_rule_set_edits_are_validated(client, warden):
     assert client.post("/admin/rule-sets", json=bad, headers=warden).status_code == 422
     missing = {**bad, "days": bad["days"][1:] + bad["days"][1:2]}
     assert client.post("/admin/rule-sets", json=missing, headers=warden).status_code == 422
+
+
+def test_no_form_evening_is_saved_only_on_form_days(client, warden):
+    def day(d, **extra):
+        return {"day_type": d, "opens_at": "10:00", "return_by": "20:00", **extra}
+
+    body = {
+        "name": "Evenings",
+        "days": [
+            day("weekday", no_form_from="18:00"),  # not a form day: dropped
+            day("saturday"),
+            day("sunday", needs_form=True, max_minutes=180, no_form_from="18:00"),
+            day("holiday", needs_form=True),
+        ],
+    }
+    r = client.post("/admin/rule-sets", json=body, headers=warden)
+    assert r.status_code == 201, r.text
+    saved = {d["day_type"]: d for s in r.json() if s["name"] == "Evenings" for d in s["days"]}
+    assert saved["sunday"]["no_form_from"] == "18:00"
+    assert saved["weekday"]["no_form_from"] is None
+    assert saved["holiday"]["no_form_from"] is None
+
+    late = {
+        **body,
+        "name": "Late",
+        "days": [
+            *body["days"][:2],
+            day("sunday", needs_form=True, no_form_from="20:00"),
+            body["days"][3],
+        ],
+    }
+    assert client.post("/admin/rule-sets", json=late, headers=warden).status_code == 422
 
 
 def test_the_default_rule_set_cannot_be_deleted(client, warden):

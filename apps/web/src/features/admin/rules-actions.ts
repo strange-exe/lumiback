@@ -69,6 +69,7 @@ function daysFrom(form: FormData): { days: DayRule[] } | { error: string } {
       return_by: returnBy,
       max_minutes: hours === null ? null : Math.round(hours * 60),
       needs_form: form.get(`${day}.needs_form`) === "on",
+      no_form_from: text(form, `${day}.no_form_from`) || null,
     });
   }
   return { days };

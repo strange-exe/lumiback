@@ -53,7 +53,10 @@ export interface TodayRules {
   opens_at: string;
   return_by: string;
   max_minutes: number | null;
+  /** Today needs an approved form... */
   needs_form: boolean;
+  /** ...except from this time (ISO, IST): no form and no maximum, like a weekday evening. */
+  no_form_from?: string | null;
 }
 
 export interface Campus {

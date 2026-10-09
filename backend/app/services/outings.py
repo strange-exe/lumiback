@@ -69,11 +69,17 @@ async def check_out(
     window = await rules.today_window(session, student, now)
     request = None
     if window.needs_form:
+        # Used even in the no-form evening, so an approved request is marked as used.
         request = await requests.usable_today(session, student.id, window.day)
-        if request is None:
+        if request is None and window.form_needed_at(now):
+            later = (
+                f" From {rules.clock(window.no_form_from)} you can go out without one."
+                if window.no_form_from
+                else ""
+            )
             raise rules.Refused(
                 f"{window.label} outings need an approved request. Ask for today's outing "
-                "on the Today screen, then scan once it's approved."
+                f"on the Today screen, then scan once it's approved.{later}"
             )
     expected = rules.return_time(
         window,

@@ -110,13 +110,15 @@ def set_rules(
     *,
     max_minutes: int | None = None,
     needs_form: bool = False,
+    free: bool = False,
 ) -> dict[str, str]:
     """Today's rules for students on the default rule set, placed around the current IST time
     so they fit inside today at any hour the suite runs:
       "open"     opened before now; closes later today
       "closed"   closed a few minutes ago
       "not_yet"  opens in a few minutes
-    Applies to every day type. Returns the chosen times ("HH:MM") so tests can assert them."""
+    Applies to every day type. `free` (with needs_form): no form needed from the opening time,
+    like a no-form evening that has already started. Returns the chosen times ("HH:MM")."""
     import pytest
 
     now, last = ist_now_minutes(), 23 * 60 + 59
@@ -139,9 +141,10 @@ def set_rules(
     db.execute(
         text(
             "UPDATE day_rules SET opens_at = CAST(:opens AS time), "
-            "return_by = CAST(:return_by AS time), max_minutes = :m, needs_form = :f"
+            "return_by = CAST(:return_by AS time), max_minutes = :m, needs_form = :f, "
+            "no_form_from = CASE WHEN :free THEN CAST(:opens AS time) END"
         ),
-        {**times, "m": max_minutes, "f": needs_form},
+        {**times, "m": max_minutes, "f": needs_form, "free": free},
     )
     db.commit()
     return times

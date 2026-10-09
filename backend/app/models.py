@@ -250,6 +250,11 @@ class DayRule(Base):
     __table_args__ = (
         CheckConstraint("return_by > opens_at", name="window_order"),
         CheckConstraint("max_minutes IS NULL OR max_minutes BETWEEN 30 AND 720", name="max_range"),
+        CheckConstraint(
+            "no_form_from IS NULL OR "
+            "(needs_form AND no_form_from >= opens_at AND no_form_from < return_by)",
+            name="no_form_order",
+        ),
     )
 
     rule_set_id: Mapped[uuid.UUID] = mapped_column(
@@ -260,6 +265,9 @@ class DayRule(Base):
     return_by: Mapped[time] = mapped_column(Time)  # latest normal return
     max_minutes: Mapped[int | None]  # longest outing; None: the window is the limit
     needs_form: Mapped[bool] = mapped_column(server_default=text("false"))
+    # On form days: from this time until return_by, outings need no form and have no maximum
+    # (e.g. boys' Sunday evenings work like weekday evenings).
+    no_form_from: Mapped[time | None] = mapped_column(Time)
 
 
 class Hostel(Base):

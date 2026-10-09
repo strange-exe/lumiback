@@ -442,9 +442,10 @@ class TodayRulesOut(BaseModel):
     opens_at: datetime
     return_by: datetime
     max_minutes: int | None
-    needs_form: bool
+    needs_form: bool  # today needs an approved form...
+    no_form_from: datetime | None = None  # ...except from this time (no form, no maximum)
 
-    @field_serializer("opens_at", "return_by")
+    @field_serializer("opens_at", "return_by", "no_form_from")
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
 
@@ -607,11 +608,18 @@ class DayRuleIO(Input):
     return_by: Clock
     max_minutes: int | None = Field(default=None, ge=30, le=720)
     needs_form: bool = False
+    no_form_from: Clock | None = None  # form days only: no form needed from this time
 
     @model_validator(mode="after")
     def _order(self) -> "DayRuleIO":
         if self.return_by <= self.opens_at:
             raise ValueError("the return time must be after the opening time")
+        if not self.needs_form:
+            self.no_form_from = None  # every outing that day is already form-free
+        elif self.no_form_from is not None and not (
+            self.opens_at <= self.no_form_from < self.return_by
+        ):
+            raise ValueError("'no form needed from' must be between the opening and return times")
         return self
 
 

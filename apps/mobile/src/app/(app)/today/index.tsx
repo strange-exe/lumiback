@@ -5,7 +5,7 @@ import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { plannedReturn, rulesLine } from "@/lib/rules";
+import { formNeededAt, plannedReturn, rulesLine } from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
   Campus,
@@ -215,7 +215,7 @@ function AtHostel({
     if (!next) setHandled(logRequest);
   };
   const line = rules ? rulesLine(rules, now) : null;
-  const needsApproval = Boolean(rules?.needs_form) && !approved(request);
+  const needsApproval = rules !== null && formNeededAt(rules, now) && !approved(request);
   // Without rules (offline, or not set up) the server decides; offer everything.
   const canGoOut = !line || (line.open && !needsApproval);
   const backBy =
@@ -517,6 +517,8 @@ function RulesCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const line = rulesLine(rules, now);
+  // False in a no-form evening: the request controls step aside, like on a weekday.
+  const formNeeded = formNeededAt(rules, now);
   const live = request && request.status !== "cancelled" ? request : null;
 
   const cancel = async (id: string): Promise<void> => {
@@ -560,7 +562,7 @@ function RulesCard({
             justifyContent: "center",
           }}
         >
-          <Ionicons name={rules.needs_form ? "document-text" : "time"} size={18} color={c.accent} />
+          <Ionicons name={formNeeded ? "document-text" : "time"} size={18} color={c.accent} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T tone="label" style={{ fontSize: 15 }}>
@@ -572,7 +574,7 @@ function RulesCard({
         </View>
       </View>
 
-      {rules.needs_form && line.open && !(live?.used ?? false) ? (
+      {formNeeded && line.open && !(live?.used ?? false) ? (
         <View
           style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
         >

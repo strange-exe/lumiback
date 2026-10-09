@@ -144,6 +144,7 @@ async def _rule_sets_out(session) -> list[RuleSetOut]:
                         return_by=_hhmm(d.return_by),
                         max_minutes=d.max_minutes,
                         needs_form=d.needs_form,
+                        no_form_from=_hhmm(d.no_form_from) if d.no_form_from else None,
                     )
                     for d in days
                 ],
@@ -161,6 +162,7 @@ def _apply_days(rule_set_id: uuid.UUID, days: list[DayRuleIO]) -> list[DayRule]:
             return_by=_clock(d.return_by),
             max_minutes=d.max_minutes,
             needs_form=d.needs_form,
+            no_form_from=_clock(d.no_form_from) if d.no_form_from else None,
         )
         for d in days
     ]
