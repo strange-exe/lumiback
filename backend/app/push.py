@@ -9,15 +9,17 @@ not raised. A notification is a nudge; the app always shows the same state when 
 
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
-from app.models import PushToken
+from app.email import Email, Mailer
+from app.models import PushToken, User
 
 logger = logging.getLogger(__name__)
 
@@ -123,3 +125,35 @@ async def notify_user(
                 await session.commit()
     except Exception:
         logger.exception("push to user %s failed", user_id)
+
+
+async def notify_or_email(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    sender: PushSender | None,
+    mailer: Mailer | None,
+    user_id: uuid.UUID,
+    message: PushMessage,
+    email: Callable[[User], Email],
+) -> None:
+    """Push to the user's phones; a student with no app on any phone (website only, e.g. an
+    iPhone) gets `email(user)` instead. Someone who has the app but muted this kind of
+    notification is not emailed: muting is their choice. Safe to run as a background task."""
+    try:
+        async with sessionmaker() as session:
+            user = await session.get(User, user_id)
+            has_app = await session.scalar(select(exists().where(PushToken.user_id == user_id)))
+    except Exception:
+        logger.exception("notify user %s failed", user_id)
+        return
+    if user is None:
+        return
+    if has_app:
+        if sender is not None:
+            await notify_user(sessionmaker, sender, user_id, message)
+        return
+    if mailer is None:
+        return
+    try:
+        await mailer.send(email(user))
+    except Exception:
+        logger.exception("notice email to user %s failed", user_id)

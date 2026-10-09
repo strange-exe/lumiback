@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminUser, PushDep, SessionDep
+from app.email_templates import request_decision_email
 from app.models import DayRule, DayType, Holiday, Hostel, OutingRequest, RuleSet, User
 from app.push import PushMessage
 from app.schemas import (
@@ -107,7 +108,8 @@ async def decide_request(
         session, me, f"request:{'approve' if body.approve else 'decline'}", student.email
     )
     await session.commit()
-    push.to_user(
+    web_url = push.web_url
+    push.to_user_or_email(
         student.id,
         PushMessage(
             title="Outing approved" if body.approve else "Outing request declined",
@@ -118,6 +120,13 @@ async def decide_request(
             ),
             url="/today",
             channel="share-status",
+        ),
+        lambda user: request_decision_email(
+            to=user.email,
+            name=user.name,
+            approved=body.approve,
+            note=body.note,
+            web_url=web_url,
         ),
     )
     return await _request_out(session, r, student)

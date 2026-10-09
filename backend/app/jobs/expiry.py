@@ -16,20 +16,25 @@ from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.email import Email, Mailer
+from app.email_templates import late_alert_email
 from app.models import (
+    AccessLog,
     CampusSettings,
+    Escalation,
     GateScan,
     Location,
+    OutingRequest,
     RefreshToken,
     SessionStatus,
     ShareCode,
     ShareSession,
     ShareSource,
 )
-from app.push import PushMessage, PushSender, notify_user
+from app.push import PushMessage, PushSender, notify_or_email, notify_user
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
 from app.services import escalations, password_reset, verification
+from app.services.rules import IST
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,9 @@ class SweepResult:
     deleted_scans: int = 0
     deleted_password_resets: int = 0
     escalated: int = 0
+    deleted_views: int = 0
+    deleted_requests: int = 0
+    deleted_escalations: int = 0
 
 
 async def sweep(
@@ -122,31 +130,45 @@ async def sweep(
         late = await escalations.send_alerts(session, now)
         opened = await escalations.open_escalations(session, now)
         admins = await escalations.admin_ids(session) if opened else []
+        # One retention period (Admin > Settings) for the campus records: gate scans, who
+        # viewed a share, outing requests, and handled late escalations. Open escalations
+        # stay until an admin resolves them: deleting one would hide a late student.
         retention = await session.scalar(select(CampusSettings.scan_retention_days))
-        scans = await session.execute(
-            delete(GateScan).where(
-                GateScan.scanned_at < now - timedelta(days=retention or DEFAULT_SCAN_RETENTION_DAYS)
+        cutoff = now - timedelta(days=retention or DEFAULT_SCAN_RETENTION_DAYS)
+        scans = await session.execute(delete(GateScan).where(GateScan.scanned_at < cutoff))
+        views = await session.execute(delete(AccessLog).where(AccessLog.viewed_at < cutoff))
+        old_requests = await session.execute(
+            delete(OutingRequest).where(OutingRequest.day < cutoff.astimezone(IST).date())
+        )
+        handled = await session.execute(
+            delete(Escalation).where(
+                Escalation.resolved_at.is_not(None), Escalation.created_at < cutoff
             )
         )
         await session.commit()
 
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
+    for student_id, due in late:
+        # Students without the app (website only) are emailed instead.
+        await notify_or_email(
+            sessionmaker,
+            push,
+            mailer,
+            student_id,
+            PushMessage(
+                title="You're 30 min late. Are you OK?",
+                body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
+                "is told.",
+                url="/today",
+                channel="return-reminders",
+                urgent=True,
+            ),
+            lambda user, due=due: late_alert_email(
+                to=user.email, name=user.name, due_at=due, web_url=web_url
+            ),
+        )
     if push is not None:
-        for student_id in late:
-            await notify_user(
-                sessionmaker,
-                push,
-                student_id,
-                PushMessage(
-                    title="You're 30 min late. Are you OK?",
-                    body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
-                    "is told.",
-                    url="/today",
-                    channel="return-reminders",
-                    urgent=True,
-                ),
-            )
         for admin_id, _ in admins:
             await notify_user(
                 sessionmaker,
@@ -187,6 +209,9 @@ async def sweep(
         overdue_notified=len(late),
         escalated=len(opened),
         deleted_scans=scans.rowcount,
+        deleted_views=views.rowcount,
+        deleted_requests=old_requests.rowcount,
+        deleted_escalations=handled.rowcount,
         deleted_password_resets=resets,
     )
 

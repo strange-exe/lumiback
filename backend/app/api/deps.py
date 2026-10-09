@@ -3,6 +3,7 @@
 import hmac
 import ipaddress
 import uuid
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, Header, HTTPException, Request, status
@@ -11,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db import get_session
-from app.email import Mailer
+from app.email import Email, Mailer
 from app.models import User, UserRole
-from app.push import PushMessage, notify_user
+from app.push import PushMessage, notify_or_email, notify_user
 from app.realtime import Hub
 from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
@@ -45,10 +46,26 @@ class Pusher:
     def __init__(self, request: Request, tasks: BackgroundTasks) -> None:
         self._sessionmaker = request.app.state.sessionmaker
         self._sender = request.app.state.push
+        self._mailer = request.app.state.mailer
         self._tasks = tasks
+        self.web_url: str = request.app.state.settings.web_url
 
     def to_user(self, user_id: uuid.UUID, message: PushMessage) -> None:
         self._tasks.add_task(notify_user, self._sessionmaker, self._sender, user_id, message)
+
+    def to_user_or_email(
+        self, user_id: uuid.UUID, message: PushMessage, email: Callable[[User], Email]
+    ) -> None:
+        """Push, or email students who don't use the app (see push.notify_or_email)."""
+        self._tasks.add_task(
+            notify_or_email,
+            self._sessionmaker,
+            self._sender,
+            self._mailer,
+            user_id,
+            message,
+            email,
+        )
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]

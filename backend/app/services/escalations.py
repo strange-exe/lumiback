@@ -49,8 +49,8 @@ class NotFound(Exception):
     pass
 
 
-async def send_alerts(session: AsyncSession, now: datetime) -> list[uuid.UUID]:
-    """Marks outings that just became 30 min late; returns their students (to push)."""
+async def send_alerts(session: AsyncSession, now: datetime) -> list[tuple[uuid.UUID, datetime]]:
+    """Marks outings that just became 30 min late; returns (student, due time) to alert."""
     rows = await session.execute(
         update(Outing)
         .where(
@@ -59,9 +59,9 @@ async def send_alerts(session: AsyncSession, now: datetime) -> list[uuid.UUID]:
             Outing.expected_return_at < now - ALERT_AFTER,
         )
         .values(overdue_notified_at=now)
-        .returning(Outing.student_id)
+        .returning(Outing.student_id, Outing.expected_return_at)
     )
-    return list(rows.scalars())
+    return [(student_id, due) for student_id, due in rows.all()]
 
 
 async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UUID]:

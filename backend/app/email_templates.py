@@ -170,3 +170,54 @@ def password_reset_email(
             reason="someone asked to reset the Lumiback password for it",
         )
     )
+
+
+# ---------- notices for students without the app (plain text; the app gets a push instead) ----------
+
+_NO_APP = (
+    "You're getting this by email because you don't use the Lumiback app on a phone. "
+    "With the app, these arrive as notifications."
+)
+
+
+def late_alert_email(*, to: str, name: str, due_at: datetime, web_url: str) -> Email:
+    """30 minutes past the return time, for a student with no app to push to."""
+    due = due_at.astimezone(IST)
+    due_text = f"{due.hour % 12 or 12}:{due.minute:02d} {'AM' if due.hour < 12 else 'PM'}"
+    return Email(
+        to=to,
+        subject="Are you OK? You're 30 minutes past your return time",
+        body=(
+            f"Hi {_first(name)},\n\n"
+            f"You were due back at {due_text} and haven't checked in yet.\n\n"
+            f"Let the hostel office know you're OK: open {web_url}/home and choose "
+            '"On my way" or "I\'m safe". Checking in at the gate works too.\n\n'
+            "If there's no answer within 10 minutes, the hostel office is told and may call "
+            "you or your emergency contact.\n\n"
+            f"{_NO_APP}\n"
+        ),
+    )
+
+
+def request_decision_email(
+    *, to: str, name: str, approved: bool, note: str | None, web_url: str
+) -> Email:
+    """The hostel office's answer to a weekend or holiday outing request."""
+    if approved:
+        subject = "Your outing request is approved"
+        middle = (
+            "The hostel office approved today's outing. Tap out at the gate when you leave, "
+            f"or check out at {web_url}/home."
+        )
+    else:
+        subject = "Your outing request was declined"
+        reason = f" Their note: {note}" if note else ""
+        middle = (
+            f"The hostel office declined today's outing request.{reason} You can send a new "
+            f"request at {web_url}/home, or ask the hostel office if you have questions."
+        )
+    return Email(
+        to=to,
+        subject=subject,
+        body=f"Hi {_first(name)},\n\n{middle}\n\n{_NO_APP}\n",
+    )

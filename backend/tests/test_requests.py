@@ -119,6 +119,17 @@ def test_decided_requests_cant_be_decided_again(client, riya, warden, form_day):
     assert decide(client, warden, request["id"], approve=False).status_code == 409
 
 
+def test_the_decision_is_emailed_to_a_student_without_the_app(client, db, riya, warden, form_day):
+    mailer = client.app.state.mailer
+    request = send(client, riya).json()
+    before = len(mailer.outbox)
+    assert decide(client, warden, request["id"], approve=False, note="Exams tomorrow").status_code
+    [mail] = [m for m in mailer.outbox[before:] if m.to == "riya@geu.ac.in"]
+    assert mail.subject == "Your outing request was declined"
+    assert "Their note: Exams tomorrow" in mail.body
+    assert "/home" in mail.body
+
+
 def test_weekday_rules_need_no_request(client, db, riya):
     set_rules(db, "open")
     r = send(client, riya)
