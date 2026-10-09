@@ -13,6 +13,9 @@ export function SiteFooter({ className = "" }: { className?: string }): ReactNod
     >
       <span>&copy; {new Date().getFullYear()} Lumiback</span>
       <span className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <Link href="/download" className={link}>
+          Get the app
+        </Link>
         <Link href="/whats-new" className={link}>
           Version {CURRENT.version}
         </Link>

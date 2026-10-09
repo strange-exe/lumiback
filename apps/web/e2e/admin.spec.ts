@@ -195,7 +195,7 @@ test.describe("as an admin", () => {
 
   test("change how long gate scans are kept", async ({ page }) => {
     await page.goto("/admin/settings");
-    const days = page.getByLabel("Keep gate scans for (days)");
+    const days = page.getByLabel("Keep campus records for (days)");
     await days.fill("90");
     await page.getByRole("button", { name: "Save settings" }).click();
     await expect(page.getByText("Saved.")).toBeVisible();

@@ -1,4 +1,4 @@
-import { ArrowRight, LockSimple } from "@phosphor-icons/react/dist/ssr";
+import { AndroidLogo, ArrowRight, LockSimple } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -18,24 +18,16 @@ const PRIMARY =
 const SECONDARY =
   "inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-accent ring-1 ring-line transition hover:-translate-y-px hover:ring-accent/40 active:translate-y-0";
 
-/** A real, static slice of the app's UI (not a screenshot): the check-out form. */
-function ReturnChips(): ReactNode {
+/** A real, static slice of the app's UI (not a screenshot): today's rules and check-out. */
+function CheckOutPreview(): ReactNode {
   return (
     <div aria-hidden="true" className="flex flex-col gap-3">
-      <div className="grid grid-cols-3 gap-2">
-        {["+1 h", "+2 h", "+3 h"].map((label, i) => (
-          <span
-            key={label}
-            className={`flex min-h-11 items-center justify-center rounded-control text-sm font-bold ${
-              i === 1 ? "bg-accent text-on-accent" : "bg-page text-ink ring-1 ring-line"
-            }`}
-          >
-            {label}
-          </span>
-        ))}
+      <div className="flex flex-col gap-0.5 rounded-control bg-page px-4 py-3 ring-1 ring-line">
+        <span className="text-sm font-bold text-ink">Weekday outings: 6:00 PM–8:00 PM</span>
+        <span className="text-sm text-muted">Set by your hostel</span>
       </div>
       <p className="text-sm text-muted">
-        Back by <span className="font-display text-base text-ink">8:30 PM</span>
+        Back by <span className="font-display text-base text-ink">8:00 PM</span>
       </p>
       <span className="flex min-h-12 items-center rounded-control bg-page px-4 text-muted ring-1 ring-line">
         Where to? <span className="ml-2 text-ink">Clock Tower market</span>
@@ -92,6 +84,13 @@ export default async function Landing(): Promise<ReactNode> {
                 Sign in
               </Link>
             </div>
+            <Link
+              href="/download"
+              className="inline-flex min-h-11 items-center gap-2 self-start font-bold text-accent underline-offset-4 hover:underline"
+            >
+              <AndroidLogo size={20} weight="fill" aria-hidden="true" />
+              Get the Android app
+            </Link>
           </div>
           <HeroVisual className="mx-auto max-w-xl md:max-w-none" />
         </section>
@@ -111,11 +110,11 @@ export default async function Landing(): Promise<ReactNode> {
               <div>
                 <h3 className="font-display text-2xl text-ink">Check out in two taps</h3>
                 <p className="mt-2 max-w-[40ch] leading-relaxed text-muted">
-                  Say where you&apos;re going and when you&apos;ll be back. Tap once more when
-                  you&apos;re home, and your history keeps itself.
+                  Scan the code at the gate, or say where you&apos;re going. Your hostel&apos;s
+                  rules set when you&apos;re due back, and your history keeps itself.
                 </p>
               </div>
-              <ReturnChips />
+              <CheckOutPreview />
             </article>
             <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-accent p-6 text-on-accent md:p-8">
               <div>
@@ -185,8 +184,9 @@ export default async function Landing(): Promise<ReactNode> {
           </h2>
           <p className="max-w-[60ch] leading-relaxed text-muted">
             Only your latest position is stored while you share, and it is deleted when sharing
-            ends. Hostel staff see when you left and came back, never where you are. No ads, no
-            tracking.{" "}
+            ends. Hostel staff see when you left and came back, not where you are. The one exception
+            is safety: if you&apos;re over 40 minutes late, don&apos;t answer, and are sharing right
+            then, they see that last position, and you see that they looked. No ads, no tracking.{" "}
             <Link
               href="/privacy"
               className="font-bold text-accent underline-offset-4 hover:underline"

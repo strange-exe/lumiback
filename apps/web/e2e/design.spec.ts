@@ -107,6 +107,12 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("heading", { name: "Privacy", level: 1 }),
   },
   {
+    name: "download",
+    auth: false,
+    prepare: async (page) => void (await page.goto("/download")),
+    primary: (page) => page.getByRole("link", { name: "Download for Android" }),
+  },
+  {
     name: "whats-new",
     auth: false,
     prepare: async (page) => void (await page.goto("/whats-new")),

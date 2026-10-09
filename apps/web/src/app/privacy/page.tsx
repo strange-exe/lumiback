@@ -27,7 +27,7 @@ const PARTS: Part[] = [
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
       "Who looked at your share and when, so you can see it. Guests who follow you give a name for you to recognise.",
       "When you tap out or in at a gate: which gate, the time, whether the scan was accepted, how far your phone was from the gate and how precise its GPS was. Never your coordinates.",
-      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, and when you're 30 minutes past your return time.",
+      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, and when you're 30 minutes past your return time. If you don't use the app, the approval and the late alert are emailed to your university address instead.",
     ],
   },
   {
@@ -46,7 +46,7 @@ const PARTS: Part[] = [
     items: [
       "Your location is deleted as soon as you stop sharing or close the tab. If a share ends on its own (its time runs out, or your tab goes quiet for 5 minutes), it is deleted within a minute.",
       "Outings and your list of past shares stay until you delete your account.",
-      "Gate scans are deleted automatically after 180 days (admins can set this between 7 and 730 days).",
+      "Gate scans, outing requests, records of who viewed your share, and handled late follow-ups are deleted automatically after 180 days (admins can set this between 7 and 730 days). A late follow-up still open stays until the hostel office handles it.",
       "Join codes are deleted a day after they expire. You are signed out after 30 days without using the app.",
     ],
   },

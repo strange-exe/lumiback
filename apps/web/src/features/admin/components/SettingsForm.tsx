@@ -17,14 +17,14 @@ export function SettingsForm({ current }: { current: CampusSettings }): ReactNod
       className="flex flex-col gap-5 rounded-sheet border border-line bg-surface p-5 sm:p-6"
     >
       <Field
-        label="Keep gate scans for (days)"
+        label="Keep campus records for (days)"
         name="retention"
         type="number"
         min={7}
         max={730}
         required
         defaultValue={state.fields?.retention ?? String(current.scan_retention_days)}
-        hint="Older scans are deleted automatically. Trips in the register are kept until the student deletes their account."
+        hint="Gate scans, weekend and holiday requests, handled late escalations, and records of who viewed a shared location are deleted automatically after this. Open escalations stay until handled. Trips in the register are kept until the student deletes their account."
       />
       <FormError message={state.error} />
       <div className="flex flex-wrap items-center gap-3">

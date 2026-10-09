@@ -95,7 +95,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   const fields = { retention: text(form, "retention") };
   const days = number(form, "retention");
   if (days === null || days < 7 || days > 730) {
-    return { error: "Keep gate scans for between 7 and 730 days.", fields };
+    return { error: "Keep campus records for between 7 and 730 days.", fields };
   }
   const result = await attempt(
     () =>
