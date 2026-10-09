@@ -324,16 +324,16 @@ def _phone(value: str) -> str:
     if digits.startswith("+"):
         rest = digits[1:]
         if not rest.isdigit() or not 8 <= len(rest) <= 15:
-            raise ValueError("enter a phone number with 8-15 digits")
+            raise ValueError("Phone numbers have 8 to 15 digits after the country code.")
         return "+" + rest
     if not digits.isdigit():
-        raise ValueError("a phone number has only digits")
+        raise ValueError("A phone number can only have digits.")
     if len(digits) == 11 and digits.startswith("0"):
         digits = digits[1:]
     if len(digits) == 12 and digits.startswith("91"):
         digits = digits[2:]
     if len(digits) != 10 or digits[0] not in "6789":
-        raise ValueError("enter a 10-digit Indian mobile number, or add the country code (+)")
+        raise ValueError("Enter a 10-digit Indian mobile number, or add the country code (+).")
     return "+91" + digits
 
 
