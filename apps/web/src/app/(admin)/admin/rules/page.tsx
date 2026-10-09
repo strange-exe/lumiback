@@ -51,16 +51,34 @@ export default async function RulesPage(): Promise<ReactNode> {
             Hostels
           </h2>
           <p className="max-w-[65ch] text-sm text-muted">
-            Students pick their hostel in the app. The warden&apos;s number is shown when a late
-            student doesn&apos;t answer.
+            Students choose their hostel from a list grouped like this. The warden&apos;s number is
+            shown when a late student doesn&apos;t answer.
           </p>
         </div>
-        <div className="flex flex-col divide-y divide-line border-y border-line">
-          {hostels.map((h) => (
-            <HostelForm key={h.id} hostel={h} sets={sets} />
-          ))}
-          <HostelForm sets={sets} />
-        </div>
+        {sets.map((set) => {
+          const inSet = hostels.filter((h) => h.rule_set_id === set.id);
+          return (
+            <div
+              key={set.id}
+              role="group"
+              aria-labelledby={`hostels-${set.id}`}
+              className="flex flex-col gap-1"
+            >
+              <h3 id={`hostels-${set.id}`} className="mt-3 font-bold text-ink">
+                {set.name}{" "}
+                <span className="font-normal text-muted">
+                  · {inSet.length} {inSet.length === 1 ? "hostel" : "hostels"}
+                </span>
+              </h3>
+              <div className="flex flex-col divide-y divide-line border-y border-line">
+                {inSet.map((h) => (
+                  <HostelForm key={h.id} hostel={h} sets={sets} />
+                ))}
+                <HostelForm sets={sets} group={set.id} />
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       <section aria-labelledby="holidays-heading" className="flex flex-col gap-3">

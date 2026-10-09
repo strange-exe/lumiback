@@ -233,7 +233,16 @@ export function NewRuleSetForm({ sets }: { sets: RuleSet[] }): ReactNode {
 
 // ---------- hostels ----------
 
-export function HostelForm({ hostel, sets }: { hostel?: Hostel; sets: RuleSet[] }): ReactNode {
+export function HostelForm({
+  hostel,
+  sets,
+  group,
+}: {
+  hostel?: Hostel;
+  sets: RuleSet[];
+  /** For a new hostel: the rule set it's added under (it can still be changed). */
+  group?: string;
+}): ReactNode {
   const [state, action] = useActionState(saveHostel, EMPTY);
   const [deleteState, remove] = useActionState(deleteHostel, EMPTY);
   const value = (field: string, fallback: string | null | undefined): string =>
@@ -260,7 +269,7 @@ export function HostelForm({ hostel, sets }: { hostel?: Hostel; sets: RuleSet[] 
           <select
             name="rule_set_id"
             required
-            defaultValue={value("rule_set_id", hostel?.rule_set_id ?? sets[0]?.id)}
+            defaultValue={value("rule_set_id", hostel?.rule_set_id ?? group ?? sets[0]?.id)}
             className={input}
           >
             {sets.map((s) => (

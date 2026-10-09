@@ -10,6 +10,13 @@ import type { FormState, HostelChoice, Profile } from "@/lib/types";
 
 const INITIAL: FormState = { error: null };
 
+/** Hostels grouped by the rule set they follow, in the order the API sorts them. */
+function groupBy(hostels: HostelChoice[]): [string, HostelChoice[]][] {
+  const groups = new Map<string, HostelChoice[]>();
+  for (const h of hostels) groups.set(h.rule_set, [...(groups.get(h.rule_set) ?? []), h]);
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
 function Notice({ state }: { state: FormState }): ReactNode {
   return (
     <p aria-live="polite" className="text-sm">
@@ -60,11 +67,16 @@ export function OutingDetails({
             defaultValue={profile.hostel_id ?? ""}
             className="min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink focus:border-accent focus:outline-none"
           >
-            <option value="">Not chosen (default rules)</option>
-            {hostels.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
+            <option value="">Choose your hostel</option>
+            {/* Grouped by the rules they follow: "Boys' hostels", "Girls' hostels". */}
+            {groupBy(hostels).map(([group, list]) => (
+              <optgroup key={group} label={group}>
+                {list.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
