@@ -79,7 +79,7 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
         </p>
 
         <div className="-mx-5 overflow-x-auto px-5 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[520px] text-left text-sm">
             <thead className="text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3 font-normal">
@@ -90,9 +90,6 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
                 </th>
                 <th scope="col" className="py-2 pr-3 font-normal">
                   Back by
-                </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Later, with a reason
                 </th>
                 <th scope="col" className="py-2 pr-3 font-normal">
                   Max hours
@@ -132,15 +129,6 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
                     </td>
                     <td className="py-2 pr-3">
                       <input
-                        type="time"
-                        name={`${d.day_type}.late_until`}
-                        defaultValue={d.late_until ?? ""}
-                        aria-label={`${DAY_LABEL[d.day_type]}: later return with a reason (empty: not allowed)`}
-                        className={input}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
                         type="number"
                         name={`${d.day_type}.max_hours`}
                         min={0.5}
@@ -169,8 +157,8 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
           </table>
         </div>
         <p className="text-sm text-muted">
-          Leave &ldquo;Later, with a reason&rdquo; empty where it isn&apos;t allowed. Holidays are
-          the dates in the list below, whatever day they fall on.
+          Coming back after &ldquo;Back by&rdquo; is recorded as late and listed on the Register.
+          Holidays are the dates in the list below, whatever day they fall on.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton pendingLabel="Saving…">Save rules</SubmitButton>

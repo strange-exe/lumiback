@@ -144,8 +144,8 @@ export interface AdminOuting {
   out_via: "self" | "gate";
   out_gate: string | null;
   hostel?: string | null;
-  /** Took the later return option (weekday 8:30 PM), and why. */
-  late_reason?: string | null;
+  /** IST; set once they're back (the late-today list includes returned latecomers). */
+  returned_at?: string | null;
   /** The answer to the "are you OK?" alert, if any. */
   late_reply?: LateReply | null;
   /** A weekend/holiday outing an admin approved. */
@@ -203,7 +203,6 @@ export interface DayRule {
   /** "HH:MM", IST */
   opens_at: string;
   return_by: string;
-  late_until: string | null;
   max_minutes: number | null;
   needs_form: boolean;
 }

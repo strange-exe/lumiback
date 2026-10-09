@@ -52,14 +52,13 @@ export async function resolveEscalation(_: FormState, form: FormData): Promise<F
 
 // ---------- rule sets ----------
 
-/** One rule set's form: four day types, each with times, an optional later return and limit. */
+/** One rule set's form: four day types, each with its times, an optional limit and form. */
 function daysFrom(form: FormData): { days: DayRule[] } | { error: string } {
   const days: DayRule[] = [];
   for (const day of DAY_TYPES) {
     const opens = text(form, `${day}.opens_at`);
     const returnBy = text(form, `${day}.return_by`);
     if (!opens || !returnBy) return { error: "Every day needs an opening and a return time." };
-    const late = text(form, `${day}.late_until`);
     const hours = number(form, `${day}.max_hours`);
     if (hours !== null && (hours < 0.5 || hours > 12)) {
       return { error: "A maximum outing is between 0.5 and 12 hours." };
@@ -68,7 +67,6 @@ function daysFrom(form: FormData): { days: DayRule[] } | { error: string } {
       day_type: day,
       opens_at: opens,
       return_by: returnBy,
-      late_until: late || null,
       max_minutes: hours === null ? null : Math.round(hours * 60),
       needs_form: form.get(`${day}.needs_form`) === "on",
     });

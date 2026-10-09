@@ -27,9 +27,10 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
   const { token } = await requireAdmin();
   const requested = (await searchParams).state;
   const state: State = STATES.find((s) => s.value === requested)?.value ?? "all";
-  const [overview, outings] = await Promise.all([
+  const [overview, outings, late] = await Promise.all([
     adminApi.overview(token),
     adminApi.outings(token, state),
+    adminApi.lateToday(token),
   ]);
 
   const stats = [
@@ -101,6 +102,8 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
         )}
       </section>
 
+      <LateToday late={late} />
+
       <ExportForm />
     </div>
   );
@@ -135,11 +138,6 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
                   .filter(Boolean)
                   .join(" · ") || o.email}
               </p>
-              {o.late_reason ? (
-                <p className="text-sm text-ink">
-                  <span className="font-bold text-accent">Later return:</span> {o.late_reason}
-                </p>
-              ) : null}
             </td>
             <td className="text-sm md:py-3.5 md:pr-4">
               <p className="tabular-nums text-ink">{formatWhen(o.left_at)}</p>
@@ -176,6 +174,53 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Tonight's latecomers: back after their return time, or still out past it. */
+function LateToday({ late }: { late: AdminOuting[] }): ReactNode {
+  return (
+    <section aria-labelledby="late-heading" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 id="late-heading" className="font-display text-xl text-ink">
+          Late today
+        </h2>
+        <p className="text-sm text-muted">
+          Everyone who came back after their return time today, or is still out past it. Most late
+          first.
+        </p>
+      </div>
+      {late.length === 0 ? (
+        <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
+          Nobody has been late today.
+        </p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line border-y border-line">
+          {late.map((o) => (
+            <li
+              key={o.id}
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-bold text-ink">{o.name}</p>
+                <p className="truncate text-sm text-muted">
+                  {[o.roll_no, o.hostel].filter(Boolean).join(" · ") || o.email} · due{" "}
+                  {formatWhen(o.expected_return_at)}
+                  {o.returned_at ? `, back ${formatWhen(o.returned_at)}` : ", not back yet"}
+                </p>
+              </div>
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-sm font-bold ${
+                  o.returned_at ? "bg-accent-soft text-accent" : "bg-danger-soft text-danger"
+                }`}
+              >
+                {formatMinutes(o.late_minutes)} late
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

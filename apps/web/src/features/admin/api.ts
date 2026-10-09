@@ -26,6 +26,10 @@ export const adminApi = {
     return callBackend<AdminOuting[]>(`/admin/outings?state=${state}`, { token });
   },
 
+  lateToday(token: string): Promise<AdminOuting[]> {
+    return callBackend<AdminOuting[]>("/admin/late-today", { token });
+  },
+
   scans(
     token: string,
     filters: { before?: string; gate?: string; result?: ScanResult },
