@@ -206,13 +206,13 @@ def test_late_alert_says_when_and_where_to_answer():
 
 def test_only_inbox_tested_notices_send_html():
     """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09)."""
-    assert HTML_NOTICES == {"approved", "escalation"}
+    assert HTML_NOTICES == {"approved", "declined", "escalation"}
     late = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
     assert late.html is None  # every HTML version went to Junk: the safety alert stays plain
     declined = request_decision_email(
         to="riya@geu.ac.in", name="Riya", approved=False, note=None, web_url=WEB
     )
-    assert declined.html is None  # until its own test passes
+    assert declined.html and escape("Today's outing request was declined") in declined.html
     approved = request_decision_email(
         to="riya@geu.ac.in", name="Riya", approved=True, note=None, web_url=WEB
     )

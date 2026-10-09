@@ -202,12 +202,13 @@ def password_reset_email(
 # (and to admins). Each kind sends HTML only after it reached the GEU Microsoft 365 inbox on
 # its own (tests on 2026-10-09, one email at a time):
 # - "approved" (brand-first subject, two paragraphs, button) and "escalation": Inbox.
+#   The first "approved" shape (bare subject, one sentence, long footer) went to Junk.
 # - "late": every HTML version went to Junk, with a button, a text link or no link; urgency in
 #   HTML reads as phishing. Plain text reached the Inbox, and a missed alert is worse than a
 #   plain one, so it stays plain text.
-# - "declined": add it here once its own test passes.
+# - "declined" (same shape as "approved"): Inbox.
 
-HTML_NOTICES = frozenset({"approved", "escalation"})
+HTML_NOTICES = frozenset({"approved", "declined", "escalation"})
 
 GOOD = "#187349"
 DANGER = "#b8322a"
