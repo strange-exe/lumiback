@@ -29,6 +29,7 @@ from app.api import (
 from app.config import Settings, load_settings
 from app.db import make_engine, make_sessionmaker
 from app.email import make_mailer
+from app.email_templates import set_reply_to
 from app.jobs import expiry
 from app.push import make_push_sender
 from app.realtime import Hub
@@ -81,6 +82,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.state.settings = settings
     app.state.hub = Hub()
     app.state.mailer = make_mailer(settings)
+    set_reply_to(settings.email_reply_to)  # emails invite replies only when they can arrive
     app.state.push = make_push_sender(settings)
 
     app.add_middleware(

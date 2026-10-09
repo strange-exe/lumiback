@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     email_from: str | None = None
+    # Where replies go (e.g. support@lumiback.abhinesh.codes, forwarded by Cloudflare Email
+    # Routing). Unset: no Reply-To, and no email invites a reply.
+    email_reply_to: str | None = Field(default=None, pattern=r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 
     # Shared with the web server, which sends the visitor's IP in X-Client-IP alongside this
     # secret. Without it, a header any caller can set would decide who gets rate-limited.

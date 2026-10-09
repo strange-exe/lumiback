@@ -25,10 +25,12 @@ class Email:
     html: str | None = None  # optional rich version, sent as multipart/alternative
 
 
-def build_message(email: Email, sender: str) -> EmailMessage:
+def build_message(email: Email, sender: str, reply_to: str | None = None) -> EmailMessage:
     message = EmailMessage()
     message["From"] = sender
     message["To"] = email.to
+    if reply_to:
+        message["Reply-To"] = reply_to
     message["Subject"] = email.subject
     message.set_content(email.body)
     if email.html:
@@ -66,9 +68,10 @@ class SmtpMailer:
         self._username = settings.smtp_username
         self._password = settings.smtp_password
         self._from = settings.email_from
+        self._reply_to = settings.email_reply_to
 
     def _send_blocking(self, email: Email) -> None:
-        message = build_message(email, self._from)
+        message = build_message(email, self._from, self._reply_to)
         context = ssl.create_default_context()  # verifies the server certificate
         if self._port == 465:
             server: smtplib.SMTP = smtplib.SMTP_SSL(
@@ -94,6 +97,7 @@ class ResendMailer:
         assert settings.resend_api_key and settings.email_from
         self._key = settings.resend_api_key
         self._from = settings.email_from
+        self._reply_to = settings.email_reply_to
         self._client = client  # injectable for tests
 
     async def send(self, email: Email) -> None:
@@ -105,6 +109,8 @@ class ResendMailer:
         }
         if email.html:
             payload["html"] = email.html
+        if self._reply_to:
+            payload["reply_to"] = self._reply_to
         headers = {"Authorization": f"Bearer {self._key.get_secret_value()}"}
         if self._client is not None:
             response = await self._client.post(self.URL, json=payload, headers=headers)

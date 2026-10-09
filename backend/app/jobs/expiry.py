@@ -15,8 +15,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.email import Email, Mailer
-from app.email_templates import late_alert_email
+from app.email import Mailer
+from app.email_templates import escalation_email, late_alert_email
 from app.models import (
     AccessLog,
     CampusSettings,
@@ -185,18 +185,7 @@ async def sweep(
     if mailer is not None and opened:
         for _, email in admins:
             try:
-                await mailer.send(
-                    Email(
-                        to=email,
-                        subject=f"Lumiback: {len(opened)} late student(s) not answering",
-                        body=(
-                            f"{len(opened)} student(s) are over 40 minutes late and didn't "
-                            "answer the app's alert.\n\n"
-                            f"Follow up in Admin > Escalations: {web_url}/admin/escalations\n\n"
-                            "Contacts and the last known position are on that page.\n"
-                        ),
-                    )
-                )
+                await mailer.send(escalation_email(to=email, count=len(opened), web_url=web_url))
             except Exception:
                 logger.exception("escalation email failed")
     return SweepResult(
