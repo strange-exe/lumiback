@@ -4,3 +4,7 @@
 name = "lumiback-support-email"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+
+# Keeps Workers Logs on, so each email's auto-reply decision is visible in the dashboard.
+[observability]
+enabled = true
