@@ -17,7 +17,7 @@ import { syncReturnReminders } from "@/notify/notify";
 import { Press, Row, Screen, Section, T } from "@/ui/kit";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
-import { showUpdatePrompt } from "@/updates/UpdatePrompt";
+import { showUpdatePrompt, useNativeUpdate } from "@/updates/UpdatePrompt";
 
 const APPEARANCE = { system: "Match phone", light: "Light", dark: "Dark" } as const;
 
@@ -196,6 +196,7 @@ function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): React
 function VersionLine(): ReactNode {
   const { isUpdateAvailable, isUpdatePending, lastCheckForUpdateTimeSinceRestart } =
     Updates.useUpdates();
+  const nativeUpdate = useNativeUpdate();
   const [head, detail] = buildLines(
     {
       version: CURRENT.version,
@@ -207,7 +208,8 @@ function VersionLine(): ReactNode {
     },
     formatDate,
   );
-  const newer = isUpdateAvailable || isUpdatePending;
+  // Either kind: an over-the-air update, or a new app build to download.
+  const newer = isUpdateAvailable || isUpdatePending || nativeUpdate !== null;
   // Unknown until the update server has answered once (offline, or a development build).
   const status = !Updates.isEnabled
     ? null

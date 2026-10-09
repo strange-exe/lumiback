@@ -1,0 +1,9 @@
+{
+  "preview": {
+    "build": 1,
+    "min_build": 1,
+    "url": "https://github.com/strange-exe/lumiback/releases/latest/download/lumiback.apk",
+    "notes": ""
+  },
+  "production": null
+}

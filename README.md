@@ -95,6 +95,26 @@ when native code changes (new native modules, permissions, app config); `runtime
 npx eas-cli update --channel preview --environment preview --message "What changed"
 ```
 
+**Versions.** The version people see (`1.3.0`) is the newest entry in
+`apps/mobile/src/updates/changelog.json`, shown under Profile and in a one-time "What's new"
+sheet. Every update that changes something adds an entry first: patch for fixes (1.3.1), minor
+for features (1.4.0), major for big changes (2.0.0). Copy the file to
+`apps/web/src/lib/changelog.json` (a web test checks they match).
+
+**Releasing a new app build** (only when native code changed). Installed apps can't receive
+updates for a different runtime, so they learn about the new build from
+`apps/web/public/app/android.json` and ask people to download it:
+
+1. Build it: `npx eas-cli build --profile preview --platform android`.
+2. Publish the APK as a GitHub release asset named `lumiback.apk`; the app links to
+   `releases/latest/download/lumiback.apk`.
+3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
+   with the next number, and add a changelog entry.
+4. In `android.json`, set `build` to that number and `notes` to one sentence. Raise `min_build`
+   only when older builds can no longer work with the server; they then can't dismiss the prompt.
+5. Push (the website serves the new file) and publish an over-the-air update, which brings the
+   new build its own build number.
+
 **Push notifications (optional).** Android delivers push through Firebase. Create a Firebase
 project with an Android app `codes.abhinesh.lumiback`, download `google-services.json`, and upload it
 as a file variable: `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value
