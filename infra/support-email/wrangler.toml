@@ -1,0 +1,6 @@
+# Email Worker behind support@lumiback.abhinesh.codes (see README "Support email").
+# FORWARD_TO (a verified Email Routing destination) is set on the Worker in the dashboard,
+# not here, so no personal address lives in the repository.
+name = "lumiback-support-email"
+main = "worker.js"
+compatibility_date = "2026-10-01"

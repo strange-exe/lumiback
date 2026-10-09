@@ -158,3 +158,18 @@ SMTP ports (25, 465, 587).
 
 Each service must run as a single instance: live updates and token-refresh de-duplication are
 in-process. Moving off the free plan or to another host needs no code changes.
+
+### Support email
+
+`support@lumiback.abhinesh.codes` receives mail through Cloudflare Email Routing. An Email Worker
+(`infra/support-email/worker.js`, no dependencies) forwards each message to a verified inbox and
+sends the sender one automatic "we've got your message" reply; bounces, mailing lists and other
+auto-replies are forwarded but never answered. Set `EMAIL_REPLY_TO` on the API once the address
+works, so Lumiback's emails invite replies.
+
+1. Cloudflare → Workers → Create → paste `worker.js` (or `npx wrangler deploy` in that folder),
+   then add a variable `FORWARD_TO` with the verified destination address.
+2. Email Routing → Routing rules → the `support@` rule → action **Send to a Worker**.
+3. Test from another account: the message arrives in the inbox, and the sender gets the reply.
+
+`node --test infra/support-email/worker.test.mjs` checks the reply's MIME and the loop guards.
