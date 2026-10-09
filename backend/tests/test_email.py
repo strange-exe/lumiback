@@ -191,7 +191,7 @@ DUE = datetime(2026, 10, 9, 14, 30, tzinfo=UTC)  # 8:00 PM IST
 
 def test_late_alert_says_when_and_where_to_answer():
     email = late_alert_email(to="riya@geu.ac.in", name="Riya Sharma", due_at=DUE, web_url=WEB)
-    assert email.subject == "Are you OK? You're 30 minutes past your return time"
+    assert email.subject == "Lumiback: are you OK? You're 30 minutes past your return time"
     assert email.body.startswith("Hi Riya,")
     assert "You were due back at 8:00 PM" in email.body
     assert "Answer now: https://lumiback.test/home" in email.body
@@ -227,8 +227,10 @@ def test_approval_and_decline_read_differently():
     no = request_decision_email(
         to="r@geu.ac.in", name="Riya", approved=False, note=None, web_url=WEB
     )
-    assert ok.subject == "Your outing request is approved" and "Tap out at the gate" in ok.body
-    assert no.subject == "Your outing request was declined" and "note" not in no.body.lower()
+    assert ok.subject == "Lumiback: your outing request is approved"
+    assert "Tap out at the gate" in ok.body
+    assert no.subject == "Lumiback: your outing request was declined"
+    assert "note" not in no.body.lower()
 
 
 def test_escalation_email_points_to_the_page_without_student_details():

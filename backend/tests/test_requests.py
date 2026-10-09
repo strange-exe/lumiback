@@ -125,7 +125,7 @@ def test_the_decision_is_emailed_to_a_student_without_the_app(client, db, riya, 
     before = len(mailer.outbox)
     assert decide(client, warden, request["id"], approve=False, note="Exams tomorrow").status_code
     [mail] = [m for m in mailer.outbox[before:] if m.to == "riya@geu.ac.in"]
-    assert mail.subject == "Your outing request was declined"
+    assert mail.subject == "Lumiback: your outing request was declined"
     assert "The hostel office's note: Exams tomorrow" in mail.body
     assert "/home" in mail.body
 

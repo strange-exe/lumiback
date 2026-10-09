@@ -95,7 +95,7 @@ def test_a_student_without_the_app_is_emailed_the_alert(client, db, push, riya):
     assert push.outbox == []
     [mail] = mailer.outbox[before:]
     assert mail.to == "riya@geu.ac.in"
-    assert "Are you OK?" in mail.subject
+    assert "are you OK?" in mail.subject
     assert "https://lumiback.test/home" in mail.body
     assert "You were due back at " in mail.body and (" AM" in mail.body or " PM" in mail.body)
     assert run_sweep(client, push).overdue_notified == 0  # once per outing

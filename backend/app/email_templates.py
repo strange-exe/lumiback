@@ -209,7 +209,6 @@ DANGER = "#b8322a"
 TONE = {"alert": DANGER, "good": GOOD, "neutral": MUTED}
 
 # Why a student gets these by email at all; part of the footer's "Sent to ... because ...".
-_NO_APP = "you don't use the Lumiback app on a phone (with the app, this is a notification)"
 
 
 @dataclass(frozen=True)
@@ -282,7 +281,7 @@ def notice_email(n: Notice, *, html: bool | None = None, link: str = "button") -
 def late_alert_notice(*, to: str, name: str, due_at: datetime, web_url: str) -> Notice:
     return Notice(
         to=to,
-        subject="Are you OK? You're 30 minutes past your return time",
+        subject="Lumiback: are you OK? You're 30 minutes past your return time",
         greeting=f"Hi {_first(name)},",
         label="Late check-in",
         tone="alert",
@@ -297,7 +296,7 @@ def late_alert_notice(*, to: str, name: str, due_at: datetime, web_url: str) -> 
             "If there's no answer within 10 minutes, the hostel office is told and may call "
             "you or your emergency contact."
         ),
-        reason=f"you're out on a Lumiback outing and {_NO_APP}",
+        reason="you're out on a Lumiback outing",
     )
 
 
@@ -312,19 +311,23 @@ def request_decision_notice(
     if approved:
         return Notice(
             to=to,
-            subject="Your outing request is approved",
+            subject="Lumiback: your outing request is approved",
             greeting=f"Hi {_first(name)},",
             label="Approved",
             tone="good",
             heading="Today's outing is approved",
-            paragraphs=("Tap out at the gate when you leave, or check out on the website.",),
+            paragraphs=(
+                "The hostel office approved your outing request for today.",
+                "Tap out at the gate when you leave, or check out on the website. Your hostel's "
+                "return time still applies.",
+            ),
             action=("Open Lumiback", f"{web_url}/home"),
             note=None,
-            reason=f"you asked the hostel office for an outing and {_NO_APP}",
+            reason="you asked the hostel office for an outing",
         )
     return Notice(
         to=to,
-        subject="Your outing request was declined",
+        subject="Lumiback: your outing request was declined",
         greeting=f"Hi {_first(name)},",
         label="Declined",
         tone="neutral",
@@ -335,7 +338,7 @@ def request_decision_notice(
         ),
         action=("Send a new request", f"{web_url}/home"),
         note=None,
-        reason=f"you asked the hostel office for an outing and {_NO_APP}",
+        reason="you asked the hostel office for an outing",
     )
 
 
