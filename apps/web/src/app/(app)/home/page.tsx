@@ -5,6 +5,8 @@ import { Gate } from "@/components/illustrations/Gate";
 import { outingsApi } from "@/features/outings/api";
 import { CheckOutForm } from "@/features/outings/components/CheckOutForm";
 import { OutView } from "@/features/outings/components/OutView";
+import { RequestPanel } from "@/features/outings/components/RequestPanel";
+import { RulesCard } from "@/features/outings/components/RulesCard";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Today" };
@@ -15,6 +17,13 @@ export default async function HomePage(): Promise<ReactNode> {
 
   if (outing) return <OutView outing={outing} serverNow={new Date().toISOString()} />;
 
+  const campus = await outingsApi.campus(token);
+  const rules = campus?.today ?? null;
+  const [request, profile] = rules?.needs_form
+    ? await Promise.all([outingsApi.request(token), outingsApi.profile(token).catch(() => null)])
+    : [null, null];
+  const approved = request?.status === "approved" && !request.used;
+
   return (
     <section aria-labelledby="checkout-heading" className="flex flex-col gap-6">
       <div>
@@ -24,7 +33,12 @@ export default async function HomePage(): Promise<ReactNode> {
         </h1>
       </div>
       <Gate className="mx-auto w-full max-w-[16rem]" />
-      <CheckOutForm />
+      {rules ? <RulesCard rules={rules} /> : null}
+      {rules?.needs_form ? (
+        <RequestPanel rules={rules} request={request} profile={profile} />
+      ) : null}
+      {/* On form days, checking out needs the approval first: the panel above comes first. */}
+      {!rules?.needs_form || approved ? <CheckOutForm /> : null}
     </section>
   );
 }

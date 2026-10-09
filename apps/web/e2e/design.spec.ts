@@ -77,7 +77,7 @@ const SCREENS: Screen[] = [
     name: "home-in",
     auth: true,
     prepare: ensureIn,
-    primary: (page) => page.getByText("+2 h", { exact: true }),
+    primary: (page) => page.getByRole("button", { name: "Check out" }),
   },
   {
     name: "home-out",

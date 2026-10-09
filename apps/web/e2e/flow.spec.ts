@@ -93,21 +93,20 @@ test("check out, see the return arc, come back, find it in history", async ({ pa
   await expect(latest).toContainText("On time");
 });
 
-test("running late: update the return time", async ({ page }) => {
+test("the hostel's rules set the return time, and it can't be extended", async ({ page }) => {
+  await ensureIn(page);
+  // The e2e default rules: open all day, back by 11:59 PM (backend/scripts/e2e_server.py).
+  await expect(page.getByRole("region", { name: /outings: 12:00 AM–11:59 PM/ })).toBeVisible();
+  await expect(page.getByText("Back by 11:59 PM.", { exact: false }).first()).toBeVisible();
   await checkOut(page, "Robbers Cave");
-  await page.getByText("Running late? Update your time").click();
-  await page.getByRole("radio", { name: "+3 h" }).check({ force: true });
-  await page.getByRole("button", { name: "Update return time" }).click();
-  await expect(page.getByRole("heading", { name: "Robbers Cave" })).toBeVisible();
+  await expect(page.getByText("11:59", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Running late? Update your time")).toHaveCount(0);
   await ensureIn(page);
 });
 
-test("the server never renders clock-dependent text that hydration could disagree with", async ({
-  page,
-}) => {
+test("the server renders today's rules without clock-dependent text", async ({ page }) => {
   await ensureIn(page);
   const html = await (await page.request.get("/home")).text();
-  expect(html).toContain("When will you be back?");
-  expect(html).not.toMatch(/Back by/); // computed from the browser's clock after mount
-  await expect(page.getByText(/^Back by/)).toBeVisible();
+  expect(html).toContain("Back by 11:59 PM"); // from the rules, not from a clock
+  expect(html).not.toContain("close in"); // countdowns would disagree with hydration
 });

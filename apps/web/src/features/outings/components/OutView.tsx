@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { ReturnButton, UpdateReturnForm } from "@/features/outings/components/OutingControls";
+import { LateReply, ReturnButton } from "@/features/outings/components/OutingControls";
 import { ReturnArc } from "@/features/outings/components/ReturnArc";
 import { clockParts, formatMinutes } from "@/features/outings/time";
 import type { Outing } from "@/lib/types";
@@ -38,14 +38,22 @@ export function OutView({ outing, serverNow }: { outing: Outing; serverNow: stri
             role="status"
             className="mx-auto mt-3 max-w-xs rounded-control bg-danger-soft px-4 py-3 text-danger"
           >
-            You&apos;re {formatMinutes(outing.late_minutes)} past your return time. Update it or
-            mark yourself back.
+            You&apos;re {formatMinutes(outing.late_minutes)} late.
           </p>
         )}
       </div>
 
+      {overdue ? (
+        outing.late_reply ? (
+          <p role="status" className="rounded-control bg-accent-soft px-4 py-3 text-ink">
+            Thanks. The hostel office knows you&apos;re{" "}
+            {outing.late_reply === "safe" ? "safe" : "on your way"}.
+          </p>
+        ) : (
+          <LateReply />
+        )
+      ) : null}
       <ReturnButton />
-      <UpdateReturnForm />
     </section>
   );
 }

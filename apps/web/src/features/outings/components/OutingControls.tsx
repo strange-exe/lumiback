@@ -4,8 +4,7 @@ import { useActionState, type ReactNode } from "react";
 
 import { FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
-import { markReturn, updateReturn } from "@/features/outings/actions";
-import { ReturnTimePicker } from "@/features/outings/components/ReturnTimePicker";
+import { markReturn, replyLate } from "@/features/outings/actions";
 import type { FormState } from "@/lib/types";
 
 const INITIAL: FormState = { error: null };
@@ -22,20 +21,24 @@ export function ReturnButton(): ReactNode {
   );
 }
 
-export function UpdateReturnForm(): ReactNode {
-  const [state, action] = useActionState(updateReturn, INITIAL);
+/** "You're late, are you OK?": an answer stops the escalation to the hostel office. */
+export function LateReply(): ReactNode {
+  const [state, action] = useActionState(replyLate, INITIAL);
   return (
-    <details className="group rounded-control">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center font-bold text-accent underline-offset-4 hover:underline">
-        Running late? Update your time
-      </summary>
-      <form action={action} className="mt-3 flex flex-col gap-4 border-t border-line pt-4">
-        <ReturnTimePicker legend="New return time" />
-        <FormError message={state.error} />
-        <SubmitButton variant="secondary" pendingLabel="Updating…">
-          Update return time
+    <form action={action} className="flex flex-col gap-3">
+      <p className="text-ink">
+        Tell the hostel office you&apos;re OK. If there&apos;s no answer, they may call you or your
+        emergency contact.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <SubmitButton name="reply" value="on_my_way" variant="secondary" pendingLabel="Sending…">
+          On my way
         </SubmitButton>
-      </form>
-    </details>
+        <SubmitButton name="reply" value="safe" variant="secondary" pendingLabel="Sending…">
+          I&apos;m safe
+        </SubmitButton>
+      </div>
+      <FormError message={state.error} />
+    </form>
   );
 }

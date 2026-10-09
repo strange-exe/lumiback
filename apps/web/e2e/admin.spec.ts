@@ -80,6 +80,54 @@ test.describe("gate kiosk", () => {
   });
 });
 
+/** Turn the e2e default rules into weekend/holiday rules (form + approval, up to 3 h) and back. */
+async function formDay(request: APIRequestContext, on: boolean): Promise<void> {
+  const admin = { Authorization: `Bearer ${adminToken()}` };
+  const sets = (await (await request.get(`${API}/admin/rule-sets`, { headers: admin })).json()) as {
+    id: string;
+    name: string;
+    days: Record<string, unknown>[];
+  }[];
+  const rules = sets[0]!;
+  const days = rules.days.map((d) => ({ ...d, needs_form: on, max_minutes: on ? 180 : null }));
+  const r = await request.put(`${API}/admin/rule-sets/${rules.id}`, {
+    headers: admin,
+    data: { name: rules.name, days },
+  });
+  expect(r.ok()).toBe(true);
+}
+
+test.describe("as a student on a form day", () => {
+  test("ask for today's outing, see it waiting, cancel it", async ({ page, request }) => {
+    await makeSureStudentIsIn(request, studentToken());
+    await formDay(request, true);
+    try {
+      await page.goto("/home");
+      await expect(
+        page.getByText("Needs the hostel office's OK first.", { exact: false }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Check out" })).toHaveCount(0); // approval first
+      const form = page.getByRole("form", { name: "Ask for today's outing" });
+      await form.getByLabel("Where and why").fill("Shopping at Pacific Mall");
+      await form.getByText("1 h", { exact: true }).click();
+      await form.getByLabel("Your phone number").fill("98765 43210");
+      await form.getByLabel("Emergency contact").fill("Sunita Sharma");
+      await form.getByLabel("Relation").fill("Mother");
+      await form.getByLabel("Their phone").fill("12345");
+      await form.getByRole("button", { name: "Send for approval" }).click();
+      await expect(form.getByRole("alert")).toContainText("10-digit Indian mobile number");
+      await form.getByLabel("Their phone").fill("91234 56789");
+      await form.getByRole("button", { name: "Send for approval" }).click();
+      const waiting = page.getByRole("status").filter({ hasText: "Waiting for approval." });
+      await expect(waiting).toContainText("Shopping at Pacific Mall");
+      await waiting.getByRole("button", { name: "Cancel request" }).click();
+      await expect(page.getByRole("form", { name: "Ask for today's outing" })).toBeVisible();
+    } finally {
+      await formDay(request, false);
+    }
+  });
+});
+
 test.describe("as an admin", () => {
   test.use({ storageState: ADMIN_STATE });
 
@@ -224,7 +272,14 @@ test.describe("as an admin", () => {
 
       await page.goto("/admin");
       await page.getByRole("link", { name: "1 outing request to decide" }).click();
-      const card = page.getByRole("article").filter({ hasText: "Riya Sharma" });
+      // The newest request (earlier tests may have left a cancelled one from the same student).
+      const waiting = page
+        .getByRole("article")
+        .filter({ hasText: "Riya Sharma" })
+        .filter({ hasText: "Waiting for you" });
+      // Pin it: once decided it no longer says "Waiting for you".
+      const id = await waiting.getAttribute("aria-labelledby");
+      const card = page.locator(`article[aria-labelledby="${id}"]`);
       await expect(card).toContainText("Shopping at Pacific Mall");
       await expect(card.getByRole("link", { name: "+91 91234 56789" })).toHaveAttribute(
         "href",

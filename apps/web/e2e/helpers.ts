@@ -27,7 +27,6 @@ export async function ensureIn(page: Page): Promise<void> {
 
 export async function checkOut(page: Page, destination: string): Promise<void> {
   await ensureIn(page);
-  await page.getByRole("radio", { name: "+1 h" }).check({ force: true });
   await page.getByLabel("Where to? (optional)").fill(destination);
   await page.getByRole("button", { name: "Check out" }).click();
   await expect(page.getByRole("heading", { name: destination })).toBeVisible();

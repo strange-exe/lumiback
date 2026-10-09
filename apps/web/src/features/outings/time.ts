@@ -4,7 +4,6 @@
  */
 
 const ZONE = "Asia/Kolkata";
-const IST_OFFSET = "+05:30";
 
 const timeFormat = new Intl.DateTimeFormat("en-IN", {
   timeZone: ZONE,
@@ -18,13 +17,6 @@ const dateFormat = new Intl.DateTimeFormat("en-IN", {
   weekday: "short",
   day: "numeric",
   month: "short",
-});
-
-const partsFormat = new Intl.DateTimeFormat("en-CA", {
-  timeZone: ZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
 });
 
 /** "8:30 pm" -> split so the period can be typeset smaller. */
@@ -62,26 +54,6 @@ export function formatMinutes(total: number): string {
   const minutes = total % 60;
   if (hours === 0) return `${minutes} min`;
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
-}
-
-/**
- * Turn the check-out choice into an absolute instant.
- * - "60" / "120" / "180": minutes from now
- * - "HH:MM": that clock time in IST, today, or tomorrow if it has already passed
- */
-export function expectedReturn(choice: string, now: Date = new Date()): Date | null {
-  if (/^\d{1,4}$/.test(choice)) {
-    const minutes = Number(choice);
-    return minutes > 0 ? new Date(now.getTime() + minutes * 60_000) : null;
-  }
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(choice);
-  if (!match) return null;
-  const today = partsFormat.format(now); // YYYY-MM-DD in IST
-  let target = new Date(`${today}T${match[1]}:${match[2]}:00${IST_OFFSET}`);
-  if (target.getTime() <= now.getTime() + 60_000) {
-    target = new Date(target.getTime() + 24 * 60 * 60_000);
-  }
-  return target;
 }
 
 /** Fraction of the planned outing that has elapsed, clamped to [0, 1]. */

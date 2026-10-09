@@ -3,13 +3,19 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DeleteAccountForm } from "@/features/account/DeleteAccountForm";
+import { OutingDetails } from "@/features/account/OutingDetails";
+import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Account" };
 
 export default async function AccountPage(): Promise<ReactNode> {
-  const { user } = await requireUser();
+  const { user, token } = await requireUser();
+  const [profile, hostels] = await Promise.all([
+    outingsApi.profile(token),
+    outingsApi.hostels(token),
+  ]);
   const rows: [string, string][] = [
     ["Name", user.name],
     ["Email", user.email],
@@ -30,6 +36,7 @@ export default async function AccountPage(): Promise<ReactNode> {
           </div>
         ))}
       </dl>
+      <OutingDetails profile={profile} hostels={hostels} />
       <p className="text-muted">
         How your data is handled:{" "}
         <Link href="/privacy" className="font-bold text-accent underline-offset-4 hover:underline">
