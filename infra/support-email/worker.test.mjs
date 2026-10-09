@@ -104,21 +104,38 @@ test("web visits get a plain 404, not an exception", async () => {
   assert.match(await res.text(), /only receives email/);
 });
 
-test("forwards first, then replies once; a refused reply doesn't lose the email", async () => {
+const incoming = (calls, { failReply = false, extraHeaders = {} } = {}) => ({
+  from: "riya@geu.ac.in",
+  to: "support@lumiback.abhinesh.codes",
+  headers: headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>", ...extraHeaders }),
+  forward: async (to) => calls.push(["forward", to]),
+  reply: async (msg) => {
+    calls.push(["reply", msg.to]);
+    if (failReply) throw new Error("DMARC failed");
+  },
+});
+
+test("replies once, then forwards (Cloudflare's order)", async () => {
   const calls = [];
-  const message = {
-    from: "riya@geu.ac.in",
-    to: "support@lumiback.abhinesh.codes",
-    headers: headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>" }),
-    forward: async (to) => calls.push(["forward", to]),
-    reply: async (msg) => {
-      calls.push(["reply", msg.to]);
-      throw new Error("DMARC failed");
-    },
-  };
-  await worker.default.email(message, { FORWARD_TO: "me@example.com" });
+  await worker.default.email(incoming(calls), { FORWARD_TO: "me@example.com" });
   assert.deepEqual(calls, [
-    ["forward", "me@example.com"],
     ["reply", "riya@geu.ac.in"],
+    ["forward", "me@example.com"],
   ]);
+});
+
+test("a refused reply still forwards the email", async () => {
+  const calls = [];
+  await worker.default.email(incoming(calls, { failReply: true }), { FORWARD_TO: "me@example.com" });
+  assert.deepEqual(calls, [
+    ["reply", "riya@geu.ac.in"],
+    ["forward", "me@example.com"],
+  ]);
+});
+
+test("automated mail is only forwarded", async () => {
+  const calls = [];
+  const message = incoming(calls, { extraHeaders: { "Auto-Submitted": "auto-replied" } });
+  await worker.default.email(message, { FORWARD_TO: "me@example.com" });
+  assert.deepEqual(calls, [["forward", "me@example.com"]]);
 });

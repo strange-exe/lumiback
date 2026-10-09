@@ -156,25 +156,28 @@ export default {
   },
 
   async email(message, env) {
-    // Forward first: a person always gets the message, even if the auto-reply fails.
-    await message.forward(env.FORWARD_TO);
+    // Reply, then forward, in the order Cloudflare's example uses: replying after forwarding
+    // never sent anything (2026-10-10: every email "Handled" + "Forwarded", no reply). A failed
+    // reply is caught, so the forward below always runs and a person always gets the message.
     const skip = automatedReason(message.from, message.headers);
     if (skip) {
-      console.log(`forwarded; no auto-reply (${skip})`);
-      return;
+      console.log(`no auto-reply (${skip})`);
+    } else {
+      try {
+        const raw = buildReply({
+          from: message.to,
+          to: message.from,
+          subject: message.headers.get("Subject"),
+          messageId: message.headers.get("Message-ID"),
+        });
+        await message.reply(new EmailMessage(message.to, message.from, raw));
+        console.log(`auto-reply sent to ${message.from}`);
+      } catch (err) {
+        // e.g. the incoming mail failed DMARC: Cloudflare refuses the reply.
+        console.error(`auto-reply not sent: ${err && err.message ? err.message : err}`);
+      }
     }
-    try {
-      const raw = buildReply({
-        from: message.to,
-        to: message.from,
-        subject: message.headers.get("Subject"),
-        messageId: message.headers.get("Message-ID"),
-      });
-      await message.reply(new EmailMessage(message.to, message.from, raw));
-      console.log(`forwarded; auto-reply sent to ${message.from}`);
-    } catch (err) {
-      // e.g. the incoming mail failed DMARC: Cloudflare refuses the reply. Forwarding worked.
-      console.error("auto-reply not sent:", err);
-    }
+    await message.forward(env.FORWARD_TO);
+    console.log("forwarded");
   },
 };
