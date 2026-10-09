@@ -26,11 +26,11 @@ def upgrade() -> None:
     )
     # Current hostel practice. Only rows still holding the 0014 starting values change, so
     # anything an admin already edited is kept.
-    # Boys' hostels: on Sundays, 6-8 PM needs no form (like a weekday evening).
+    # Boys' hostels: on Sundays and holidays, 6-8 PM needs no form (like a weekday evening).
     op.execute(
         """
         UPDATE day_rules SET no_form_from = '18:00'
-        WHERE day_type = 'sunday' AND needs_form
+        WHERE day_type IN ('sunday', 'holiday') AND needs_form
           AND opens_at <= '18:00' AND return_by > '18:00'
           AND rule_set_id = (SELECT id FROM rule_sets WHERE name = 'Boys'' hostels')
         """

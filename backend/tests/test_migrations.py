@@ -70,6 +70,7 @@ def test_outing_rules_are_seeded_from_hostel_practice(migrated_engine, test_db_u
     assert rules[("Girls' hostels", "saturday")] == weekday
     # Boys: a form outing in the day, or 6-8 PM without one (0015). Girls: the form only.
     assert rules[("Boys' hostels", "sunday")] == ["10:00:00", "20:00:00", 180, True, "18:00:00"]
+    assert rules[("Boys' hostels", "holiday")] == ["10:00:00", "20:00:00", 180, True, "18:00:00"]
     assert rules[("Girls' hostels", "sunday")] == ["10:00:00", "20:00:00", 300, True, None]
     assert rules[("Girls' hostels", "holiday")] == ["10:00:00", "20:00:00", 300, True, None]
     assert len(rules) == 8
