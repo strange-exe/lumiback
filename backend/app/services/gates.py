@@ -159,9 +159,7 @@ async def scan(
             outing = await outings.check_out(
                 session,
                 student,
-                OutingCreateIn(
-                    destination=body.destination, late=body.late, late_reason=body.late_reason
-                ),
+                OutingCreateIn(destination=body.destination),
                 gate_id=gate.id,
                 commit=False,
             )

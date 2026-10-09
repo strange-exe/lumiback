@@ -312,3 +312,34 @@ def test_bootstrap_script_makes_the_first_admin(client, test_db_url):
     assert script.make_admin(test_db_url, "riya@example.com") == "riya@example.com is now an admin."
     assert client.get("/admin/overview", headers=riya).status_code == 200
     assert "already" in script.make_admin(test_db_url, "riya@example.com")
+
+
+def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
+    def student(email: str, name: str) -> dict:
+        headers = signup(client, email, name)[1]
+        assert client.post("/outings", json={}, headers=headers).status_code == 201
+        return headers
+
+    on_time = student("ontime@example.com", "Ontime")
+    back_late = student("backlate@example.com", "Backlate")
+    still_out = student("stillout@example.com", "Stillout")
+    client.post("/outings/current/return", headers=on_time)
+    for email, minutes in (("backlate@example.com", 20), ("stillout@example.com", 50)):
+        db.execute(
+            text(
+                "UPDATE outings SET left_at = now() - interval '2 hours', "
+                "expected_return_at = now() - make_interval(mins => :m) "
+                "WHERE student_id = (SELECT id FROM users WHERE email = :e)"
+            ),
+            {"m": minutes, "e": email},
+        )
+    db.commit()
+    client.post("/outings/current/return", headers=back_late)  # 20 min after its return time
+
+    late = client.get("/admin/late-today", headers=admin).json()
+    assert [(r["name"], r["status"]) for r in late] == [
+        ("Stillout", "overdue"),  # most late first
+        ("Backlate", "returned"),
+    ]
+    assert 19 <= late[1]["late_minutes"] <= 21 and late[1]["returned_at"] is not None
+    assert client.get("/admin/late-today", headers=still_out).status_code == 403

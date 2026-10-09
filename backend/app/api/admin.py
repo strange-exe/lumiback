@@ -48,6 +48,12 @@ async def open_outings(
     return await svc.open_outings(session, state)
 
 
+@router.get("/late-today")
+async def late_today(_: AdminUser, session: SessionDep) -> list[AdminOuting]:
+    """Tonight's latecomers: back after their return time, or still out past it."""
+    return await svc.late_today(session)
+
+
 @router.get("/outings.csv")
 async def outings_csv(
     _: AdminUser,

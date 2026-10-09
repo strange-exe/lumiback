@@ -77,22 +77,6 @@ def test_check_out_outside_the_window_is_refused(client, riya, db, state):
     assert client.get("/outings/current", headers=riya).json() is None
 
 
-def test_the_later_return_option_needs_a_reason(client, riya, db):
-    rules = set_rules(db, "open", late=True)
-    assert client.post("/outings", json={"late": True}, headers=riya).status_code == 422
-    r = client.post("/outings", json={"late": True, "late_reason": "Family dinner"}, headers=riya)
-    assert r.status_code == 201, r.text
-    assert parse(r.json()["expected_return_at"]).strftime("%H:%M") == rules["late_until"]
-    assert r.json()["late_reason"] == "Family dinner"
-
-
-def test_a_reason_without_the_later_option_is_dropped(client, riya, db):
-    set_rules(db, "open", late=True)
-    r = client.post("/outings", json={"late_reason": "Just because"}, headers=riya)
-    assert r.status_code == 201, r.text
-    assert r.json()["late_reason"] is None
-
-
 def test_form_days_need_an_approved_request(client, riya, db):
     set_rules(db, "open", needs_form=True)
     r = client.post("/outings", json={}, headers=riya)
@@ -106,7 +90,7 @@ def test_form_days_need_an_approved_request(client, riya, db):
         {"expected_return_at": "2026-10-05T20:00:00"},  # naive: ambiguous
         {"status": "returned"},  # unknown field
         {"destination": "x" * 101},
-        {"late": True, "late_reason": "ok"},  # reason too short to mean anything
+        {"late": True, "late_reason": "Family dinner"},  # no later-return option exists
     ],
 )
 def test_invalid_check_outs_rejected(client, riya, body):

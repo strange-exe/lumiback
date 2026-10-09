@@ -5,7 +5,7 @@ campus default. A rule set has one DayRule per day type: weekday, Saturday, Sund
 (an admin-marked date, whatever weekday it falls on). Times are on the campus clock (IST).
 
 - Tap-out is allowed from `opens_at` until `return_by`.
-- Back by `return_by`; or by `late_until` with a reason, where the rule set allows it.
+- Back by `return_by`; later than that is recorded as late (and highlighted to admins).
 - `max_minutes` caps the outing (weekends), never past `return_by`.
 - `needs_form`: an approved outing request for the day is required (checked by the caller).
 - Once out, the return time never changes (no extensions).
@@ -51,7 +51,6 @@ class Window:
     rule_set: str
     opens: datetime
     return_by: datetime
-    late_until: datetime | None
     max_minutes: int | None
     needs_form: bool
 
@@ -83,7 +82,6 @@ def window_of(rule: DayRule, rule_set: str, day: date, holiday: str | None) -> W
         rule_set=rule_set,
         opens=at(day, rule.opens_at),
         return_by=at(day, rule.return_by),
-        late_until=at(day, rule.late_until) if rule.late_until else None,
         max_minutes=rule.max_minutes,
         needs_form=rule.needs_form,
     )
@@ -95,17 +93,13 @@ def clock(moment: datetime) -> str:
     return f"{t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'}"
 
 
-def return_time(
-    w: Window, now: datetime, *, late: bool = False, requested_minutes: int | None = None
-) -> datetime:
+def return_time(w: Window, now: datetime, *, requested_minutes: int | None = None) -> datetime:
     """When the student must be back if they tap out at `now`; raises Refused if they can't."""
     if now < w.opens:
         raise Refused(f"{w.label} outings start at {clock(w.opens)}.")
     if now >= w.return_by:
         raise Refused(f"{w.label} outings end at {clock(w.return_by)}. Try again tomorrow.")
-    if late and w.late_until is None:
-        raise Refused(f"Your hostel's rules don't include returning after {clock(w.return_by)}.")
-    latest = w.late_until if late and w.late_until else w.return_by
+    latest = w.return_by
     if w.max_minutes is not None:
         minutes = min(w.max_minutes, requested_minutes or w.max_minutes)
         latest = min(latest, now + timedelta(minutes=minutes))

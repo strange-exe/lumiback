@@ -265,25 +265,7 @@ Destination = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 Purpose = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
-LateReason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
-
-
-class LateOption(Input):
-    """The weekday "back by 8:30 PM" option, where the hostel's rules allow it: needs a reason."""
-
-    late: bool = False
-    late_reason: LateReason | None = None
-
-    @model_validator(mode="after")
-    def _reason_with_late(self) -> "LateOption":
-        if self.late and not self.late_reason:
-            raise ValueError("give a reason for coming back later")
-        if not self.late:
-            self.late_reason = None
-        return self
-
-
-class OutingCreateIn(LateOption):
+class OutingCreateIn(Input):
     destination: Destination | None = None
     purpose: Purpose | None = None
     # Ignored: the outing rules set the return time. Accepted so older app versions still work.
@@ -308,7 +290,6 @@ class OutingOut(BaseModel):
     duration_minutes: int | None  # once returned
     out_via: Literal["self", "gate"] = "self"  # tapped out at a gate, or logged in the app
     in_via: Literal["self", "gate"] | None = None
-    late_reason: str | None = None  # chose the later return time (weekday option), and why
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the "are you OK?" alert
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
@@ -430,7 +411,7 @@ Latitude = Annotated[float, Field(ge=-90, le=90)]
 Longitude = Annotated[float, Field(ge=-180, le=180)]
 
 
-class GateScanIn(LateOption):
+class GateScanIn(Input):
     qr: str = Field(min_length=1, max_length=300)
     lat: Latitude
     lng: Longitude
@@ -460,11 +441,10 @@ class TodayRulesOut(BaseModel):
     hostel: str | None  # None: the student hasn't picked one (campus default rules)
     opens_at: datetime
     return_by: datetime
-    late_until: datetime | None  # the later return option, where allowed
     max_minutes: int | None
     needs_form: bool
 
-    @field_serializer("opens_at", "return_by", "late_until")
+    @field_serializer("opens_at", "return_by")
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
 
@@ -553,18 +533,18 @@ class AdminOuting(BaseModel):
     destination: str | None
     left_at: datetime
     expected_return_at: datetime
+    returned_at: datetime | None = None
     status: Literal["out", "overdue", "returned"]
-    late_minutes: int
+    late_minutes: int  # past the return time: when they came back, or so far
     out_via: Literal["self", "gate"]
     out_gate: str | None
     hostel: str | None = None
-    late_reason: str | None = None  # took the later return option, and why
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the late alert
     on_request: bool = False  # a weekend/holiday outing an admin approved
 
-    @field_serializer("left_at", "expected_return_at")
-    def _in_ist(self, value: datetime) -> str:
-        return value.astimezone(IST).isoformat()
+    @field_serializer("left_at", "expected_return_at", "returned_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
 
 
 class AdminScan(BaseModel):
@@ -625,7 +605,6 @@ class DayRuleIO(Input):
     day_type: Literal["weekday", "saturday", "sunday", "holiday"]
     opens_at: Clock
     return_by: Clock
-    late_until: Clock | None = None  # a later return with a reason; None: not allowed
     max_minutes: int | None = Field(default=None, ge=30, le=720)
     needs_form: bool = False
 
@@ -633,8 +612,6 @@ class DayRuleIO(Input):
     def _order(self) -> "DayRuleIO":
         if self.return_by <= self.opens_at:
             raise ValueError("the return time must be after the opening time")
-        if self.late_until is not None and self.late_until <= self.return_by:
-            raise ValueError("the later return must be after the normal return")
         return self
 
 

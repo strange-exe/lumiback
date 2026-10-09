@@ -131,27 +131,8 @@ def test_tapping_in_is_never_refused_by_the_rules(client, db, gate, riya):
     assert back.json()["direction"] == "in"
 
 
-def test_the_later_return_option_with_a_reason(client, db, gate, riya):
-    rules = set_rules(db, "open", late=True)
-    qr = kiosk_qr(client, gate["kiosk_token"])
-    no_reason = scan(client, riya, qr, late=True)
-    assert no_reason.status_code == 422
-    r = scan(client, riya, qr, late=True, late_reason="Doctor's appointment")
-    assert r.status_code == 200, r.text
-    assert r.json()["outing"]["late_reason"] == "Doctor's appointment"
-    expected = datetime.fromisoformat(r.json()["outing"]["expected_return_at"])
-    assert expected.strftime("%H:%M") == rules["late_until"]
-
-
-def test_the_later_return_option_is_refused_where_the_rules_dont_have_it(client, db, gate, riya):
-    set_rules(db, "open")  # no later option
-    r = scan(client, riya, kiosk_qr(client, gate["kiosk_token"]), late=True, late_reason="Bus")
-    assert r.status_code == 422
-    assert "don't include returning after" in r.json()["detail"]
-
-
 def test_campus_shows_todays_rules(client, db, riya):
-    rules = set_rules(db, "open", late=True)
+    set_rules(db, "open")
     r = client.get("/campus", headers=riya)
     assert r.status_code == 200, r.text
     body = r.json()
@@ -162,7 +143,7 @@ def test_campus_shows_todays_rules(client, db, riya):
     assert return_by.utcoffset() == timedelta(hours=5, minutes=30)  # on the campus clock
     assert body["curfew_at"] == today["return_by"]  # for app versions that predate `today`
     assert body["curfew"] == return_by.strftime("%H:%M")
-    assert datetime.fromisoformat(today["late_until"]).strftime("%H:%M") == rules["late_until"]
+    assert "late_until" not in today  # no later-return option: after return_by is late
 
 
 def test_campus_rules_need_a_signed_in_user(client):

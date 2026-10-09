@@ -41,7 +41,6 @@ async def campus(me: CurrentUser, session: SessionDep) -> CampusOut:
             hostel=hostel.name if hostel else None,
             opens_at=w.opens,
             return_by=w.return_by,
-            late_until=w.late_until,
             max_minutes=w.max_minutes,
             needs_form=w.needs_form,
         ),

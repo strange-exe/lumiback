@@ -17,12 +17,11 @@ def ist(day: date, hhmm: str) -> datetime:
     return datetime.combine(day, time.fromisoformat(hhmm), tzinfo=IST)
 
 
-def weekday(late: bool = True) -> DayRule:
+def weekday() -> DayRule:
     return DayRule(
         day_type=DayType.WEEKDAY,
         opens_at=time(18),
         return_by=time(20),
-        late_until=time(20, 30) if late else None,
         max_minutes=None,
         needs_form=False,
     )
@@ -33,7 +32,6 @@ def weekend(day_type: DayType = DayType.SATURDAY, max_minutes: int = 180) -> Day
         day_type=day_type,
         opens_at=time(10),
         return_by=time(20),
-        late_until=None,
         max_minutes=max_minutes,
         needs_form=True,
     )
@@ -56,15 +54,6 @@ def test_weekday_back_by_8_pm():
     assert return_time(win(weekday()), ist(THU, "19:58")) == ist(THU, "20:00")
 
 
-def test_weekday_8_30_option_where_allowed():
-    assert return_time(win(weekday()), ist(THU, "18:30"), late=True) == ist(THU, "20:30")
-
-
-def test_weekday_8_30_option_refused_where_not_allowed():
-    with pytest.raises(Refused, match="don't include returning after 8:00 PM"):
-        return_time(win(weekday(late=False)), ist(THU, "18:30"), late=True)
-
-
 @pytest.mark.parametrize("hhmm", ["09:00", "17:59"])
 def test_weekday_before_the_window_is_refused(hhmm):
     with pytest.raises(Refused, match="Weekday outings start at 6:00 PM"):
@@ -72,9 +61,9 @@ def test_weekday_before_the_window_is_refused(hhmm):
 
 
 @pytest.mark.parametrize("hhmm", ["20:00", "20:15", "23:00"])
-def test_weekday_after_the_window_is_refused_even_with_the_late_option(hhmm):
+def test_weekday_after_the_window_is_refused(hhmm):
     with pytest.raises(Refused, match="end at 8:00 PM"):
-        return_time(win(weekday()), ist(THU, hhmm), late=True)
+        return_time(win(weekday()), ist(THU, hhmm))
 
 
 def test_last_minute_is_refused():

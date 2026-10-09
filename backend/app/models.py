@@ -220,8 +220,6 @@ class Outing(Base):
     request_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("outing_requests.id", ondelete="SET NULL")
     )
-    # Weekday 8:30 PM option (where the hostel allows it): the student's reason, shown to admins.
-    late_reason: Mapped[str | None] = mapped_column(String(200))
     # Late follow-up: the "are you OK?" alert goes out at 30 min late (overdue_notified_at);
     # the student's answer, if any. No answer within minutes and it's escalated.
     late_reply: Mapped[LateReply | None] = mapped_column(str_enum(LateReply, "late_reply"))
@@ -251,7 +249,6 @@ class DayRule(Base):
     __tablename__ = "day_rules"
     __table_args__ = (
         CheckConstraint("return_by > opens_at", name="window_order"),
-        CheckConstraint("late_until IS NULL OR late_until > return_by", name="late_after_return"),
         CheckConstraint("max_minutes IS NULL OR max_minutes BETWEEN 30 AND 720", name="max_range"),
     )
 
@@ -261,7 +258,6 @@ class DayRule(Base):
     day_type: Mapped[DayType] = mapped_column(str_enum(DayType, "day_type"), primary_key=True)
     opens_at: Mapped[time] = mapped_column(Time)  # earliest tap-out
     return_by: Mapped[time] = mapped_column(Time)  # latest normal return
-    late_until: Mapped[time | None] = mapped_column(Time)  # latest return with a reason
     max_minutes: Mapped[int | None]  # longest outing; None: the window is the limit
     needs_form: Mapped[bool] = mapped_column(server_default=text("false"))
 

@@ -104,27 +104,51 @@ async def open_outings(session: AsyncSession, state: str) -> list[AdminOuting]:
     elif state == "out":
         query = query.where(Outing.expected_return_at >= now)
     rows = await session.execute(query)
-    return [
-        AdminOuting(
-            id=o.id,
-            student_id=u.id,
-            name=u.name,
-            email=u.email,
-            roll_no=u.roll_no,
-            destination=o.destination,
-            left_at=o.left_at,
-            expected_return_at=o.expected_return_at,
-            status=status_of(o, now),  # type: ignore[arg-type]
-            late_minutes=max(0, int((now - o.expected_return_at).total_seconds() // 60)),
-            out_via=o.out_via.value,
-            out_gate=gate_name,
-            hostel=hostel,
-            late_reason=o.late_reason,
-            late_reply=o.late_reply.value if o.late_reply else None,
-            on_request=o.request_id is not None,
+    return [_register_row(o, u, gate_name, hostel, now) for o, u, gate_name, hostel in rows]
+
+
+def _register_row(
+    o: Outing, u: User, gate_name: str | None, hostel: str | None, now: datetime
+) -> AdminOuting:
+    end = o.returned_at or now
+    return AdminOuting(
+        id=o.id,
+        student_id=u.id,
+        name=u.name,
+        email=u.email,
+        roll_no=u.roll_no,
+        destination=o.destination,
+        left_at=o.left_at,
+        expected_return_at=o.expected_return_at,
+        returned_at=o.returned_at,
+        status=status_of(o, now),  # type: ignore[arg-type]
+        late_minutes=max(0, int((end - o.expected_return_at).total_seconds() // 60)),
+        out_via=o.out_via.value,
+        out_gate=gate_name,
+        hostel=hostel,
+        late_reply=o.late_reply.value if o.late_reply else None,
+        on_request=o.request_id is not None,
+    )
+
+
+async def late_today(session: AsyncSession) -> list[AdminOuting]:
+    """Everyone late today: back after their return time, or still out past it. Most late first.
+    "Today" is the IST day the return time fell on, so 8 PM latecomers are tonight's list."""
+    now = datetime.now(UTC)
+    rows = await session.execute(
+        select(Outing, User, Gate.name, Hostel.name)
+        .join(User, User.id == Outing.student_id)
+        .outerjoin(Gate, Gate.id == Outing.out_gate_id)
+        .outerjoin(Hostel, Hostel.id == User.hostel_id)
+        .where(
+            Outing.expected_return_at >= ist_midnight(now),
+            Outing.expected_return_at < now,
+            or_(Outing.returned_at.is_(None), Outing.returned_at > Outing.expected_return_at),
         )
-        for o, u, gate_name, hostel in rows
-    ]
+        .limit(500)
+    )
+    late = [_register_row(o, u, g, h, now) for o, u, g, h in rows]
+    return sorted(late, key=lambda r: r.late_minutes, reverse=True)
 
 
 async def scans(

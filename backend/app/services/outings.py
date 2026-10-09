@@ -50,7 +50,6 @@ def to_out(outing: Outing, now: datetime) -> OutingOut:
         ),
         out_via=outing.out_via.value,
         in_via=outing.in_via.value if outing.in_via else None,
-        late_reason=outing.late_reason,
         late_reply=outing.late_reply.value if outing.late_reply else None,
     )
 
@@ -79,7 +78,6 @@ async def check_out(
     expected = rules.return_time(
         window,
         now,
-        late=body.late,
         requested_minutes=request.requested_minutes if request else None,
     )
     outing = Outing(
@@ -92,7 +90,6 @@ async def check_out(
         out_via=Via.GATE if gate_id else Via.SELF,
         out_gate_id=gate_id,
         request_id=request.id if request else None,
-        late_reason=body.late_reason,
     )
     session.add(outing)
     try:

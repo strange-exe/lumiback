@@ -108,26 +108,23 @@ def set_rules(
     db,
     state: str = "open",
     *,
-    late: bool = False,
     max_minutes: int | None = None,
     needs_form: bool = False,
-) -> dict[str, str | None]:
+) -> dict[str, str]:
     """Today's rules for students on the default rule set, placed around the current IST time
     so they fit inside today at any hour the suite runs:
-      "open"     opened before now; closes later today (and `late`: a later option after that)
+      "open"     opened before now; closes later today
       "closed"   closed a few minutes ago
       "not_yet"  opens in a few minutes
     Applies to every day type. Returns the chosen times ("HH:MM") so tests can assert them."""
     import pytest
 
     now, last = ist_now_minutes(), 23 * 60 + 59
-    late_until = None
     if state == "open":
         if last - now < 10:
             pytest.skip("too close to midnight IST to fit an open window")
         opens = max(0, now - 60)
-        return_by = now + (last - now) // 2 if late else last
-        late_until = last if late else None
+        return_by = last
     elif state == "closed":
         if now < 10:
             pytest.skip("too soon after midnight IST for a window that already closed")
@@ -138,16 +135,11 @@ def set_rules(
         opens, return_by = now + 5, last
     else:
         raise ValueError(state)
-    times = {
-        "opens": hhmm(opens),
-        "return_by": hhmm(return_by),
-        "late_until": hhmm(late_until) if late_until is not None else None,
-    }
+    times = {"opens": hhmm(opens), "return_by": hhmm(return_by)}
     db.execute(
         text(
             "UPDATE day_rules SET opens_at = CAST(:opens AS time), "
-            "return_by = CAST(:return_by AS time), late_until = CAST(:late_until AS time), "
-            "max_minutes = :m, needs_form = :f"
+            "return_by = CAST(:return_by AS time), max_minutes = :m, needs_form = :f"
         ),
         {**times, "m": max_minutes, "f": needs_form},
     )

@@ -142,7 +142,6 @@ async def _rule_sets_out(session) -> list[RuleSetOut]:
                         day_type=d.day_type.value,
                         opens_at=_hhmm(d.opens_at),
                         return_by=_hhmm(d.return_by),
-                        late_until=_hhmm(d.late_until),
                         max_minutes=d.max_minutes,
                         needs_form=d.needs_form,
                     )
@@ -160,7 +159,6 @@ def _apply_days(rule_set_id: uuid.UUID, days: list[DayRuleIO]) -> list[DayRule]:
             day_type=DayType(d.day_type),
             opens_at=_clock(d.opens_at),
             return_by=_clock(d.return_by),
-            late_until=_clock(d.late_until) if d.late_until else None,
             max_minutes=d.max_minutes,
             needs_form=d.needs_form,
         )

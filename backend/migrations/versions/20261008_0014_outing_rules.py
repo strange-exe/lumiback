@@ -57,16 +57,11 @@ def upgrade() -> None:
         ),
         sa.Column("opens_at", sa.Time(), nullable=False),
         sa.Column("return_by", sa.Time(), nullable=False),
-        sa.Column("late_until", sa.Time(), nullable=True),
         sa.Column("max_minutes", sa.Integer(), nullable=True),
         sa.Column("needs_form", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.CheckConstraint(
             "day_type IN ('weekday', 'saturday', 'sunday', 'holiday')",
             name=op.f("ck_day_rules_day_type"),
-        ),
-        sa.CheckConstraint(
-            "late_until IS NULL OR late_until > return_by",
-            name=op.f("ck_day_rules_late_after_return"),
         ),
         sa.CheckConstraint(
             "max_minutes IS NULL OR max_minutes BETWEEN 30 AND 720",
@@ -211,7 +206,6 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     op.add_column("outings", sa.Column("request_id", sa.Uuid(), nullable=True))
-    op.add_column("outings", sa.Column("late_reason", sa.String(length=200), nullable=True))
     op.add_column(
         "outings",
         sa.Column(
@@ -294,8 +288,8 @@ def upgrade() -> None:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
 
     # Starting rules from the hostels' current practice (admins can change every value):
-    # weekdays 6-8 PM, with an 8:30 PM option (and a reason) for boys' hostels only; weekends
-    # and holidays 10 AM - 8 PM with an approved form, at most 3 h (boys) or 5 h (girls).
+    # weekdays 6-8 PM; weekends and holidays 10 AM - 8 PM with an approved form, at most 3 h
+    # (boys' hostels) or 5 h (girls' hostels). Coming back after the return time is "late".
     op.execute(
         """
         WITH sets AS (
@@ -303,21 +297,20 @@ def upgrade() -> None:
             RETURNING id, name
         )
         INSERT INTO day_rules
-            (rule_set_id, day_type, opens_at, return_by, late_until, max_minutes, needs_form)
+            (rule_set_id, day_type, opens_at, return_by, max_minutes, needs_form)
         SELECT s.id, d.day_type, d.opens_at::time, d.return_by::time,
-               CASE WHEN s.name = 'Boys'' hostels' THEN d.late_until::time END,
                CASE WHEN d.day_type = 'weekday' THEN NULL
                     WHEN s.name = 'Boys'' hostels' THEN 180 ELSE 300 END,
                d.day_type <> 'weekday'
         FROM sets s CROSS JOIN (VALUES
-            ('weekday', '18:00', '20:00', '20:30'),
-            ('saturday', '10:00', '20:00', NULL),
-            ('sunday', '10:00', '20:00', NULL),
-            ('holiday', '10:00', '20:00', NULL)
-        ) AS d(day_type, opens_at, return_by, late_until)
+            ('weekday', '18:00', '20:00'),
+            ('saturday', '10:00', '20:00'),
+            ('sunday', '10:00', '20:00'),
+            ('holiday', '10:00', '20:00')
+        ) AS d(day_type, opens_at, return_by)
         """
     )
-    # Until students pick a hostel: the stricter weekend limit, and the 8:30 PM option.
+    # Until students pick a hostel: the shorter weekend limit.
     op.execute(
         "UPDATE campus_settings SET default_rule_set_id = "
         "(SELECT id FROM rule_sets WHERE name = 'Boys'' hostels')"
@@ -351,7 +344,6 @@ def downgrade() -> None:
     op.drop_column("outings", "late_replied_at")
     op.drop_constraint(op.f("ck_outings_late_reply"), "outings", type_="check")
     op.drop_column("outings", "late_reply")
-    op.drop_column("outings", "late_reason")
     op.drop_column("outings", "request_id")
     op.drop_constraint(
         op.f("fk_campus_settings_default_rule_set_id_rule_sets"),
