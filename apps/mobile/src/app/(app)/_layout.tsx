@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
 import { useNotificationRoutes } from "@/notify/notify";
+import { WhatsNew } from "@/updates/WhatsNew";
 import { Dock } from "@/ui/dock";
 import { useColors } from "@/ui/theme";
 
@@ -17,18 +18,22 @@ export default function AppLayout(): ReactNode {
   if (!onboarded) return <Redirect href="/onboarding" />;
 
   return (
-    <Tabs
-      tabBar={(props) => <Dock {...props} />}
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: { backgroundColor: c.page },
-        animation: "fade",
-      }}
-    >
-      <Tabs.Screen name="today" />
-      <Tabs.Screen name="live" />
-      <Tabs.Screen name="history" />
-      <Tabs.Screen name="profile" />
-    </Tabs>
+    <>
+      <Tabs
+        tabBar={(props) => <Dock {...props} />}
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: { backgroundColor: c.page },
+          animation: "fade",
+        }}
+      >
+        <Tabs.Screen name="today" />
+        <Tabs.Screen name="live" />
+        <Tabs.Screen name="history" />
+        <Tabs.Screen name="profile" />
+      </Tabs>
+      {/* Signed in and past onboarding: the moment a release note makes sense. */}
+      <WhatsNew />
+    </>
   );
 }

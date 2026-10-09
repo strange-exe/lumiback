@@ -1,5 +1,4 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import Constants from "expo-constants";
 import { router } from "expo-router";
 import * as Updates from "expo-updates";
 import { useCallback, useState, type ReactNode } from "react";
@@ -15,8 +14,10 @@ import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { stopSending } from "@/location/task";
 import { syncReturnReminders } from "@/notify/notify";
-import { Row, Screen, Section, T } from "@/ui/kit";
-import { fonts, space, useColors } from "@/ui/theme";
+import { Press, Row, Screen, Section, T } from "@/ui/kit";
+import { fonts, radius, space, useColors } from "@/ui/theme";
+import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
+import { showUpdatePrompt } from "@/updates/UpdatePrompt";
 
 const APPEARANCE = { system: "Match phone", light: "Light", dark: "Dark" } as const;
 
@@ -122,6 +123,13 @@ export default function Profile(): ReactNode {
           onPress={() => router.push("/profile/help")}
         />
         <Row
+          leading={icon("sparkles-outline")}
+          title="What's new"
+          detail={`Version ${CURRENT.version}: ${CURRENT.title}`}
+          trailing={chevron}
+          onPress={() => router.push("/profile/whats-new")}
+        />
+        <Row
           leading={icon("shield-checkmark-outline")}
           title="Privacy notice"
           detail="What we collect and who can see it"
@@ -152,18 +160,84 @@ export default function Profile(): ReactNode {
         />
       </Section>
 
-      <T tone="caption" selectable style={{ textAlign: "center" }}>
-        {buildLines(
-          {
-            version: Constants.expoConfig?.version,
-            runtimeVersion: Updates.runtimeVersion,
-            updateId: Updates.updateId,
-            createdAt: Updates.createdAt,
-            isEmbeddedLaunch: Updates.isEmbeddedLaunch,
-          },
-          formatDate,
-        ).join("\n")}
-      </T>
+      <VersionLine />
     </Screen>
+  );
+}
+
+function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): ReactNode {
+  const c = useColors();
+  const color = tone === "accent" ? c.accent : c.good;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space(1),
+        minHeight: 28,
+        paddingHorizontal: space(3),
+        borderRadius: radius.pill,
+        backgroundColor: tone === "accent" ? c.accentSoft : c.goodSoft,
+      }}
+    >
+      <Ionicons
+        name={tone === "accent" ? "arrow-down-circle" : "checkmark-circle"}
+        size={16}
+        color={color}
+      />
+      <T tone="small" style={{ color, fontWeight: "700" }}>
+        {text}
+      </T>
+    </View>
+  );
+}
+
+/** "Version 1.3.0 · 9 October 2026", whether it's the latest, and the build underneath. */
+function VersionLine(): ReactNode {
+  const { isUpdateAvailable, isUpdatePending, lastCheckForUpdateTimeSinceRestart } =
+    Updates.useUpdates();
+  const [head, detail] = buildLines(
+    {
+      version: CURRENT.version,
+      date: CURRENT.date,
+      runtimeVersion: Updates.runtimeVersion,
+      updateId: Updates.updateId,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      builds: NATIVE_BUILDS,
+    },
+    formatDate,
+  );
+  const newer = isUpdateAvailable || isUpdatePending;
+  // Unknown until the update server has answered once (offline, or a development build).
+  const status = !Updates.isEnabled
+    ? null
+    : newer
+      ? "Update available"
+      : lastCheckForUpdateTimeSinceRestart
+        ? "Up to date"
+        : null;
+
+  return (
+    <View style={{ alignItems: "center", gap: space(1) }}>
+      <T tone="caption" selectable style={{ textAlign: "center" }}>
+        {head}
+      </T>
+      {status && newer ? (
+        <Press
+          onPress={showUpdatePrompt}
+          accessibilityLabel="Update available. Opens the update."
+          style={{ minHeight: 44, justifyContent: "center" }}
+        >
+          <Badge text={status} tone="accent" />
+        </Press>
+      ) : status ? (
+        <Badge text={status} tone="good" />
+      ) : null}
+      {detail ? (
+        <T tone="caption" selectable style={{ textAlign: "center" }}>
+          {detail}
+        </T>
+      ) : null}
+    </View>
   );
 }

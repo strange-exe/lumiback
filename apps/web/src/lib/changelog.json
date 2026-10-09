@@ -1,0 +1,43 @@
+[
+  {
+    "version": "1.3.0",
+    "date": "2026-10-09",
+    "title": "Outing rules",
+    "points": [
+      "Your hostel sets your outing hours: weekdays 6–8 PM, and weekend or holiday outings with the hostel office's approval.",
+      "Boys' hostels can go out 6–8 PM on Sundays and holidays without a form.",
+      "Return times can't be extended. If you're late, the app checks you're OK.",
+      "Updates now ask first: Update now, or Remind me later.",
+      "A clear version number, and this list of what's new."
+    ]
+  },
+  {
+    "version": "1.2.0",
+    "date": "2026-10-08",
+    "title": "Polish and safety",
+    "points": [
+      "Reset a forgotten password with an email code.",
+      "A faked GPS location shows in red beside your last real one.",
+      "A fuller Today screen and easier-to-read colours."
+    ]
+  },
+  {
+    "version": "1.1.0",
+    "date": "2026-10-08",
+    "title": "Gate tap-in and tap-out",
+    "points": [
+      "Scan the QR code at the gate to go out and come back.",
+      "Notifications for follow requests and return reminders, even when the app is closed.",
+      "A new look, and updates without reinstalling."
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-10-07",
+    "title": "First release",
+    "points": [
+      "Log your outings and see your history.",
+      "Share your live location with people you choose, and follow theirs."
+    ]
+  }
+]

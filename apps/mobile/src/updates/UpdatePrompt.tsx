@@ -17,6 +17,13 @@ import { shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
  * silent launch download. "Remind me later" hides it for a few hours or until the next launch;
  * the update still applies on its own after two full restarts.
  */
+const reopeners = new Set<() => void>();
+
+/** Show the prompt again even after "Remind me later" (Profile's "Update available" badge). */
+export function showUpdatePrompt(): void {
+  for (const reopen of reopeners) reopen();
+}
+
 export function UpdatePrompt(): ReactNode {
   // Dev builds and Expo Go have no updates; the hook would never report one anyway.
   if (!Updates.isEnabled) return null;
@@ -43,6 +50,12 @@ function Prompt(): ReactNode {
     } catch {
       // Offline or the update server is unreachable: try again on a later foreground.
     }
+  }, []);
+
+  useEffect(() => {
+    const reopen = (): void => setSnooze(null);
+    reopeners.add(reopen);
+    return () => void reopeners.delete(reopen);
   }, []);
 
   useEffect(() => {

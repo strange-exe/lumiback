@@ -21,6 +21,9 @@ const PARTS: Part[] = [
     items: [
       "Your account: name, university email, an optional roll number, and your password, stored only as a one-way hash.",
       "Your outings: when you left, when you expect to be back, when you returned, and an optional destination.",
+      "Your hostel (it decides your outing hours), and, if you add them, your phone number and an emergency contact's name, relation and phone number.",
+      "Weekend and holiday outing requests: where and why, how long, and the phone numbers on the form, with the hostel office's decision.",
+      "If you're late: your answer to the “Are you OK?” alert, and whether the hostel office followed it up.",
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
       "Who looked at your share and when, so you can see it. Guests who follow you give a name for you to recognise.",
       "When you tap out or in at a gate: which gate, the time, whether the scan was accepted, how far your phone was from the gate and how precise its GPS was. Never your coordinates.",
@@ -30,8 +33,10 @@ const PARTS: Part[] = [
   {
     heading: "Who can see it",
     items: [
-      "Nobody sees your location unless you start sharing and approve them. That includes hostel admins.",
-      "Hostel admins (wardens and security staff given admin access) see the outing register: your name, email, roll number, destination, when you left, when you're due and when you returned, and whether each was scanned at a gate or self-reported. They also see gate scans, including refused ones, and can download the register as a spreadsheet.",
+      "Nobody sees your location unless you start sharing and approve them. That includes hostel admins, with one safety exception below.",
+      "Hostel admins (wardens and security staff given admin access) see the outing register: your name, email, roll number, hostel, destination, when you left, when you're due and when you returned, and whether each was scanned at a gate or self-reported. They also see gate scans, including refused ones, and can download the register as a spreadsheet.",
+      "Admins see your outing requests, including the phone numbers on them, so they can decide and call if needed.",
+      "If you're 30 minutes late and don't answer the alert within 10 minutes, admins are told and see your phone number, your emergency contact and your hostel warden's number. If you are sharing your location at that moment, they also see your latest shared position, and that look is listed in your share's viewer history. Otherwise they see only your last gate scan: which gate, and when. Nothing new is collected for this.",
       "We don't sell your data, show ads, or use analytics or tracking cookies.",
       "The only cookies keep you signed in, and they can't be read by scripts on the page.",
     ],
@@ -48,7 +53,7 @@ const PARTS: Part[] = [
   {
     heading: "Where it's stored",
     items: [
-      "The app runs on Render, the database on Supabase, sign-up emails are sent through Resend, and app notifications through Expo's push service (Firebase on Android). They process data only to run Lumiback.",
+      "The app runs on Render, the database on Supabase, emails (sign-up and password codes, and late-student alerts to admins) are sent through Resend, and app notifications through Expo's push service (Firebase on Android). They process data only to run Lumiback.",
     ],
   },
   {
@@ -76,7 +81,7 @@ export default function PrivacyPage(): ReactNode {
           <h1 className="font-display text-title text-ink">Privacy</h1>
           <p className="mt-2 max-w-[60ch] leading-relaxed text-muted">
             Lumiback exists to share your location with people you choose, so this page says exactly
-            what is kept, who can see it, and for how long. Last updated 8 October 2026.
+            what is kept, who can see it, and for how long. Last updated 9 October 2026.
           </p>
         </div>
         {PARTS.map((part) => (
