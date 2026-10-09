@@ -2,14 +2,17 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Constants from "expo-constants";
 import { router } from "expo-router";
 import * as Updates from "expo-updates";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Linking, Text, View } from "react-native";
 
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
 import { formatDate } from "@/lib/time";
+import type { Profile as ProfileData } from "@/lib/types";
+import { useData } from "@/lib/use-data";
 import { stopSending } from "@/location/task";
 import { syncReturnReminders } from "@/notify/notify";
 import { Row, Screen, Section, T } from "@/ui/kit";
@@ -20,6 +23,8 @@ const APPEARANCE = { system: "Match phone", light: "Light", dark: "Dark" } as co
 export default function Profile(): ReactNode {
   const { user, signOut } = useAuth();
   const prefs = usePrefs();
+  const loadProfile = useCallback(() => api<ProfileData>("/profile"), []);
+  const { data: profile } = useData(loadProfile);
   const c = useColors();
   const [signingOut, setSigningOut] = useState(false);
   if (!user) return null;
@@ -71,6 +76,22 @@ export default function Profile(): ReactNode {
           </T>
         </View>
       </View>
+
+      <Section title="Outings">
+        <Row
+          leading={icon("home-outline")}
+          title="Hostel and contacts"
+          detail={
+            profile
+              ? [profile.hostel ?? "Hostel not chosen", profile.phone ? null : "add your number"]
+                  .filter(Boolean)
+                  .join(" · ")
+              : undefined
+          }
+          trailing={chevron}
+          onPress={() => router.push("/profile/outing-details")}
+        />
+      </Section>
 
       <Section title="Settings">
         <Row

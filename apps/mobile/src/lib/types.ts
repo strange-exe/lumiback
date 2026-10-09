@@ -33,6 +33,71 @@ export interface Outing {
   /** "gate": scanned at a gate with a GPS check; "self": logged in the app. */
   out_via: "self" | "gate";
   in_via: "self" | "gate" | null;
+  /** The answer to "you're late, are you OK?". */
+  late_reply?: "on_my_way" | "safe" | null;
+}
+
+// ---------- outing rules ----------
+
+export type DayType = "weekday" | "saturday" | "sunday" | "holiday";
+
+/** GET /campus: today's outing rules for this student (their hostel's, or the default). */
+export interface TodayRules {
+  day: string;
+  day_type: DayType;
+  /** "Weekday", "Sunday", or the holiday's name. */
+  label: string;
+  rule_set: string;
+  hostel: string | null;
+  /** ISO, IST offset */
+  opens_at: string;
+  return_by: string;
+  max_minutes: number | null;
+  needs_form: boolean;
+}
+
+export interface Campus {
+  curfew: string;
+  curfew_at: string;
+  today: TodayRules | null;
+}
+
+export type RequestStatus = "pending" | "approved" | "declined" | "cancelled";
+
+/** Today's weekend/holiday outing request (the form). */
+export interface OutingRequest {
+  id: string;
+  day: string;
+  purpose: string;
+  requested_minutes: number | null;
+  status: RequestStatus;
+  note: string | null;
+  decided_at: string | null;
+  created_at: string;
+  used: boolean;
+}
+
+export interface Profile {
+  hostel_id: string | null;
+  hostel: string | null;
+  phone: string | null;
+  emergency_name: string | null;
+  emergency_relation: string | null;
+  emergency_phone: string | null;
+}
+
+export interface HostelChoice {
+  id: string;
+  name: string;
+  rule_set: string;
+}
+
+export interface AccessLogEntry {
+  viewer_id: string | null;
+  viewer_name: string;
+  kind: "user" | "guest" | "admin";
+  channel: string;
+  viewed_at: string;
 }
 
 /** POST /gates/scan */

@@ -7,26 +7,24 @@ import { ActivityIndicator, Linking, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AFTER_CURFEW_CHOICES, gateCode, refusal, toFix, type Fix } from "@/gate/scan";
+import { gateCode, refusal, toFix, type Fix } from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { clockParts, expectedReturn, formatTime } from "@/lib/time";
+import { formatTime } from "@/lib/time";
 import type { GateScanned } from "@/lib/types";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Chips, Clock, Press } from "@/ui/kit";
+import { Button, Press } from "@/ui/kit";
 import { radius, space, type, useColors } from "@/ui/theme";
 
 type Phase =
   | { kind: "camera" }
   | { kind: "checking"; step: "location" | "server" }
-  | { kind: "needs-time"; qr: string; fix: Fix; message: string }
   | { kind: "done"; result: GateScanned }
   | { kind: "refused"; message: string; retry: boolean; settings?: boolean };
 
 const LOCATION_TIMEOUT_MS = 20_000;
-type Minutes = (typeof AFTER_CURFEW_CHOICES)[number]["value"];
 
 class NoFix extends Error {
   constructor(
@@ -71,8 +69,9 @@ async function freshFix(): Promise<Fix> {
 }
 
 /**
- * Tap out or back in at a gate: scan the kiosk's code, then the server checks the code is current
- * and the phone is at that gate. Also opened as lumiback://scan?qr=... with a code already read.
+ * Tap out or back in at a gate: scan the kiosk's code, then the server checks the code is current,
+ * the phone is at that gate, and the hostel's outing rules allow it. Also opened as
+ * lumiback://scan?qr=... with a code already read.
  */
 export default function Scan(): ReactNode {
   const { status } = useAuth();
@@ -93,24 +92,23 @@ export default function Scan(): ReactNode {
   const lastIgnored = useRef<string | null>(null);
   const insets = useSafeAreaInsets();
 
-  const send = useCallback(async (qr: string, fix: Fix, minutes?: Minutes): Promise<void> => {
+  const send = useCallback(async (qr: string, fix: Fix): Promise<void> => {
     setPhase({ kind: "checking", step: "server" });
-    const back = minutes ? expectedReturn(minutes) : null;
     try {
       const result = await api<GateScanned>("/gates/scan", {
         method: "POST",
-        body: { qr, ...fix, expected_return_at: back ? back.toISOString() : undefined },
+        body: { qr, ...fix },
       });
       haptic.success();
       setPhase({ kind: "done", result });
       if (result.direction === "out") void allowNotifications().catch(() => false); // reminders
     } catch (e) {
-      const outcome =
+      haptic.warning();
+      setPhase(
         e instanceof ApiError
           ? refusal(e.status, e.detail)
-          : refusal(500, "Something went wrong. Scan again.");
-      haptic.warning();
-      setPhase(outcome.kind === "needs-time" ? { ...outcome, qr, fix } : outcome);
+          : refusal(500, "Something went wrong. Scan again."),
+      );
     }
   }, []);
 
@@ -217,9 +215,6 @@ export default function Scan(): ReactNode {
           notGate={notGate}
           linked={Boolean(linked)}
           onScanAgain={scanAgain}
-          onPickTime={(minutes) => {
-            if (phase.kind === "needs-time") void send(phase.qr, phase.fix, minutes);
-          }}
         />
       </SafeAreaView>
     </View>
@@ -233,7 +228,6 @@ function Body({
   notGate,
   linked,
   onScanAgain,
-  onPickTime,
 }: {
   phase: Phase;
   permission: ReturnType<typeof useCameraPermissions>[0];
@@ -241,7 +235,6 @@ function Body({
   notGate: boolean;
   linked: boolean;
   onScanAgain: () => void;
-  onPickTime: (minutes: Minutes) => void;
 }): ReactNode {
   const c = useColors();
   switch (phase.kind) {
@@ -282,8 +275,6 @@ function Body({
           }
         />
       );
-    case "needs-time":
-      return <AfterCurfew message={phase.message} onPick={onPickTime} />;
     case "refused":
       return (
         <Panel>
@@ -349,37 +340,6 @@ function Viewfinder({ notGate }: { notGate: boolean }): ReactNode {
   );
 }
 
-function AfterCurfew({
-  message,
-  onPick,
-}: {
-  message: string;
-  onPick: (minutes: Minutes) => void;
-}): ReactNode {
-  const c = useColors();
-  const [minutes, setMinutes] = useState<Minutes>("60");
-  const back = expectedReturn(minutes);
-  const parts = back ? clockParts(back) : null;
-  return (
-    <Panel>
-      <Title>When will you be back?</Title>
-      <Detail>{message}</Detail>
-      <Chips
-        label="Back in about"
-        onHero
-        options={AFTER_CURFEW_CHOICES.map((o) => ({ value: o.value, label: o.label }))}
-        value={minutes}
-        onChange={(v) => {
-          haptic.tap();
-          setMinutes(v);
-        }}
-      />
-      {parts ? <Clock time={parts.time} period={parts.period} color={c.onHero} size={44} /> : null}
-      <Button label="Tap out" variant="onHero" onPress={() => onPick(minutes)} />
-    </Panel>
-  );
-}
-
 function Done({ result }: { result: GateScanned }): ReactNode {
   const c = useColors();
   const out = result.direction === "out";
@@ -400,7 +360,7 @@ function Done({ result }: { result: GateScanned }): ReactNode {
       <Title>{out ? "You're out" : "Welcome back"}</Title>
       <Detail>
         {out
-          ? `Tapped out at ${result.gate}. Back by ${formatTime(result.outing.expected_return_at)}. You can change that on Today.`
+          ? `Tapped out at ${result.gate}. Back by ${formatTime(result.outing.expected_return_at)}.`
           : `Tapped in at ${result.gate}. Your trip is closed.`}
       </Detail>
       <Button

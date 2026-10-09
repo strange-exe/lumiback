@@ -21,7 +21,8 @@ const TOGGLES: { key: Toggle; title: string; detail: string }[] = [
   {
     key: "returnReminders",
     title: "Return reminders",
-    detail: "10 minutes before you're due back, and when you're due.",
+    detail:
+      "10 minutes before you're due back, and when you're due. The \"are you OK?\" alert when you're 30 minutes late always comes through.",
   },
   {
     key: "shareStatus",

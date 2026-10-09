@@ -5,33 +5,27 @@ import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { curfewLine, type Campus } from "@/lib/curfew";
-import {
-  clockParts,
-  expectedReturn,
-  formatDay,
-  formatMinutes,
-  formatTime,
-  progress,
-} from "@/lib/time";
-import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
+import { plannedReturn, rulesLine } from "@/lib/rules";
+import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
+import type {
+  Campus,
+  Outing,
+  OutingPage,
+  OutingRequest,
+  OutingSummary,
+  TodayRules,
+} from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
+import { RequestSheet } from "@/screens/outing-request";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Chips, Clock, Field, FormError, Press, Screen, StatusChip, T } from "@/ui/kit";
+import { Button, Clock, Field, FormError, Press, Screen, StatusChip, T } from "@/ui/kit";
 import { FadeIn } from "@/ui/motion";
 import { OutingRow } from "@/ui/OutingRow";
 import { Sheet } from "@/ui/sheet";
 import { fonts, radius, space, type, useColors } from "@/ui/theme";
-
-type Choice = "60" | "120" | "180";
-const CHOICES: { value: Choice; label: string }[] = [
-  { value: "60", label: "1 h" },
-  { value: "120", label: "2 h" },
-  { value: "180", label: "3 h" },
-];
 
 function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
@@ -41,7 +35,8 @@ interface TodayData {
   outing: Outing | null;
   // The rest is nice to have: Today never fails because of it.
   summary: OutingSummary | null;
-  campus: Campus | null;
+  rules: TodayRules | null;
+  request: OutingRequest | null;
   recent: Outing[] | null;
 }
 
@@ -49,18 +44,19 @@ export default function Today(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
   const load = useCallback(async (): Promise<TodayData> => {
-    const [outing, summary, campus, page] = await Promise.all([
+    const [outing, summary, campus, page, request] = await Promise.all([
       api<Outing | null>("/outings/current"),
       api<OutingSummary>("/outings/summary").catch(() => null),
       api<Campus>("/campus").catch(() => null),
       api<OutingPage>("/outings?limit=4").catch(() => null),
+      api<OutingRequest | null>("/outings/request").catch(() => null),
     ]);
     // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
     // outing changed on the web or one that just ended.
     void syncReturnReminders(outing?.expected_return_at ?? null);
     // The trip in progress is already the status card; Recent lists finished ones.
     const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
-    return { outing, summary, campus, recent };
+    return { outing, summary, rules: campus?.today ?? null, request, recent };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
@@ -115,10 +111,17 @@ export default function Today(): ReactNode {
       ) : data?.outing ? (
         <Out outing={data.outing} onChange={reload} />
       ) : (
-        <AtHostel onDone={reload} logRequest={logRequest} />
+        <AtHostel
+          rules={data?.rules ?? null}
+          request={data?.request ?? null}
+          onDone={reload}
+          logRequest={logRequest}
+        />
       )}
       <FormError message={error} />
-      {data?.campus ? <Tonight campus={data.campus} /> : null}
+      {data?.rules ? (
+        <RulesCard rules={data.rules} request={data.request} onChange={reload} />
+      ) : null}
 
       <View style={{ gap: space(3) }}>
         <T tone="label" style={{ color: c.muted }}>
@@ -185,14 +188,24 @@ function Hero({ children, art }: { children: ReactNode; art: "gate" | "lantern-l
   );
 }
 
+/** On a form day: has today's request been approved (and not used yet)? */
+function approved(request: OutingRequest | null): boolean {
+  return request?.status === "approved" && !request.used;
+}
+
 function AtHostel({
+  rules,
+  request,
   onDone,
   logRequest,
 }: {
+  rules: TodayRules | null;
+  request: OutingRequest | null;
   onDone: () => Promise<void>;
   logRequest: string | null;
 }): ReactNode {
   const c = useColors();
+  const now = useNow(30_000);
   const [tapped, setTapped] = useState(false);
   // A request opens the sheet once: it stays "handled" after closing until the next one.
   const [handled, setHandled] = useState<string | null>(null);
@@ -201,6 +214,27 @@ function AtHostel({
     setTapped(next);
     if (!next) setHandled(logRequest);
   };
+  const line = rules ? rulesLine(rules, now) : null;
+  const needsApproval = Boolean(rules?.needs_form) && !approved(request);
+  // Without rules (offline, or not set up) the server decides; offer everything.
+  const canGoOut = !line || (line.open && !needsApproval);
+  const backBy =
+    rules && line?.open
+      ? plannedReturn(rules, now, { requestedMinutes: request?.requested_minutes })
+      : null;
+
+  const body = !line
+    ? "Scan the code at the gate to tap out. We'll remind you before you're due back."
+    : !line.open
+      ? line.title === "Outings are over for today"
+        ? "Outings are over for today. See you tomorrow."
+        : `Outings open at ${formatTime(rules!.opens_at)}.`
+      : needsApproval
+        ? request?.status === "pending"
+          ? "Your request is with the hostel office. Once they approve it, scan at the gate."
+          : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
+        : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
+
   return (
     <>
       <Hero art="gate">
@@ -209,63 +243,75 @@ function AtHostel({
           <Text style={[type.title, { color: c.onHero }]} accessibilityRole="header">
             Heading out?
           </Text>
-          <Text style={[type.body, { color: c.heroMuted }]}>
-            Scan the code at the gate to tap out. We&apos;ll remind you before you&apos;re due back.
-          </Text>
+          <Text style={[type.body, { color: c.heroMuted }]}>{body}</Text>
         </View>
         <View style={{ gap: space(2) }}>
           <Button
             label="Scan at the gate"
-            icon={<Ionicons name="scan" size={20} color={c.onAccent} />}
+            // Not the next step when outings are closed or need approval first: the card
+            // below says what to do, so this steps back (the gate still explains if scanned).
+            variant={canGoOut ? "primary" : "onHeroOutline"}
+            icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onHero} />}
             onPress={() => {
               haptic.tap();
               router.push("/scan");
             }}
           />
-          <Button
-            label="Log a trip without scanning"
-            variant="onHeroOutline"
-            accessibilityLabel="Log a trip without scanning (self-reported)"
-            style={{ minHeight: 44 }}
-            onPress={() => {
-              haptic.tap();
-              setOpen(true);
-            }}
-          />
+          {canGoOut ? (
+            <Button
+              label="Log a trip without scanning"
+              variant="onHeroOutline"
+              accessibilityLabel="Log a trip without scanning (self-reported)"
+              style={{ minHeight: 44 }}
+              onPress={() => {
+                haptic.tap();
+                setOpen(true);
+              }}
+            />
+          ) : null}
         </View>
       </Hero>
-      <LogTripSheet open={open} onClose={() => setOpen(false)} onDone={onDone} />
+      <LogTripSheet
+        open={open}
+        rules={rules}
+        request={request}
+        onClose={() => setOpen(false)}
+        onDone={onDone}
+      />
     </>
   );
 }
 
 function LogTripSheet({
   open,
+  rules,
+  request,
   onClose,
   onDone,
 }: {
   open: boolean;
+  rules: TodayRules | null;
+  request: OutingRequest | null;
   onClose: () => void;
   onDone: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
   const now = useNow(30_000); // keeps "back by" honest if the sheet stays open
-  const [choice, setChoice] = useState<Choice>("120");
   const [destination, setDestination] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const back = expectedReturn(choice, new Date(now));
+  const back = rules
+    ? plannedReturn(rules, now, { requestedMinutes: request?.requested_minutes })
+    : null;
   const parts = back ? clockParts(back) : null;
 
   const submit = async (): Promise<void> => {
-    const at = expectedReturn(choice); // recomputed at the tap, not at the last render
-    if (!at) return;
     setBusy(true);
     setError(null);
     try {
       await api("/outings", {
         method: "POST",
-        body: { destination: destination.trim() || null, expected_return_at: at.toISOString() },
+        body: { destination: destination.trim() || null },
       });
       haptic.success();
       setDestination("");
@@ -274,7 +320,7 @@ function LogTripSheet({
       await onDone();
     } catch (e) {
       haptic.warning();
-      setError(message(e));
+      setError(message(e)); // e.g. outside today's hours: the server says when
     } finally {
       setBusy(false);
     }
@@ -282,19 +328,11 @@ function LogTripSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Log a trip">
-      <Chips
-        label="Back in about"
-        options={CHOICES}
-        value={choice}
-        onChange={(v) => {
-          haptic.tap();
-          setChoice(v);
-        }}
-      />
       {parts ? (
         <View style={{ gap: space(1) }}>
-          <T tone="caption">You&apos;ll be back by</T>
+          <T tone="caption">You&apos;ll be due back by</T>
           <Clock time={parts.time} period={parts.period} color={c.accent} size={48} />
+          <T tone="caption">Set by your hostel&apos;s rules. It can&apos;t be changed later.</T>
         </View>
       ) : null}
       <Field
@@ -319,7 +357,7 @@ function LogTripSheet({
 function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<void> }): ReactNode {
   const c = useColors();
   const now = useNow(15_000);
-  const [busy, setBusy] = useState<"return" | 30 | 60 | null>(null);
+  const [busy, setBusy] = useState<"return" | "on_my_way" | "safe" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dueMs = new Date(outing.expected_return_at).getTime();
   // Derived from the clock, so the card turns overdue on time without a refetch.
@@ -328,7 +366,10 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
   const done = progress(outing.left_at, outing.expected_return_at, new Date(now));
   const back = clockParts(outing.expected_return_at);
 
-  const act = async (kind: "return" | 30 | 60, call: () => Promise<unknown>): Promise<void> => {
+  const act = async (
+    kind: NonNullable<typeof busy>,
+    call: () => Promise<unknown>,
+  ): Promise<void> => {
     setBusy(kind);
     setError(null);
     try {
@@ -343,15 +384,10 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
     }
   };
 
-  const extend = (minutes: 30 | 60) =>
-    act(minutes, () => {
-      // Extend from whichever is later: the current plan or now (an overdue plan is in the past).
-      const base = Math.max(Date.now(), dueMs);
-      return api("/outings/current", {
-        method: "PATCH",
-        body: { expected_return_at: new Date(base + minutes * 60_000).toISOString() },
-      });
-    });
+  const reply = (answer: "on_my_way" | "safe") =>
+    act(answer, () =>
+      api("/outings/current/late-reply", { method: "POST", body: { reply: answer } }),
+    );
 
   return (
     <Hero art="lantern-lit">
@@ -399,6 +435,43 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         />
       </View>
 
+      {overdue ? (
+        outing.late_reply ? (
+          <Text style={[type.label, { color: c.heroAccent }]} accessibilityRole="text">
+            {outing.late_reply === "safe"
+              ? "Thanks. The hostel office knows you're safe."
+              : "Thanks. The hostel office knows you're on your way."}
+          </Text>
+        ) : (
+          <View style={{ gap: space(2) }}>
+            <Text style={[type.body, { color: c.onHero }]}>
+              You&apos;re late. Tell the hostel office you&apos;re OK. If there&apos;s no answer,
+              they may call you or your emergency contact.
+            </Text>
+            <View style={{ flexDirection: "row", gap: space(2) }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="On my way"
+                  variant="onHero"
+                  busy={busy === "on_my_way"}
+                  busyLabel="Sending…"
+                  onPress={() => void reply("on_my_way")}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="I'm safe"
+                  variant="onHeroOutline"
+                  busy={busy === "safe"}
+                  busyLabel="Sending…"
+                  onPress={() => void reply("safe")}
+                />
+              </View>
+            </View>
+          </View>
+        )
+      ) : null}
+
       <Button
         label="Scan to tap in"
         icon={<Ionicons name="scan" size={18} color={c.onAccent} />}
@@ -416,27 +489,143 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         style={{ minHeight: 44 }}
         onPress={() => void act("return", () => api("/outings/current/return", { method: "POST" }))}
       />
-      <View style={{ flexDirection: "row", gap: space(2) }}>
-        {([30, 60] as const).map((m) => (
-          <View key={m} style={{ flex: 1 }}>
-            <Button
-              label={`+${formatMinutes(m)}`}
-              variant="onHeroOutline"
-              busy={busy === m}
-              busyLabel="Adding…"
-              accessibilityLabel={`Add ${formatMinutes(m)}`}
-              style={{ minHeight: 44 }}
-              onPress={() => void extend(m)}
-            />
-          </View>
-        ))}
-      </View>
       {error ? (
         <Text style={[type.label, { color: c.heroDanger }]} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
     </Hero>
+  );
+}
+
+/**
+ * Today's rules (from the student's hostel), and on form days the outing request: ask, wait,
+ * approved, or declined with the office's note.
+ */
+function RulesCard({
+  rules,
+  request,
+  onChange,
+}: {
+  rules: TodayRules;
+  request: OutingRequest | null;
+  onChange: () => Promise<void>;
+}): ReactNode {
+  const c = useColors();
+  const now = useNow(30_000);
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const line = rulesLine(rules, now);
+  const live = request && request.status !== "cancelled" ? request : null;
+
+  const cancel = async (id: string): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/outings/request/${id}`, { method: "DELETE" });
+      haptic.success();
+      await onChange();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View
+      style={{
+        gap: space(3),
+        backgroundColor: c.surface,
+        borderColor: c.line,
+        borderWidth: 1,
+        borderRadius: radius.sheet,
+        borderCurve: "continuous",
+        padding: space(4),
+      }}
+    >
+      <View
+        accessible
+        accessibilityLabel={`Today's rules: ${line.title}. ${line.detail}`}
+        style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
+      >
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            backgroundColor: c.accentSoft,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name={rules.needs_form ? "document-text" : "time"} size={18} color={c.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <T tone="label" style={{ fontSize: 15 }}>
+            {line.title}
+          </T>
+          <T tone="caption" style={line.urgent ? { color: c.danger } : undefined}>
+            {line.detail}
+          </T>
+        </View>
+      </View>
+
+      {rules.needs_form && line.open && !(live?.used ?? false) ? (
+        <View
+          style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
+        >
+          {!live || live.status === "declined" ? (
+            <>
+              {live?.status === "declined" ? (
+                <T tone="small" style={{ color: c.danger }}>
+                  Declined{live.note ? `: ${live.note}` : "."} You can ask again.
+                </T>
+              ) : null}
+              <Button
+                label="Ask for today's outing"
+                variant={live ? "secondary" : "primary"}
+                onPress={() => setAsking(true)}
+              />
+            </>
+          ) : live.status === "pending" ? (
+            <>
+              <StatusChip label="Waiting for approval" tone="accent" />
+              <T tone="small">
+                {live.purpose}. You&apos;ll get a notification when the hostel office decides.
+              </T>
+              <Button
+                label="Cancel request"
+                variant="quiet"
+                busy={busy}
+                busyLabel="Cancelling…"
+                onPress={() => void cancel(live.id)}
+              />
+            </>
+          ) : (
+            <>
+              <StatusChip label="Approved" tone="good" />
+              <T tone="small">
+                Scan at the gate when you leave.
+                {live.requested_minutes
+                  ? ` You asked for ${formatMinutes(live.requested_minutes)}.`
+                  : ""}
+              </T>
+            </>
+          )}
+          <FormError message={error} />
+        </View>
+      ) : null}
+      {rules.needs_form ? (
+        <RequestSheet
+          open={asking}
+          rules={rules}
+          onClose={() => setAsking(false)}
+          onSent={onChange}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -494,52 +683,6 @@ function QuickAction({
   );
 }
 
-/** Tonight's curfew: the one campus rule every trip is planned around. */
-function Tonight({ campus }: { campus: Campus }): ReactNode {
-  const c = useColors();
-  const now = useNow(30_000);
-  if (!now) return null; // the first tick lands right after mount
-  const line = curfewLine(campus, now);
-  return (
-    <View
-      accessible
-      accessibilityLabel={`Tonight: ${line.title}. ${line.detail}`}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: space(3),
-        backgroundColor: c.surface,
-        borderColor: c.line,
-        borderWidth: 1,
-        borderRadius: radius.sheet,
-        borderCurve: "continuous",
-        padding: space(4),
-      }}
-    >
-      <View
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 12,
-          backgroundColor: c.accentSoft,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Ionicons name="moon" size={18} color={c.accent} />
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <T tone="label" style={{ fontSize: 15 }}>
-          {line.title}
-        </T>
-        <T tone="caption" style={line.urgent ? { color: c.danger } : undefined}>
-          {line.detail}
-        </T>
-      </View>
-    </View>
-  );
-}
-
 /** The last few finished trips, with the on-time rate; the full list is on History. */
 function Recent({
   outings,
@@ -583,7 +726,10 @@ const STEPS = [
     title: "Scan the code on the gate tablet",
     detail: "Your phone checks that you're really at the gate.",
   },
-  { title: "Choose when you'll be back", detail: "Tonight's curfew is filled in for you." },
+  {
+    title: "You're due back by your hostel's time",
+    detail: "On weekends and holidays, ask for the outing first.",
+  },
   {
     title: "Scan again when you're back",
     detail: "The trip is saved as verified at the gate.",

@@ -48,10 +48,11 @@ describe("toFix", () => {
 });
 
 describe("refusal", () => {
-  it("asks for a return time after curfew", () => {
-    expect(refusal(428, "It's past curfew. Choose when you'll be back, then scan again.")).toEqual({
-      kind: "needs-time",
-      message: "It's past tonight's curfew, so choose when you'll be back.",
+  it("passes on the outing rules' reason", () => {
+    expect(refusal(422, "Weekday outings end at 8:00 PM. Try again tomorrow.")).toEqual({
+      kind: "refused",
+      message: "Weekday outings end at 8:00 PM. Try again tomorrow.",
+      retry: true,
     });
   });
 

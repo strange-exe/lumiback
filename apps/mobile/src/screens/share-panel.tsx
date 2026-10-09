@@ -8,7 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { WEB_URL } from "@/lib/config";
 import { inviteMessage, whatsappUrl } from "@/lib/invite";
 import { formatTime } from "@/lib/time";
-import type { JoinCode, ShareSession, Viewer } from "@/lib/types";
+import type { AccessLogEntry, JoinCode, ShareSession, Viewer } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { mockState, type Positions } from "@/location/mock";
 import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
@@ -48,10 +48,14 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
     // The share ended elsewhere (web, expiry, idle close): make sure the service is off too.
     if (!active && sending) await stopSending();
     // What viewers see: the last position the server has (sharers can read their own).
-    const positions: Positions = active
-      ? await api<Positions>(`/sessions/${active.id}/location`)
-      : { location: null };
-    return { active, sending: Boolean(active) && sending, positions };
+    const [positions, looks] = active
+      ? await Promise.all([
+          api<Positions>(`/sessions/${active.id}/location`),
+          // Who looked, including the hostel office following up a late return.
+          api<AccessLogEntry[]>(`/sessions/${active.id}/access-log`).catch(() => []),
+        ])
+      : [{ location: null }, []];
+    return { active, sending: Boolean(active) && sending, positions, looks };
   }, []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
 
@@ -83,6 +87,7 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
           share={data.active}
           sending={data.sending}
           positions={data.positions}
+          looks={data.looks}
           onChange={refetch}
         />
       ) : (
@@ -200,11 +205,13 @@ function Live({
   share,
   sending,
   positions,
+  looks,
   onChange,
 }: {
   share: ShareSession;
   sending: boolean;
   positions: Positions;
+  looks: AccessLogEntry[];
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
@@ -363,6 +370,8 @@ function Live({
         )}
       </Section>
 
+      <WhoLooked looks={looks} />
+
       <FormError message={error} />
       <Button
         label="Stop sharing"
@@ -374,6 +383,45 @@ function Live({
 
       <InviteSheet open={inviting} onClose={() => setInviting(false)} invite={invite} />
     </>
+  );
+}
+
+/** Everyone who has looked at this share's location, most recent first, grouped by person. */
+function WhoLooked({ looks }: { looks: AccessLogEntry[] }): ReactNode {
+  const c = useColors();
+  if (looks.length === 0) return null;
+  const people = new Map<string, { entry: AccessLogEntry; count: number }>();
+  for (const entry of looks) {
+    const key = `${entry.kind}:${entry.viewer_id ?? entry.viewer_name}`;
+    const seen = people.get(key);
+    if (seen) seen.count += 1;
+    else people.set(key, { entry, count: 1 }); // the log is newest first
+  }
+  return (
+    <Section title="Who looked">
+      {[...people.values()].slice(0, 6).map(({ entry, count }) => (
+        <View
+          key={`${entry.kind}:${entry.viewer_id ?? entry.viewer_name}`}
+          style={{ flexDirection: "row", alignItems: "center", gap: space(3), padding: space(4) }}
+        >
+          <Ionicons
+            name={entry.kind === "admin" ? "shield-checkmark" : "eye-outline"}
+            size={20}
+            color={entry.kind === "admin" ? c.danger : c.muted}
+          />
+          <View style={{ flex: 1 }}>
+            <T tone="label" numberOfLines={1}>
+              {entry.viewer_name}
+            </T>
+            <T tone="caption">
+              {entry.kind === "admin"
+                ? `Checked your location at ${formatTime(entry.viewed_at)} because you were late`
+                : `${count === 1 ? "Once" : `${count} times`}, last at ${formatTime(entry.viewed_at)}`}
+            </T>
+          </View>
+        </View>
+      ))}
+    </Section>
   );
 }
 

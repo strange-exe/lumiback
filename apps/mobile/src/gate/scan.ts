@@ -36,17 +36,15 @@ export function toFix(location: {
   };
 }
 
-const AFTER_CURFEW = "It's past tonight's curfew, so choose when you'll be back.";
-
-/** What the screen shows when the API says no (or not yet). */
-export type Refusal =
-  { kind: "needs-time"; message: string } | { kind: "refused"; message: string; retry: boolean };
+/** What the screen shows when the API says no. */
+export interface Refusal {
+  kind: "refused";
+  message: string;
+  retry: boolean;
+}
 
 /** Map an API failure (status + detail) to what the student sees and whether scanning again helps. */
 export function refusal(status: number, detail: string): Refusal {
-  // The server's wording ("...then scan again") is for any client; here the student just picks a
-  // time and taps out with the same code, so the app says that instead.
-  if (status === 428) return { kind: "needs-time", message: AFTER_CURFEW };
   if (status === 409) return { kind: "refused", message: detail, retry: false };
   if (status === 0) {
     return {
@@ -55,13 +53,7 @@ export function refusal(status: number, detail: string): Refusal {
       retry: true,
     };
   }
-  // 422: bad or old code, gate off, too far, weak or mock GPS. The server's wording explains which.
+  // 422: bad or old code, gate off, too far, weak or mock GPS, or the outing rules (outside the
+  // hours, no approved request). The server's wording explains which.
   return { kind: "refused", message: detail, retry: true };
 }
-
-/** Return-time choices offered after curfew, as minutes from now. */
-export const AFTER_CURFEW_CHOICES = [
-  { value: "60", label: "1 h" },
-  { value: "120", label: "2 h" },
-  { value: "180", label: "3 h" },
-] as const;
