@@ -24,20 +24,26 @@ const SMALL = `margin:0;font-family:${SANS};font-size:13px;line-height:19px;colo
 
 const NO_REPLY_SENDER = /^(mailer-daemon|postmaster|no-?reply|bounces?)([+.@-]|$)/i;
 
-/** Mail that must not get an auto-reply (RFC 3834 and the usual list/bulk markers). */
-export function isAutomated(from, headers) {
-  if (!from || NO_REPLY_SENDER.test(from)) return true;
+/** Why this mail must not get an auto-reply (RFC 3834 and the usual list/bulk markers), or
+ * null when it may. The reason is logged, so the Worker's Logs tab explains every skip. */
+export function automatedReason(from, headers) {
+  if (!from) return "no sender (a bounce)";
+  if (NO_REPLY_SENDER.test(from)) return `sender ${from}`;
   const auto = (headers.get("Auto-Submitted") || "no").trim().toLowerCase();
-  if (auto !== "no") return true;
-  if (/^(bulk|list|junk|auto_reply)$/i.test((headers.get("Precedence") || "").trim())) return true;
-  return Boolean(
-    headers.get("List-Id") ||
-      headers.get("List-Unsubscribe") ||
-      headers.get("X-Autoreply") ||
-      headers.get("X-Autorespond") ||
-      headers.get("X-Auto-Response-Suppress"),
-  );
+  if (auto !== "no") return `Auto-Submitted: ${auto}`;
+  const precedence = (headers.get("Precedence") || "").trim();
+  if (/^(bulk|list|junk|auto_reply)$/i.test(precedence)) return `Precedence: ${precedence}`;
+  for (const name of ["List-Id", "List-Unsubscribe", "X-Autoreply", "X-Autorespond"]) {
+    if (headers.get(name)) return `${name} header`;
+  }
+  // Exchange's request not to auto-reply. Only its auto-reply values count: Outlook can stamp
+  // ordinary mail with delivery/read-receipt values (DR, RN, NRN), which don't concern us.
+  const suppress = (headers.get("X-Auto-Response-Suppress") || "").toLowerCase();
+  if (/\b(all|autoreply|oof)\b/.test(suppress)) return `X-Auto-Response-Suppress: ${suppress}`;
+  return null;
 }
+
+export const isAutomated = (from, headers) => automatedReason(from, headers) !== null;
 
 const escapeHtml = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -143,7 +149,11 @@ export default {
   async email(message, env) {
     // Forward first: a person always gets the message, even if the auto-reply fails.
     await message.forward(env.FORWARD_TO);
-    if (isAutomated(message.from, message.headers)) return;
+    const skip = automatedReason(message.from, message.headers);
+    if (skip) {
+      console.log(`forwarded; no auto-reply (${skip})`);
+      return;
+    }
     try {
       const raw = buildReply({
         from: message.to,
@@ -152,6 +162,7 @@ export default {
         messageId: message.headers.get("Message-ID"),
       });
       await message.reply(new EmailMessage(message.to, message.from, raw));
+      console.log(`forwarded; auto-reply sent to ${message.from}`);
     } catch (err) {
       // e.g. the incoming mail failed DMARC: Cloudflare refuses the reply. Forwarding worked.
       console.error("auto-reply not sent:", err);

@@ -92,6 +92,10 @@ test("automated mail is forwarded but never answered", () => {
   assert.equal(worker.isAutomated("x@y.z", headers({ Precedence: "bulk" })), true);
   assert.equal(worker.isAutomated("x@y.z", headers({ "List-Id": "<l.x.y>" })), true);
   assert.equal(worker.isAutomated("x@y.z", headers({ "X-Auto-Response-Suppress": "All" })), true);
+  assert.equal(worker.isAutomated("x@y.z", headers({ "X-Auto-Response-Suppress": "OOF, AutoReply" })), true);
+  // Outlook can stamp ordinary mail with receipt-only values: still a person, still answered.
+  assert.equal(worker.isAutomated("x@y.z", headers({ "X-Auto-Response-Suppress": "DR, RN, NRN" })), false);
+  assert.match(worker.automatedReason("x@y.z", headers({ Precedence: "bulk" })), /Precedence: bulk/);
 });
 
 test("forwards first, then replies once; a refused reply doesn't lose the email", async () => {
