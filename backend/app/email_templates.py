@@ -225,6 +225,10 @@ class Notice:
     action: tuple[str, str]  # (button label, URL)
     note: str | None  # small print under the action
     reason: str  # why this address got the email (footer)
+    # How the HTML shows the action: "button", "text" (a written-out link) or "plain" (the
+    # address with no link at all). Urgent notices use "plain": a red alert plus a button reads
+    # as phishing to Microsoft 365 (the late alert went to Junk with a button, 2026-10-09).
+    link: str = "button"
 
 
 def _hhmm(moment: datetime) -> str:
@@ -242,11 +246,16 @@ def _notice_text(n: Notice) -> str:
     return "\n\n".join(parts) + "\n" + _footer_text()
 
 
-def _notice_html(n: Notice, *, link: str = "button") -> str:
-    """`link`: "button" (a filled button) or "text" (the address written out, for testing
-    which one Microsoft 365 trusts more)."""
+def _notice_html(n: Notice, *, link: str | None = None) -> str:
+    """`link` overrides the notice's own style (for inbox tests)."""
     label, url = n.action
-    if link == "button":
+    link = link or n.link
+    if link == "plain":
+        shown = url.removeprefix("https://")
+        action = (
+            f'<p style="{P}margin-top:20px;">{escape(label)}: <strong>{escape(shown)}</strong></p>'
+        )
+    elif link == "button":
         action = f"""<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 4px;"><tr>
 <td style="background:{ACCENT};border-radius:10px;"><a href="{escape(url)}" style="display:inline-block;padding:13px 22px;font-family:{SANS};font-size:15px;line-height:20px;font-weight:bold;color:#ffffff;text-decoration:none;">{escape(label)}</a></td>
 </tr></table>"""
@@ -267,7 +276,7 @@ def _notice_html(n: Notice, *, link: str = "button") -> str:
     return _shell(title=n.heading, card=card, to=n.to, reason=n.reason)
 
 
-def notice_email(n: Notice, *, html: bool | None = None, link: str = "button") -> Email:
+def notice_email(n: Notice, *, html: bool | None = None, link: str | None = None) -> Email:
     """Plain text always; the HTML alternative when enabled (or forced, for inbox tests)."""
     with_html = NOTICE_HTML if html is None else html
     return Email(
@@ -291,12 +300,13 @@ def late_alert_notice(*, to: str, name: str, due_at: datetime, web_url: str) -> 
             'Let the hostel office know: choose "On my way" or "I\'m safe". Checking in at '
             "the gate works too.",
         ),
-        action=("Answer now", f"{web_url}/home"),
+        action=("Answer in the Lumiback app or at", f"{web_url}/home"),
         note=(
             "If there's no answer within 10 minutes, the hostel office is told and may call "
             "you or your emergency contact."
         ),
         reason="you're out on a Lumiback outing",
+        link="plain",
     )
 
 

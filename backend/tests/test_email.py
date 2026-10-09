@@ -16,6 +16,7 @@ from app.email_templates import (
     escalation_email,
     ist_stamp,
     late_alert_email,
+    late_alert_notice,
     notice_email,
     password_reset_email,
     request_decision_email,
@@ -194,7 +195,12 @@ def test_late_alert_says_when_and_where_to_answer():
     assert email.subject == "Lumiback: are you OK? You're 30 minutes past your return time"
     assert email.body.startswith("Hi Riya,")
     assert "You were due back at 8:00 PM" in email.body
-    assert "Answer now: https://lumiback.test/home" in email.body
+    assert "Answer in the Lumiback app or at: https://lumiback.test/home" in email.body
+    # Urgent + a button read as phishing to Microsoft 365: the HTML shows the address, no link.
+    html = notice_email(
+        late_alert_notice(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB), html=True
+    ).html
+    assert html and "href=" not in html and "lumiback.test/home" in html
     assert "within 10 minutes" in email.body
 
 
