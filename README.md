@@ -168,7 +168,10 @@ auto-replies are forwarded but never answered. Set `EMAIL_REPLY_TO` on the API o
 works, so Lumiback's emails invite replies.
 
 1. Cloudflare → Workers → Create → paste `worker.js` (or `npx wrangler deploy` in that folder),
-   then add a variable `FORWARD_TO` with the verified destination address.
+   then add a variable `FORWARD_TO` with the verified destination address, and a secret
+   `RESEND_API_KEY` (a sending-only Resend key). With the key, the auto-reply goes out through
+   Resend like Lumiback's other email; without it, through Cloudflare's `reply()`, which
+   Microsoft 365 trusted less in testing.
 2. Email Routing → Routing rules → the `support@` rule → action **Send to a Worker**.
 3. Test from another account: the message arrives in the inbox, and the sender gets the reply.
 

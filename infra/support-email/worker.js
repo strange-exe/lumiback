@@ -1,9 +1,10 @@
 // Cloudflare Email Worker for support@lumiback.abhinesh.codes.
 //
 // Every email is forwarded to FORWARD_TO (a verified Email Routing destination, set as a
-// variable on the Worker), then the sender gets one automatic "we've got it" reply in the same
-// delivery, so it threads like a normal reply. Automated mail (bounces, mailing lists, other
-// auto-replies) is forwarded but never answered, so two auto-responders can't loop.
+// variable on the Worker), and the sender gets one automatic "we've got it" reply, threaded
+// under their message. The reply goes through Resend when the RESEND_API_KEY secret is set
+// (recommended), otherwise through Cloudflare's reply(). Automated mail (bounces, mailing lists,
+// other auto-replies) is forwarded but never answered, so two auto-responders can't loop.
 // Docs: https://developers.cloudflare.com/email-routing/email-workers/reply-email-workers/
 // No npm packages, so it can be pasted into the dashboard editor as one file.
 
@@ -155,29 +156,80 @@ export default {
     });
   },
 
-  async email(message, env) {
-    // Reply, then forward, in the order Cloudflare's example uses: replying after forwarding
-    // never sent anything (2026-10-10: every email "Handled" + "Forwarded", no reply). A failed
-    // reply is caught, so the forward below always runs and a person always gets the message.
+  async email(message, env, _ctx, fetcher = fetch) {
+    // Reply first, then forward (Cloudflare's order). A failed reply is caught, so the forward
+    // always runs and a person always gets the message. One log line per email says what
+    // happened, so the Worker's Logs tab answers "why no auto-reply?".
+    let outcome;
     const skip = automatedReason(message.from, message.headers);
     if (skip) {
-      console.log(`no auto-reply (${skip})`);
+      outcome = `no auto-reply (${skip})`;
     } else {
+      const reply = {
+        from: message.to,
+        to: message.from,
+        subject: message.headers.get("Subject"),
+        messageId: message.headers.get("Message-ID"),
+      };
       try {
-        const raw = buildReply({
-          from: message.to,
-          to: message.from,
-          subject: message.headers.get("Subject"),
-          messageId: message.headers.get("Message-ID"),
-        });
-        await message.reply(new EmailMessage(message.to, message.from, raw));
-        console.log(`auto-reply sent to ${message.from}`);
+        if (env.RESEND_API_KEY) {
+          await sendWithResend(reply, env.RESEND_API_KEY, fetcher);
+          outcome = `auto-reply sent through Resend to ${message.from}`;
+        } else {
+          const raw = buildReply(reply);
+          await message.reply(new EmailMessage(message.to, message.from, raw));
+          outcome = `auto-reply sent through Cloudflare to ${message.from}`;
+        }
       } catch (err) {
-        // e.g. the incoming mail failed DMARC: Cloudflare refuses the reply.
-        console.error(`auto-reply not sent: ${err && err.message ? err.message : err}`);
+        outcome = `auto-reply NOT sent: ${describe(err)}`;
       }
     }
-    await message.forward(env.FORWARD_TO);
-    console.log("forwarded");
+    try {
+      await message.forward(env.FORWARD_TO);
+      console.log(`forwarded to inbox; ${outcome}`);
+    } catch (err) {
+      console.error(`FORWARD FAILED (${describe(err)}); ${outcome}`);
+      throw err; // let Email Routing record the failure
+    }
   },
 };
+
+function describe(err) {
+  if (!err) return "unknown error";
+  return [err.name, err.message].filter(Boolean).join(": ") || String(err);
+}
+
+/**
+ * The auto-reply through Resend, which already sends Lumiback's email for this domain (SPF,
+ * DKIM and an inbox-tested reputation at Microsoft 365). Cloudflare's own reply() refused to
+ * send on 2026-10-09 without saying why. Set RESEND_API_KEY as a secret on the Worker (a
+ * sending-only key) to use this; without it, the Worker falls back to Cloudflare's reply().
+ */
+export async function sendWithResend({ from, to, subject, messageId }, apiKey, fetcher = fetch) {
+  const id = crypto.randomUUID();
+  const headers = {
+    "Auto-Submitted": "auto-replied",
+    "X-Auto-Response-Suppress": "All",
+    ...(messageId ? { "In-Reply-To": messageId, References: messageId } : {}),
+  };
+  const res = await fetcher("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `support-auto-reply-${messageId || id}`,
+    },
+    body: JSON.stringify({
+      from: `${FROM_NAME} <${from}>`,
+      to: [to],
+      subject: replySubject(subject),
+      text: TEXT,
+      html: html(),
+      headers,
+    }),
+  });
+  if (!res.ok) {
+    // Resend's error names the problem (bad key, unverified domain); it holds no secrets.
+    throw new Error(`Resend answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+}

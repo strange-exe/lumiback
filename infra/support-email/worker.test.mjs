@@ -133,6 +133,49 @@ test("a refused reply still forwards the email", async () => {
   ]);
 });
 
+test("with a Resend key, the reply goes through Resend, threaded and marked as automatic", async () => {
+  const calls = [];
+  const sent = [];
+  const fetcher = async (url, init) => {
+    sent.push({ url, init, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ id: "re_1" }), { status: 200 });
+  };
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test" };
+  await worker.default.email(incoming(calls), env, {}, fetcher);
+  assert.deepEqual(calls, [["forward", "me@example.com"]]); // Cloudflare's reply() not used
+  const [{ url, init, body }] = sent;
+  assert.equal(url, "https://api.resend.com/emails");
+  assert.equal(init.headers.Authorization, "Bearer re_test");
+  assert.equal(init.headers["Idempotency-Key"], "support-auto-reply-<m@geu.ac.in>");
+  assert.equal(body.from, "Lumiback Support <support@lumiback.abhinesh.codes>");
+  assert.deepEqual(body.to, ["riya@geu.ac.in"]);
+  assert.equal(body.subject, "Re: Help");
+  assert.deepEqual(body.headers, {
+    "Auto-Submitted": "auto-replied",
+    "X-Auto-Response-Suppress": "All",
+    "In-Reply-To": "<m@geu.ac.in>",
+    References: "<m@geu.ac.in>",
+  });
+  assert.match(body.text, /Message received/);
+  assert.match(body.html, /Thanks for writing to Lumiback/);
+});
+
+test("a Resend refusal is logged with its reason, and the email is still forwarded", async () => {
+  const calls = [];
+  const logged = [];
+  const original = console.log;
+  console.log = (line) => logged.push(line);
+  try {
+    const fetcher = async () => new Response('{"message":"API key is invalid"}', { status: 401 });
+    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "bad" };
+    await worker.default.email(incoming(calls), env, {}, fetcher);
+  } finally {
+    console.log = original;
+  }
+  assert.deepEqual(calls, [["forward", "me@example.com"]]);
+  assert.match(logged.at(-1), /^forwarded to inbox; auto-reply NOT sent: Error: Resend answered 401: .*invalid/);
+});
+
 test("automated mail is only forwarded", async () => {
   const calls = [];
   const message = incoming(calls, { extraHeaders: { "Auto-Submitted": "auto-replied" } });
