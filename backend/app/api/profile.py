@@ -3,10 +3,10 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, or_, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Hostel, OutingRequest, RequestStatus, RuleSet, User
+from app.models import Hostel, Outing, OutingRequest, RequestStatus, RuleSet, User
 from app.schemas import HostelChoiceOut, ProfileIn, ProfileOut
 from app.services import outings, rules
 
@@ -26,17 +26,22 @@ async def _out(session, user: User) -> ProfileOut:
 
 
 async def _rules_in_use(session, user: User) -> bool:
-    """Out now, or a live request today: the hostel's rules (return time, maximum, the
-    office that approved it) already apply, so switching hostels would change them midway."""
+    """Out now, or a live request today (waiting, or approved and not yet used): the hostel's
+    rules (return time, maximum, the office that approved it) already apply, so switching
+    hostels would change them midway. A used approval is spent once its outing is over."""
     if await outings.current(session, user.id) is not None:
         return True
+    used = exists().where(Outing.request_id == OutingRequest.id)
     return bool(
         await session.scalar(
             select(
                 exists().where(
                     OutingRequest.student_id == user.id,
                     OutingRequest.day == rules.ist_date(datetime.now(UTC)),
-                    OutingRequest.status.in_((RequestStatus.PENDING, RequestStatus.APPROVED)),
+                    or_(
+                        OutingRequest.status == RequestStatus.PENDING,
+                        and_(OutingRequest.status == RequestStatus.APPROVED, ~used),
+                    ),
                 )
             )
         )

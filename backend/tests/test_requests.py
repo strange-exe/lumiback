@@ -482,6 +482,22 @@ def test_no_hostel_change_with_a_request_for_today(client, riya, warden, form_da
     assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
 
 
+def test_a_used_approval_no_longer_locks_the_hostel(client, riya, warden, form_day):
+    hostel = hostel_for(client, warden)
+    assert client.patch("/profile", json={"hostel_id": hostel}, headers=riya).status_code == 200
+    request = send(client, riya).json()
+    assert decide(client, warden, request["id"]).status_code == 200
+    # Approved and unused: still locked.
+    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)
+    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)  # out: locked
+    assert r.status_code == 409
+    assert client.post("/outings/current/return", headers=riya).status_code == 200
+    # Back, and the approval is spent: the hostel can change again.
+    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
+
+
 # ---------- rule-set save errors ----------
 
 
