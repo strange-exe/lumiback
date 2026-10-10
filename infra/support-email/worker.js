@@ -156,15 +156,23 @@ export function buildReply({ from, to, subject, messageId, now = new Date(), id 
 
 const IST_OFFSET_MIN = 5 * 60 + 30;
 
+/** "HH:MM" as minutes after midnight, or null when it isn't a valid time. */
 const minutesOf = (hhmm) => {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((hhmm || "").trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 };
 
-/** Is `now` inside the HH:MM window on the campus (IST) clock? */
+/**
+ * Is `now` inside the HH:MM window on the campus (IST) clock? An unset or invalid bound falls
+ * back to the default rather than switching keep-awake off; a window that ends before it starts
+ * (e.g. 17:00-01:00) runs overnight. Keep `until` at least 40 minutes after the latest "Back by"
+ * so the late alert (30 min) and the escalation (40 min) still find the API awake.
+ */
 export function inAwakeWindow(now, from = "09:30", until = "22:00") {
+  const start = minutesOf(from) ?? minutesOf("09:30");
+  const end = minutesOf(until) ?? minutesOf("22:00");
   const ist = (now.getUTCHours() * 60 + now.getUTCMinutes() + IST_OFFSET_MIN) % (24 * 60);
-  return ist >= minutesOf(from) && ist < minutesOf(until);
+  return start <= end ? ist >= start && ist < end : ist >= start || ist < end;
 }
 
 export async function keepAwake(now, env, fetcher = fetch) {

@@ -105,6 +105,11 @@ test("the keep-awake window is on the campus (IST) clock", () => {
   assert.equal(worker.inAwakeWindow(at("2026-10-10T16:29:00Z")), true); // 21:59 IST
   assert.equal(worker.inAwakeWindow(at("2026-10-10T16:30:00Z")), false); // 22:00 IST
   assert.equal(worker.inAwakeWindow(at("2026-10-10T20:00:00Z")), false); // 01:30 IST
+  // Empty or invalid settings fall back to the default instead of switching keep-awake off.
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T06:30:00Z"), "", "nonsense"), true); // 12:00
+  // An overnight window wraps past midnight.
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T19:00:00Z"), "17:00", "01:00"), true); // 00:30
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T21:00:00Z"), "17:00", "01:00"), false); // 02:30
   // A narrower window, e.g. weekday evenings only.
   assert.equal(worker.inAwakeWindow(at("2026-10-10T12:00:00Z"), "17:30", "22:00"), true); // 17:30
   assert.equal(worker.inAwakeWindow(at("2026-10-10T06:30:00Z"), "17:30", "22:00"), false); // 12:00
