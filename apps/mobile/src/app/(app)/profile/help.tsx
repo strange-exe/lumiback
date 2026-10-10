@@ -1,22 +1,30 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Updates from "expo-updates";
 import { useState, type ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
 
-import { Screen, Section, T } from "@/ui/kit";
+import { SUPPORT_EMAIL } from "@/lib/config";
+import { supportMailto } from "@/lib/support";
+import { CURRENT } from "@/updates/changelog";
+import { Row, Screen, Section, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 const FAQ: { q: string; a: string }[] = [
   {
+    q: "When can I go out?",
+    a: "Your hostel sets the hours, shown on the Today tab. Weekday evenings need no form. Weekend and holiday outings need the hostel office's OK first: ask from the Today tab on the day, then tap out once it's approved.",
+  },
+  {
+    q: "What happens if I'm late?",
+    a: "You get a reminder before you're due. Return times can't be extended. At 30 minutes late the app asks if you're OK; answer \"On my way\" or \"I'm safe\". With no answer 10 minutes later, the hostel office is told and may call you or your emergency contact.",
+  },
+  {
     q: "Who can see my location?",
-    a: "Only people you approve while you're sharing. You see everyone who can view you on the Share tab, and you can remove anyone at any time. Sharing stops when the time runs out or when you stop it.",
+    a: "Only people you approve while you're sharing. You see everyone who can view you on the Live tab, and you can remove anyone at any time. If you're over 40 minutes late, don't answer, and are sharing right then, the hostel office also sees your last position, and that look shows in your viewer list.",
   },
   {
     q: "Does Lumiback track me in the background?",
     a: "Only while you are sharing, and Android shows a notification the whole time. When sharing ends, location stops. The app never asks for background location access.",
-  },
-  {
-    q: "What happens if I'm late?",
-    a: "You get a reminder 10 minutes before you're due and another when you're due. Add time from the Today tab so nobody worries.",
   },
   {
     q: "Why did my share end by itself?",
@@ -63,6 +71,28 @@ export default function Help(): ReactNode {
             </Pressable>
           );
         })}
+      </Section>
+
+      <Section
+        title="Still stuck?"
+        footer="If it's urgent, for example you're out and running late, call your hostel office or warden directly."
+      >
+        <Row
+          leading={<Ionicons name="mail-outline" size={20} color={c.accent} />}
+          title="Email Lumiback support"
+          detail={SUPPORT_EMAIL}
+          trailing={<Ionicons name="open-outline" size={18} color={c.muted} />}
+          onPress={() =>
+            void Linking.openURL(
+              supportMailto({
+                version: CURRENT.version,
+                runtimeVersion: Updates.runtimeVersion,
+                updateId: Updates.updateId,
+              }),
+            )
+          }
+          accessibilityLabel={`Email Lumiback support at ${SUPPORT_EMAIL}`}
+        />
       </Section>
     </Screen>
   );

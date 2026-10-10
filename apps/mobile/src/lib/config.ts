@@ -23,3 +23,6 @@ export const WS_URL = `${API_URL.replace(/^http/, "ws")}/ws`;
 
 /** The public web app: privacy notice, and the join page invite links open for viewers. */
 export const WEB_URL = "https://lumiback.abhinesh.codes";
+
+/** Reaches the Lumiback team (forwarded, with an automatic "message received" reply). */
+export const SUPPORT_EMAIL = "support@lumiback.abhinesh.codes";
