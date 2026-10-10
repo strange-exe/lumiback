@@ -232,7 +232,9 @@ function AtHostel({
       : needsApproval
         ? request?.status === "pending"
           ? "Your request is with the hostel office. Once they approve it, scan at the gate."
-          : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
+          : request?.status === "approved" && request.used
+            ? "You've used today's approved outing. Form days allow one outing a day."
+            : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
         : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
 
   return (
@@ -617,6 +619,16 @@ function RulesCard({
             </>
           )}
           <FormError message={error} />
+        </View>
+      ) : formNeeded && live?.used ? (
+        <View
+          style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
+        >
+          <StatusChip label="Used today" tone="accent" />
+          <T tone="small">
+            Your approved outing for today is done. Form days allow one outing a day; you can ask
+            again tomorrow.
+          </T>
         </View>
       ) : null}
       {rules.needs_form ? (
