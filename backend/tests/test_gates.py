@@ -146,6 +146,15 @@ def test_campus_shows_todays_rules(client, db, riya):
     assert "late_until" not in today  # no later-return option: after return_by is late
 
 
+def test_campus_without_rules_shows_no_return_time(client, db, riya):
+    db.execute(text("UPDATE campus_settings SET default_rule_set_id = NULL"))
+    db.commit()
+    r = client.get("/campus", headers=riya)
+    assert r.status_code == 200, r.text
+    # Not the old campus-wide curfew: nobody can go out until rules are set up.
+    assert r.json() == {"curfew": None, "curfew_at": None, "today": None}
+
+
 def test_campus_rules_need_a_signed_in_user(client):
     assert client.get("/campus").status_code == 401
 

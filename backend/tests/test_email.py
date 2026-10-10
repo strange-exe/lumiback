@@ -244,7 +244,10 @@ def test_approval_and_decline_read_differently():
         to="r@geu.ac.in", name="Riya", approved=False, note=None, web_url=WEB
     )
     assert ok.subject == "Lumiback: your outing request is approved"
-    assert "Tap out at the gate" in ok.body
+    assert (
+        "Tap out at the gate when you leave, or log your trip in Lumiback. Your hostel's "
+        "return time still applies." in ok.body
+    )
     assert no.subject == "Lumiback: your outing request was declined"
     assert "note" not in no.body.lower()
 

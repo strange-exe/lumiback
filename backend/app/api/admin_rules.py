@@ -46,13 +46,30 @@ def _hhmm(value: time | None) -> str | None:
 # ---------- weekend / holiday requests ----------
 
 
-async def _request_out(session, r: OutingRequest, student: User) -> AdminRequestOut:
+# (rule set, day) -> that day's maximum, shared across one listing's rows.
+Limits = dict[tuple[uuid.UUID, date], int | None]
+
+
+async def _limit(session, student: User, day: date, cache: Limits) -> int | None:
+    """The longest outing the student's rules allow on the request's own day."""
+    rule_set = await rules.rule_set_for(session, student)
+    if rule_set is None:
+        return None
+    key = (rule_set.id, day)
+    if key not in cache:
+        try:
+            cache[key] = (await rules.window_in(session, rule_set, day)).max_minutes
+        except rules.Refused:
+            cache[key] = None
+    return cache[key]
+
+
+async def _request_out(
+    session, r: OutingRequest, student: User, limits: Limits | None = None
+) -> AdminRequestOut:
     hostel = await session.get(Hostel, student.hostel_id) if student.hostel_id else None
     decider = await session.get(User, r.decided_by) if r.decided_by else None
-    try:
-        limit = (await rules.today_window(session, student, datetime.now(UTC))).max_minutes
-    except rules.Refused:
-        limit = None
+    limit = await _limit(session, student, r.day, {} if limits is None else limits)
     return AdminRequestOut(
         id=r.id,
         student_id=student.id,
@@ -83,7 +100,8 @@ async def list_requests(
 ) -> list[AdminRequestOut]:
     """A day's requests (today by default): pending first, oldest first."""
     rows = await requests.queue(session, day or rules.ist_date(datetime.now(UTC)))
-    return [await _request_out(session, r, u) for r, u in rows]
+    limits: Limits = {}
+    return [await _request_out(session, r, u, limits) for r, u in rows]
 
 
 @router.post("/requests/{request_id}/decision")
@@ -102,6 +120,15 @@ async def decide_request(
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="This request was already decided or cancelled"
         ) from None
+    except requests.OtherDay:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail="This request was for another day."
+        ) from None
+    except requests.DayOver:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Today's outing hours are over, so this can't be approved.",
+        ) from None
     student = await session.get(User, r.student_id)
     assert student is not None
     audit_svc.audit(
@@ -114,12 +141,12 @@ async def decide_request(
         PushMessage(
             title="Outing approved" if body.approve else "Outing request declined",
             body=(
-                "Scan at the gate when you leave."
+                "Tap out at the gate when you leave, or log your trip in Lumiback."
                 if body.approve
                 else (body.note or "Ask the hostel office if you have questions.")
             ),
             url="/today",
-            channel="share-status",
+            channel="share-status",  # the app's "Sharing and requests" switch
         ),
         lambda user: request_decision_email(
             to=user.email,
@@ -178,6 +205,16 @@ def _apply_days(rule_set_id: uuid.UUID, days: list[DayRuleIO]) -> list[DayRule]:
 
 
 NAME_TAKEN = HTTPException(status.HTTP_409_CONFLICT, detail="That name is already used")
+BAD_RULES = HTTPException(
+    status.HTTP_422_UNPROCESSABLE_CONTENT, detail="These rules aren't valid. Check the times."
+)
+
+
+def _rules_conflict(e: IntegrityError) -> HTTPException:
+    """A taken name is the admin's to fix; any other constraint means the day rules are off
+    (the schema checks them first, so this is a backstop, never a 500)."""
+    constraint = getattr(getattr(e.orig, "diag", None), "constraint_name", None)
+    return NAME_TAKEN if constraint == "uq_rule_sets_name" else BAD_RULES
 
 
 @router.get("/rule-sets")
@@ -191,12 +228,12 @@ async def create_rule_set(body: RuleSetIn, me: AdminUser, session: SessionDep) -
     session.add(rule_set)
     try:
         await session.flush()
-    except IntegrityError:
+        session.add_all(_apply_days(rule_set.id, body.days))
+        audit_svc.audit(session, me, "rules:create", body.name)
+        await session.commit()
+    except IntegrityError as e:
         await session.rollback()
-        raise NAME_TAKEN from None
-    session.add_all(_apply_days(rule_set.id, body.days))
-    audit_svc.audit(session, me, "rules:create", body.name)
-    await session.commit()
+        raise _rules_conflict(e) from None
     return await _rule_sets_out(session)
 
 
@@ -208,14 +245,15 @@ async def update_rule_set(
     if rule_set is None:
         raise NOT_FOUND
     rule_set.name = body.name
-    await session.execute(delete(DayRule).where(DayRule.rule_set_id == rule_set_id))
-    session.add_all(_apply_days(rule_set_id, body.days))
-    audit_svc.audit(session, me, "rules:update", body.name)
     try:
+        # The delete autoflushes the new name, so a taken name can fail here already.
+        await session.execute(delete(DayRule).where(DayRule.rule_set_id == rule_set_id))
+        session.add_all(_apply_days(rule_set_id, body.days))
+        audit_svc.audit(session, me, "rules:update", body.name)
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         await session.rollback()
-        raise NAME_TAKEN from None
+        raise _rules_conflict(e) from None
     return await _rule_sets_out(session)
 
 

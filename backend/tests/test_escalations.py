@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.jobs.expiry import sweep
 from app.push import MemoryPushSender
-from tests.helpers import befriend, make_admin, share_with, signup
+from tests.helpers import befriend, make_admin, set_rules, share_with, signup
 from tests.test_push import register_token
 
 STUDENT_PHONE = "ExponentPushToken[riyaPhone0001]"
@@ -242,10 +242,16 @@ def test_a_live_share_gives_the_position_and_logs_the_admin_read(client, db, pus
 
     [e] = client.get("/admin/escalations", headers=warden).json()
     assert (e["last_seen"]["kind"], e["last_seen"]["lat"]) == ("live", 30.31)
+    client.get("/admin/escalations", headers=warden)  # a refresh isn't a new look
     log = client.get(f"/sessions/{share['id']}/access-log", headers=riya).json()
     assert [(x["kind"], x["viewer_name"], x["channel"]) for x in log] == [
         ("admin", "Warden (hostel office)", "admin")
     ]
+    # Ten minutes on, a look is logged again.
+    db.execute(text("UPDATE access_log SET viewed_at = viewed_at - interval '11 minutes'"))
+    db.commit()
+    client.get("/admin/escalations", headers=warden)
+    assert len(client.get(f"/sessions/{share['id']}/access-log", headers=riya).json()) == 2
 
 
 def test_resolving_an_escalation(client, db, push, riya, warden):
@@ -271,3 +277,152 @@ def test_students_cannot_see_escalations(client, riya):
 def test_replying_when_not_out(client, riya):
     r = client.post("/outings/current/late-reply", json={"reply": "safe"}, headers=riya)
     assert r.status_code == 404
+
+
+def test_a_late_reply_before_the_return_time_is_refused(client, db, riya):
+    go_out(client, riya)
+    db.execute(text("UPDATE outings SET expected_return_at = now() + interval '1 hour'"))
+    db.commit()
+    r = client.post("/outings/current/late-reply", json={"reply": "on_my_way"}, headers=riya)
+    assert r.status_code == 409 and r.json()["detail"] == "You're not late yet."
+    assert client.get("/outings/current", headers=riya).json()["late_reply"] is None
+
+
+def test_the_alert_says_how_late_when_the_sweep_runs_late(client, db, push, riya):
+    register_token(client, riya, STUDENT_PHONE)
+    go_out(client, riya)
+    late_by(db, 47)  # e.g. the API was asleep at the 30-minute mark
+    run_sweep(client, push)
+    assert push.outbox[-1][1].title == "You're 47 min late. Are you OK?"
+
+
+def test_an_alert_to_a_phone_that_is_gone_is_emailed(client, db, push, riya):
+    register_token(client, riya, STUDENT_PHONE)
+    push.dead.add(STUDENT_PHONE)  # the app was uninstalled; Expo says so on send
+    go_out(client, riya)
+    late_by(db, 31)
+    mailer = client.app.state.mailer
+    before = len(mailer.outbox)
+    run_sweep(client, push)
+    assert push.outbox[-1][0] == [STUDENT_PHONE]
+    [mail] = mailer.outbox[before:]
+    assert mail.to == "riya@geu.ac.in" and "are you OK?" in mail.subject
+    assert db.execute(text("SELECT count(*) FROM push_tokens")).scalar_one() == 0
+
+
+def test_an_alert_is_emailed_when_the_push_service_fails(client, db, riya):
+    class Broken:
+        async def send(self, tokens, message):
+            raise RuntimeError("push service down")
+
+    register_token(client, riya, STUDENT_PHONE)
+    go_out(client, riya)
+    late_by(db, 31)
+    mailer = client.app.state.mailer
+    before = len(mailer.outbox)
+    run_sweep(client, Broken())
+    assert [m.to for m in mailer.outbox[before:]] == ["riya@geu.ac.in"]
+
+
+def test_muted_everyday_notices_are_not_emailed(client, db, push, riya, warden):
+    """Muting is the student's choice: only urgent safety alerts fall back to email."""
+    register_token(client, riya, STUDENT_PHONE, muted=["share-status"])
+    set_rules(db, "open", max_minutes=180, needs_form=True)
+    form = {
+        "purpose": "Shopping",
+        "phone": "9876543210",
+        "emergency_name": "Sunita",
+        "emergency_relation": "Mother",
+        "emergency_phone": "9123456789",
+    }
+    request = client.post("/outings/request", json=form, headers=riya)
+    assert request.status_code == 201, request.text
+    mailer = client.app.state.mailer
+    before = len(mailer.outbox)
+    r = client.post(
+        f"/admin/requests/{request.json()['id']}/decision", json={"approve": True}, headers=warden
+    )
+    assert r.status_code == 200, r.text
+    assert push.outbox == [] and mailer.outbox[before:] == []
+
+
+def test_the_admin_push_points_to_the_website(client, db, push, riya, warden):
+    register_token(client, warden, ADMIN_PHONE)
+    go_out(client, riya)
+    late_by(db, 41, alerted_minutes_ago=11)
+    run_sweep(client, push)
+    message = push.outbox[-1][1]
+    assert message.body == "Open Escalations on the Lumiback website to follow up."
+    assert message.url is None  # the app opens its default screen
+
+
+def test_a_student_back_after_the_escalation_shows_when(client, db, push, riya, warden):
+    go_out(client, riya)
+    late_by(db, 41, alerted_minutes_ago=11)
+    run_sweep(client, push)
+    client.post("/outings/current/return", headers=riya)
+    [e] = client.get("/admin/escalations", headers=warden).json()  # open until handled
+    assert e["returned_at"] is not None and e["resolved_at"] is None
+    assert e["last_seen"] is None  # back: no position is read any more
+
+
+def test_an_older_trips_gate_scan_is_not_the_last_position(client, db, push, riya, warden):
+    from tests.helpers import create_gate
+
+    create_gate(client, warden)
+    db.execute(
+        text(
+            "INSERT INTO gate_scans (user_id, gate_id, direction, result, scanned_at) "
+            "SELECT u.id, g.id, 'in', 'accepted', now() - interval '5 hours' "
+            "FROM users u, gates g WHERE u.email = 'riya@geu.ac.in'"
+        )
+    )
+    db.commit()
+    go_out(client, riya)  # logged in the app, not at a gate
+    late_by(db, 41, alerted_minutes_ago=11)  # left 3 hours ago: after that scan
+    run_sweep(client, push)
+    [e] = client.get("/admin/escalations", headers=warden).json()
+    assert e["last_seen"] is None
+
+
+def test_a_share_with_only_a_mock_location_shows_no_position(client, db, push, riya, warden):
+    from datetime import UTC, datetime
+
+    _, arjun = signup(client, "arjun@geu.ac.in", "Arjun")
+    befriend(client, riya, "arjun@geu.ac.in", arjun)
+    share = share_with(client, riya, [client.get("/auth/me", headers=arjun).json()["id"]])
+    fix = {"lat": 30.31, "lng": 78.03, "accuracy_m": 9, "mocked": True}
+    fix["recorded_at"] = datetime.now(UTC).isoformat()
+    r = client.put(f"/sessions/{share['id']}/location", json=fix, headers=riya)
+    assert r.status_code == 204, r.text
+    go_out(client, riya)
+    late_by(db, 41, alerted_minutes_ago=11)
+    run_sweep(client, push)
+
+    [e] = client.get("/admin/escalations", headers=warden).json()
+    seen = e["last_seen"]
+    assert (seen["kind"], seen["lat"], seen["lng"]) == ("live", None, None)
+    assert seen["mock_since"] is not None and seen["mock_since"] == seen["at"]
+    log = client.get(f"/sessions/{share['id']}/access-log", headers=riya).json()
+    assert [x["channel"] for x in log] == ["admin"]
+
+
+def test_a_request_behind_an_open_escalation_is_kept(client, db, push, riya, warden):
+    go_out(client, riya)
+    db.execute(
+        text(
+            "INSERT INTO outing_requests (student_id, day, purpose, phone, emergency_name, "
+            "emergency_relation, emergency_phone, status) "
+            "SELECT id, current_date - 31, 'Old trip', '+919876543210', 'Sunita', 'Mother', "
+            "'+919123456789', 'approved' FROM users WHERE email = 'riya@geu.ac.in'"
+        )
+    )
+    db.execute(text("UPDATE outings SET request_id = (SELECT id FROM outing_requests)"))
+    db.execute(text("UPDATE campus_settings SET scan_retention_days = 30"))
+    late_by(db, 41, alerted_minutes_ago=11)
+    assert run_sweep(client, push).escalated == 1
+    assert run_sweep(client, push).deleted_requests == 0  # the admin still needs its contacts
+
+    [e] = client.get("/admin/escalations", headers=warden).json()
+    client.post(f"/admin/escalations/{e['id']}/resolve", json={"note": "OK"}, headers=warden)
+    assert run_sweep(client, push).deleted_requests == 1

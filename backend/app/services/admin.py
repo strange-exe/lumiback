@@ -1,7 +1,9 @@
 """Admin reads and changes: who is out, gate scans, gates, campus settings, roles.
 
-Admins see the register (who left, when, through which gate, whether verified) and nothing
-more: no live locations, no share data. Changes are written to admin_audit.
+Admins see the register (who left, when, through which gate, whether verified), not live
+locations or share data. The one exception is an open late escalation, which shows the
+student's last known position (app/services/escalations.py; each read is logged on the share).
+Changes are written to admin_audit.
 """
 
 import csv
@@ -232,28 +234,33 @@ async def outings_csv(session: AsyncSession, start: date, end: date) -> str:
     for o, u, out_name, in_name in rows:
         end_at = o.returned_at or now
         late = max(0, int((end_at - o.expected_return_at).total_seconds() // 60))
+        # Spreadsheet formula injection: every text cell someone typed (name, roll number,
+        # destination, gate names) is neutralised.
         writer.writerow(
             [
-                u.name,
-                u.email,
-                u.roll_no or "",
-                # Spreadsheet formula injection: neutralise cells a student typed.
+                _safe(u.name),
+                _safe(u.email),
+                _safe(u.roll_no or ""),
                 _safe(o.destination or ""),
                 _ist(o.left_at),
                 o.out_via.value,
-                out_name or "",
+                _safe(out_name or ""),
                 _ist(o.expected_return_at),
                 _ist(o.returned_at),
                 o.in_via.value if o.in_via else "",
-                in_name or "",
+                _safe(in_name or ""),
                 late,
             ]
         )
     return buffer.getvalue()
 
 
+FORMULA_STARTS = ("=", "+", "-", "@", "|", "%", "\t", "\r")
+
+
 def _safe(cell: str) -> str:
-    return f"'{cell}" if cell[:1] in ("=", "+", "-", "@", "\t", "\r") else cell
+    """A leading quote makes spreadsheets show the cell as text instead of running it."""
+    return f"'{cell}" if cell[:1] in FORMULA_STARTS else cell
 
 
 async def search_users(session: AsyncSession, q: str) -> list[AdminUser]:

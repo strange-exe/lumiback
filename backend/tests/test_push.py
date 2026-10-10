@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -227,6 +228,38 @@ def test_expo_sender_batches_and_reports_unregistered_devices():
         "priority": "high",
         "channelId": "reminders",
     }
+
+
+def test_expo_sender_omits_a_missing_url():
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.extend(json.loads(request.content))
+        return httpx.Response(200, json={"data": [{"status": "ok", "id": "x"}]})
+
+    sender = ExpoPushSender(None, transport=httpx.MockTransport(handler))
+    message = PushMessage(title="Hi", body="There", channel="return-reminders")
+    assert asyncio.run(sender.send([TOKEN], message)) == set()
+    assert sent[0]["data"] == {}  # the app then opens its default screen
+
+
+def test_notify_user_counts_the_phones_it_reached(client, push):
+    from app.push import notify_user
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya, TOKEN)
+    register_token(client, riya, OTHER, muted=["share-status"])
+    me = client.get("/auth/me", headers=riya).json()["id"]
+
+    def send(message: PushMessage) -> int:
+        maker = client.app.state.sessionmaker
+        return client.portal.call(notify_user, maker, push, uuid.UUID(me), message)
+
+    everyday = PushMessage(title="Hi", body="There", url="/today", channel="share-status")
+    assert send(everyday) == 1  # the other phone muted it
+    push.dead.add(TOKEN)
+    assert send(everyday) == 0  # gone: reached nobody
+    assert send(PushMessage(title="Late", body="OK?", urgent=True)) == 1  # muted, but urgent
 
 
 # ---------- sweep: overdue push + scan retention ----------

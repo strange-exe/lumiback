@@ -337,7 +337,7 @@ def request_decision_notice(
             heading="Today's outing is approved",
             paragraphs=(
                 "The hostel office approved your outing request for today.",
-                "Tap out at the gate when you leave, or check out on the website. Your hostel's "
+                "Tap out at the gate when you leave, or log your trip in Lumiback. Your hostel's "
                 "return time still applies.",
             ),
             action=("Open Lumiback", f"{web_url}/home"),

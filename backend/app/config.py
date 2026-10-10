@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # (Render: 1). Only entries they appended are trusted; anything further left is client-made.
     proxy_hops: int = Field(default=0, ge=0, le=3)
 
+    @field_validator("email_reply_to", mode="before")
+    @classmethod
+    def _blank_reply_to(cls, v: object) -> object:
+        # EMAIL_REPLY_TO= (left empty in a dashboard) means unset, not a broken address.
+        return None if isinstance(v, str) and not v.strip() else v
+
     @field_validator("allowed_email_domains", mode="before")
     @classmethod
     def _parse_domains(cls, v: object) -> list[str]:

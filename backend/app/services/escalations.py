@@ -1,21 +1,27 @@
 """Late follow-up: an "are you OK?" alert, then an escalation to admins if nobody answers.
 
-- 30 min past the return time, the student gets an alert (sent even if they muted reminders).
-- They answer "on my way" or "I'm safe" in the app (or simply tap in).
+- 30 min past the return time, the student gets an alert (sent even if they muted reminders,
+  and emailed if it reached no phone).
+- They answer "on my way" or "I'm safe" in the app (or simply tap in). Answers are accepted
+  only once they're past their return time.
 - No answer 10 minutes after the alert: an escalation is opened, and admins get a push and an
-  email pointing to Admin -> Escalations. The admin calls the student, their emergency contact
+  email pointing to Escalations on the website. The admin calls the student, their emergency contact
   or the hostel's warden from there.
 
 Location: nothing new is collected. The escalation shows the last known position only if it
 already exists: the student's active live share (that read is logged on the share's access
-log, which the student sees), otherwise their last accepted gate scan (gate and time).
+log, which the student sees), otherwise their last accepted gate scan on this outing (gate and
+time).
+
+A student who returns after their escalation opened stays listed (with `returned_at`, so the
+page can say when they got back) until an admin resolves it.
 """
 
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import exists, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -39,10 +45,16 @@ from app.schemas import EscalationOut, LastSeenOut
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
+# One access-log entry per admin and share in this time: reopening the page isn't a new look.
+ADMIN_VIEW_GAP = timedelta(minutes=10)
 
 
 class NotOut(Exception):
     pass
+
+
+class NotLate(Exception):
+    """A late reply before the return time has passed."""
 
 
 class NotFound(Exception):
@@ -88,44 +100,74 @@ async def admin_ids(session: AsyncSession) -> list[tuple[uuid.UUID, str]]:
 
 
 async def reply(session: AsyncSession, student_id: uuid.UUID, answer: LateReply) -> Outing:
+    """Only once past the return time: an early "on my way" must not pre-empt the alert."""
+    now = datetime.now(UTC)
     outing = (
         await session.execute(
             update(Outing)
-            .where(Outing.student_id == student_id, Outing.returned_at.is_(None))
-            .values(late_reply=answer, late_replied_at=datetime.now(UTC))
+            .where(
+                Outing.student_id == student_id,
+                Outing.returned_at.is_(None),
+                Outing.expected_return_at < now,
+            )
+            .values(late_reply=answer, late_replied_at=now)
             .returning(Outing)
         )
     ).scalar_one_or_none()
     if outing is None:
-        raise NotOut
+        out = await session.scalar(
+            select(Outing.id).where(Outing.student_id == student_id, Outing.returned_at.is_(None))
+        )
+        raise NotOut if out is None else NotLate
     await session.commit()
     return outing
 
 
+async def _log_admin_view(
+    session: AsyncSession, share_id: uuid.UUID, admin: User, now: datetime
+) -> None:
+    """Logged on the share (the student sees it), at most once per ADMIN_VIEW_GAP per admin."""
+    recent = await session.scalar(
+        select(
+            exists().where(
+                AccessLog.session_id == share_id,
+                AccessLog.admin_id == admin.id,
+                AccessLog.channel == AccessChannel.ADMIN,
+                AccessLog.viewed_at > now - ADMIN_VIEW_GAP,
+            )
+        )
+    )
+    if not recent:
+        session.add(AccessLog(session_id=share_id, admin_id=admin.id, channel=AccessChannel.ADMIN))
+
+
 async def _last_seen(
-    session: AsyncSession, student_id: uuid.UUID, admin: User | None
+    session: AsyncSession, outing: Outing, admin: User | None
 ) -> LastSeenOut | None:
-    """The student's live share position (logged on that share), else their last gate scan."""
+    """The student's live share position (logged on that share), else their last gate scan on
+    this outing. A share whose only fix is a mock location shows no position, but still shows
+    that the share exists (and since when the location is mocked)."""
     now = datetime.now(UTC)
     live = (
         await session.execute(
             select(ShareSession.id, Location)
-            .join(Location, and_(Location.session_id == ShareSession.id, ~Location.mocked))
+            .join(Location, Location.session_id == ShareSession.id)
             .where(
-                ShareSession.sharer_id == student_id,
+                ShareSession.sharer_id == outing.student_id,
                 ShareSession.status == SessionStatus.ACTIVE,
                 ShareSession.ends_at > now,
             )
-            .order_by(Location.recorded_at.desc())
+            # Real fixes first (latest first); a mock fix only when no share has a real one.
+            .order_by(Location.mocked, Location.recorded_at.desc())
             .limit(1)
         )
     ).first()
     if live is not None:
         share_id, loc = live
         if admin is not None:
-            session.add(
-                AccessLog(session_id=share_id, admin_id=admin.id, channel=AccessChannel.ADMIN)
-            )
+            await _log_admin_view(session, share_id, admin, now)
+        if loc.mocked:
+            return LastSeenOut(kind="live", at=loc.recorded_at, mock_since=loc.recorded_at)
         mocked = await session.scalar(
             select(Location.recorded_at).where(Location.session_id == share_id, Location.mocked)
         )
@@ -141,7 +183,12 @@ async def _last_seen(
         await session.execute(
             select(GateScan.scanned_at, Gate.name)
             .join(Gate, Gate.id == GateScan.gate_id)
-            .where(GateScan.user_id == student_id, GateScan.result == ScanResult.ACCEPTED)
+            .where(
+                GateScan.user_id == outing.student_id,
+                GateScan.result == ScanResult.ACCEPTED,
+                # This outing's scans only: an older trip's gate says nothing about tonight.
+                or_(GateScan.outing_id == outing.id, GateScan.scanned_at >= outing.left_at),
+            )
             .order_by(GateScan.scanned_at.desc())
             .limit(1)
         )
@@ -191,7 +238,7 @@ async def _out(session: AsyncSession, row: _Row, admin: User | None) -> Escalati
         late_replied_at=o.late_replied_at,
         # Only while it matters: an open escalation for a student who's still out.
         last_seen=(
-            await _last_seen(session, s.id, admin)
+            await _last_seen(session, o, admin)
             if e.resolved_at is None and o.returned_at is None
             else None
         ),

@@ -193,3 +193,18 @@ def test_malformed_domains_refused(env, domains):
     with pytest.raises(ConfigError) as exc:
         load()
     assert "ALLOWED_EMAIL_DOMAINS" in str(exc.value)
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_reply_to_means_unset(env, blank):
+    env.setenv("EMAIL_REPLY_TO", blank)  # left empty in the host's dashboard
+    assert load().email_reply_to is None
+
+
+def test_reply_to_is_still_checked(env):
+    env.setenv("EMAIL_REPLY_TO", "support@lumiback.test")
+    assert load().email_reply_to == "support@lumiback.test"
+    env.setenv("EMAIL_REPLY_TO", "not an address")
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "EMAIL_REPLY_TO" in str(exc.value)

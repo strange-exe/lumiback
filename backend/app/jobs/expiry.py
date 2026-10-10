@@ -23,6 +23,7 @@ from app.models import (
     Escalation,
     GateScan,
     Location,
+    Outing,
     OutingRequest,
     RefreshToken,
     SessionStatus,
@@ -49,6 +50,7 @@ TAB_IDLE = timedelta(minutes=5)
 # the share ends. Longer than tabs: Android may batch updates while the phone sleeps.
 APP_IDLE = timedelta(minutes=15)
 DEFAULT_SCAN_RETENTION_DAYS = 180
+MINUTE = timedelta(minutes=1)
 
 
 @dataclass(frozen=True)
@@ -137,8 +139,17 @@ async def sweep(
         cutoff = now - timedelta(days=retention or DEFAULT_SCAN_RETENTION_DAYS)
         scans = await session.execute(delete(GateScan).where(GateScan.scanned_at < cutoff))
         views = await session.execute(delete(AccessLog).where(AccessLog.viewed_at < cutoff))
+        # A request behind an open escalation keeps the contacts the student gave for that
+        # outing, which the admin following up needs.
+        escalated = (
+            select(Outing.id)
+            .join(Escalation, Escalation.outing_id == Outing.id)
+            .where(Outing.request_id == OutingRequest.id, Escalation.resolved_at.is_(None))
+        )
         old_requests = await session.execute(
-            delete(OutingRequest).where(OutingRequest.day < cutoff.astimezone(IST).date())
+            delete(OutingRequest).where(
+                OutingRequest.day < cutoff.astimezone(IST).date(), ~escalated.exists()
+            )
         )
         handled = await session.execute(
             delete(Escalation).where(
@@ -150,6 +161,10 @@ async def sweep(
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
     for student_id, due in late:
+        # The real lateness, in case the sweep ran late (e.g. right after a restart).
+        minutes = max(
+            int(escalations.ALERT_AFTER.total_seconds() // 60), int((now - due) // MINUTE)
+        )
         # Students without the app (website only) are emailed instead.
         await notify_or_email(
             sessionmaker,
@@ -157,7 +172,7 @@ async def sweep(
             mailer,
             student_id,
             PushMessage(
-                title="You're 30 min late. Are you OK?",
+                title=f"You're {minutes} min late. Are you OK?",
                 body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
                 "is told.",
                 url="/today",
@@ -176,8 +191,9 @@ async def sweep(
                 admin_id,
                 PushMessage(
                     title="A late student isn't answering",
-                    body="Open Escalations in the admin area to follow up.",
-                    url="/today",
+                    # Escalations live on the website; the app opens its default screen.
+                    body="Open Escalations on the Lumiback website to follow up.",
+                    url=None,
                     channel="return-reminders",
                     urgent=True,
                 ),

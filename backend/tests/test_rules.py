@@ -1,12 +1,22 @@
-"""The outing rules on their own: every day type, the window edges, the 8:30 PM option and
-weekend maximums. No database: rules are plain values here."""
+"""The outing rules on their own: every day type, the window edges, form-day maximums and the
+no-form evening. No database: rules are plain values here."""
 
+from dataclasses import replace
 from datetime import date, datetime, time
 
 import pytest
 
 from app.models import DayRule, DayType
-from app.services.rules import IST, Refused, Window, clock, day_type_of, return_time, window_of
+from app.services.rules import (
+    IST,
+    Refused,
+    Window,
+    clock,
+    day_type_of,
+    duration,
+    return_time,
+    window_of,
+)
 
 THU = date(2026, 10, 8)
 SAT = date(2026, 10, 10)
@@ -116,3 +126,24 @@ def test_clock_is_on_the_campus_clock():
     assert clock(ist(THU, "18:00")) == "6:00 PM"
     assert clock(ist(THU, "00:05")) == "12:05 AM"
     assert clock(datetime.fromisoformat("2026-10-08T12:30:00+00:00")) == "6:00 PM"
+
+
+def test_shorter_on_request_without_a_day_maximum():
+    """A form day with no maximum (the window is the limit) still honours a shorter request."""
+    w = replace(win(weekend(DayType.HOLIDAY), THU, holiday="Diwali"), max_minutes=None)
+    assert return_time(w, ist(THU, "11:00")) == ist(THU, "20:00")
+    assert return_time(w, ist(THU, "11:00"), requested_minutes=90) == ist(THU, "12:30")
+    assert return_time(w, ist(THU, "19:00"), requested_minutes=90) == ist(THU, "20:00")
+
+
+def test_the_no_form_evening_ignores_a_requested_duration():
+    w = win(boys_sunday(), SUN)
+    assert return_time(w, ist(SUN, "18:00"), requested_minutes=60) == ist(SUN, "20:00")
+
+
+@pytest.mark.parametrize(
+    ("minutes", "text"),
+    [(30, "30 min"), (60, "1 h"), (90, "1 h 30 min"), (180, "3 h"), (725, "12 h 5 min")],
+)
+def test_durations_read_naturally(minutes, text):
+    assert duration(minutes) == text

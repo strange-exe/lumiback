@@ -13,7 +13,7 @@ the coordinates), so admins can see rejected attempts too.
 import math
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,6 @@ from app.schemas import GateScanIn, OutingCreateIn
 from app.security.gate_codes import code_is_valid, hash_kiosk_token, parse_qr
 from app.services import outings, rules
 
-IST = timedelta(hours=5, minutes=30)
 EARTH_RADIUS_M = 6_371_000
 MAX_ACCURACY_M = 150  # worse than this, GPS cannot say which side of a gate you're on
 ACCURACY_ALLOWANCE_CAP_M = 50  # count up to this much GPS error in the student's favour
@@ -81,13 +80,6 @@ async def campus_settings(session: AsyncSession) -> CampusSettings:
         await session.flush()
         await session.refresh(row)
     return row
-
-
-def curfew_today(curfew: time, now: datetime) -> datetime:
-    """Today's curfew (IST) as an aware UTC instant."""
-    ist_now = now.astimezone(UTC) + IST
-    local = datetime.combine(ist_now.date(), curfew)
-    return (local - IST).replace(tzinfo=UTC)
 
 
 async def _record(

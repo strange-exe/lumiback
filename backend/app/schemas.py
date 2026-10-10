@@ -272,10 +272,6 @@ class OutingCreateIn(Input):
     expected_return_at: AwareDatetime | None = None
 
 
-class OutingExtendIn(Input):  # the endpoint now always refuses (no extensions)
-    expected_return_at: AwareDatetime
-
-
 class OutingOut(BaseModel):
     """Times are returned in IST (+05:30). Status is derived, never stored."""
 
@@ -452,15 +448,16 @@ class TodayRulesOut(BaseModel):
 
 class CampusOut(BaseModel):
     """What a student may know about the outing rules, on the campus clock.
-    `curfew`/`curfew_at` (today's return-by) stay for app versions that predate `today`."""
+    `curfew`/`curfew_at` (today's return-by) stay for app versions that predate `today`.
+    All three are None when the rules aren't set up (no return time to show)."""
 
-    curfew: str  # "20:00", IST
-    curfew_at: datetime
-    today: TodayRulesOut | None = None  # None: rules aren't set up
+    curfew: str | None = None  # "20:00", IST
+    curfew_at: datetime | None = None
+    today: TodayRulesOut | None = None
 
     @field_serializer("curfew_at")
-    def _in_ist(self, value: datetime) -> str:
-        return value.astimezone(IST).isoformat()
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
 
 
 class KioskOut(BaseModel):
@@ -590,7 +587,8 @@ class PushTokenIn(Input):
         str, StringConstraints(pattern=r"^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,200}\]$")
     ]
     platform: Literal["android", "ios"]
-    # Channels switched off in the app's notification settings; pushes on them are skipped.
+    # Channels switched off in the app's notification settings; pushes on them are skipped
+    # (urgent safety alerts excepted). "share-status" also carries outing-request decisions.
     muted: list[Literal["follow-requests", "return-reminders", "share-status"]] = Field(
         default_factory=list, max_length=3
     )

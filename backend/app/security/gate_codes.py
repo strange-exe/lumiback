@@ -22,7 +22,7 @@ from datetime import datetime
 from app.security.codes import ALPHABET
 
 WINDOW_SECONDS = 20
-# The current window and the two before it: time to scan, then choose a return time.
+# The current window and the two before it: time to scan and send it on a slow network.
 ACCEPT_WINDOWS = 3
 CODE_LENGTH = 10
 

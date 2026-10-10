@@ -343,3 +343,36 @@ def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
     ]
     assert 19 <= late[1]["late_minutes"] <= 21 and late[1]["returned_at"] is not None
     assert client.get("/admin/late-today", headers=still_out).status_code == 403
+
+
+def test_csv_export_neutralises_every_typed_cell(client, db, admin, riya):
+    """Names and roll numbers are typed by students too, and gate names by admins."""
+    db.execute(
+        text("UPDATE users SET name = :n, roll_no = :r WHERE email = 'riya@example.com'"),
+        {"n": '=HYPERLINK("http://x","Riya")', "r": "+2510370"},
+    )
+    db.commit()
+    client.post(
+        "/outings", json={"expected_return_at": soon(), "destination": "|cmd"}, headers=riya[1]
+    )
+    today = (datetime.now(UTC) + timedelta(hours=5, minutes=30)).date()
+    rows = list(
+        csv.reader(
+            io.StringIO(
+                client.get(f"/admin/outings.csv?from={today}&to={today}", headers=admin).text
+            )
+        )
+    )
+    name, email, roll_no, destination, *_rest = rows[1]
+    assert name == """'=HYPERLINK("http://x","Riya")"""
+    assert (email, roll_no, destination) == ("riya@example.com", "'+2510370", "'|cmd")
+
+
+@pytest.mark.parametrize(
+    ("cell", "safe"),
+    [("%Riya", "'%Riya"), ("@SUM(A1)", "'@SUM(A1)"), ("-1", "'-1"), ("Riya", "Riya"), ("", "")],
+)
+def test_formula_guard(cell, safe):
+    from app.services.admin import _safe
+
+    assert _safe(cell) == safe

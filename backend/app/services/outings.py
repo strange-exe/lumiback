@@ -13,7 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Outing, User, Via
+from app.models import Outing, RequestStatus, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
 from app.services import requests, rules
 
@@ -54,6 +54,27 @@ def to_out(outing: Outing, now: datetime) -> OutingOut:
     )
 
 
+async def _no_request(session: AsyncSession, student_id: uuid.UUID, window: rules.Window) -> str:
+    """Why a form day refuses the tap-out, by the state of today's request."""
+    later = (
+        f" From {rules.clock(window.no_form_from)} you can go out without one."
+        if window.no_form_from
+        else ""
+    )
+    latest = await requests.latest_today(session, student_id, window.day)
+    status = latest.status if latest else None
+    if status is RequestStatus.PENDING:
+        return "Your request for today is waiting for the hostel office's approval."
+    if status is RequestStatus.DECLINED:
+        return "Your request for today was declined. You can send a new one."
+    if status is RequestStatus.APPROVED:  # not usable: already used for an outing
+        return f"You've used today's approved outing. Form days allow one outing a day.{later}"
+    return (
+        f"{window.label} outings need an approved request. Ask for today's outing in Lumiback "
+        f"(Today in the app, Home on the website), then tap out once it's approved.{later}"
+    )
+
+
 async def check_out(
     session: AsyncSession,
     student: User,
@@ -72,15 +93,7 @@ async def check_out(
         # Used even in the no-form evening, so an approved request is marked as used.
         request = await requests.usable_today(session, student.id, window.day)
         if request is None and window.form_needed_at(now):
-            later = (
-                f" From {rules.clock(window.no_form_from)} you can go out without one."
-                if window.no_form_from
-                else ""
-            )
-            raise rules.Refused(
-                f"{window.label} outings need an approved request. Ask for today's outing "
-                f"on the Today screen, then scan once it's approved.{later}"
-            )
+            raise rules.Refused(await _no_request(session, student.id, window))
     expected = rules.return_time(
         window,
         now,

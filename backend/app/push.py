@@ -31,7 +31,7 @@ BATCH = 100  # Expo's per-request limit
 class PushMessage:
     title: str
     body: str
-    url: str  # app route to open on tap, e.g. "/live"
+    url: str | None = None  # app route to open on tap, e.g. "/live"; None: the app's default
     channel: str = "follow-requests"  # Android channel created by the app
     # Safety messages (late alerts, escalations) reach every device, even where the student
     # muted that channel's everyday reminders.
@@ -81,7 +81,7 @@ class ExpoPushSender:
                         "to": token,
                         "title": message.title,
                         "body": message.body,
-                        "data": {"url": message.url},
+                        "data": {"url": message.url} if message.url else {},
                         "sound": "default",
                         "priority": "high",
                         "channelId": message.channel,
@@ -109,8 +109,10 @@ async def notify_user(
     sender: PushSender,
     user_id: uuid.UUID,
     message: PushMessage,
-) -> None:
-    """Send to every device the user is signed in on. Safe to run as a background task."""
+) -> int:
+    """Send to every device the user is signed in on. Safe to run as a background task.
+    Returns how many devices it went to that Expo didn't report as gone (0 if none were
+    eligible, all were dead, or the send failed)."""
     query = select(PushToken.token).where(PushToken.user_id == user_id)
     if not message.urgent:  # muted on that phone (urgent safety messages still go through)
         query = query.where(~PushToken.muted.contains([message.channel]))
@@ -118,13 +120,15 @@ async def notify_user(
         async with sessionmaker() as session:
             tokens = list(await session.scalars(query))
             if not tokens:
-                return
+                return 0
             dead = await sender.send(tokens, message)
             if dead:
                 await session.execute(delete(PushToken).where(PushToken.token.in_(dead)))
                 await session.commit()
+            return len(set(tokens) - dead)
     except Exception:
         logger.exception("push to user %s failed", user_id)
+        return 0
 
 
 async def notify_or_email(
@@ -137,7 +141,9 @@ async def notify_or_email(
 ) -> None:
     """Push to the user's phones; a student with no app on any phone (website only, e.g. an
     iPhone) gets `email(user)` instead. Someone who has the app but muted this kind of
-    notification is not emailed: muting is their choice. Safe to run as a background task."""
+    notification is not emailed: muting is their choice. An urgent message that reached no
+    phone (every token gone, or the push service failed) is emailed too: a safety alert must
+    land somewhere. Safe to run as a background task."""
     try:
         async with sessionmaker() as session:
             user = await session.get(User, user_id)
@@ -148,9 +154,11 @@ async def notify_or_email(
     if user is None:
         return
     if has_app:
-        if sender is not None:
-            await notify_user(sessionmaker, sender, user_id, message)
-        return
+        delivered = (
+            await notify_user(sessionmaker, sender, user_id, message) if sender is not None else 0
+        )
+        if delivered or not message.urgent:
+            return
     if mailer is None:
         return
     try:

@@ -309,3 +309,223 @@ def test_holidays_turn_a_weekday_into_a_holiday(client, db, riya, warden):
 def test_admin_rules_pages_are_admin_only(client, riya):
     for path in ("/admin/rule-sets", "/admin/hostels", "/admin/holidays"):
         assert client.get(path, headers=riya).status_code == 403
+
+
+# ---------- what the student is told, and when admins can decide ----------
+
+
+@pytest.fixture
+def push(client):
+    from app.push import MemoryPushSender
+
+    sender = MemoryPushSender()
+    client.app.state.push = sender
+    return sender
+
+
+def ist_today():
+    return (datetime.now(UTC) + timedelta(hours=5, minutes=30)).date()
+
+
+def insert_request(db, day, status="pending") -> str:
+    return str(
+        db.execute(
+            text(
+                "INSERT INTO outing_requests (student_id, day, purpose, phone, emergency_name, "
+                "emergency_relation, emergency_phone, status) "
+                "SELECT id, :d, 'Trip', '+919876543210', 'Sunita', 'Mother', '+919123456789', "
+                ":s FROM users WHERE email = 'riya@geu.ac.in' "
+                "RETURNING id"
+            ),
+            {"d": day, "s": status},
+        ).scalar_one()
+    )
+
+
+def test_a_refused_tap_out_explains_todays_request(client, riya, warden, form_day):
+    def refusal() -> str:
+        r = client.post("/outings", json={}, headers=riya)
+        assert r.status_code == 403, r.text
+        return r.json()["detail"]
+
+    assert refusal().endswith(  # starts with the day's label ("Sunday", a holiday's name)
+        " outings need an approved request. Ask for today's outing in Lumiback "
+        "(Today in the app, Home on the website), then tap out once it's approved."
+    )
+    request = send(client, riya).json()
+    assert refusal() == "Your request for today is waiting for the hostel office's approval."
+    decide(client, warden, request["id"], approve=False)
+    assert refusal() == "Your request for today was declined. You can send a new one."
+
+    request = send(client, riya).json()
+    decide(client, warden, request["id"])
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    client.post("/outings/current/return", headers=riya)
+    assert refusal() == "You've used today's approved outing. Form days allow one outing a day."
+    again = send(client, riya)
+    assert again.status_code == 409
+    assert again.json()["detail"] == "You've already used today's approved outing."
+
+
+def test_a_refusal_mentions_the_no_form_evening(client, db, riya, form_day):
+    db.execute(text("UPDATE day_rules SET no_form_from = CAST('23:58' AS time)"))
+    db.commit()
+    r = client.post("/outings", json={}, headers=riya)
+    assert r.status_code == 403
+    assert r.json()["detail"].endswith(" From 11:58 PM you can go out without one.")
+
+
+def test_a_pending_request_still_says_ask_to_cancel(client, riya, form_day):
+    send(client, riya)
+    r = send(client, riya)
+    assert r.status_code == 409
+    assert r.json()["detail"].startswith("You already asked for today's outing.")
+
+
+def test_limits_in_hours_and_minutes(client, db, riya):
+    set_rules(db, "open", max_minutes=90, needs_form=True)
+    r = send(client, riya, requested_minutes=120)
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Today you can go out for at most 1 h 30 min."
+
+
+def test_requests_are_decided_on_their_own_day(client, db, riya, warden, form_day):
+    stale = insert_request(db, ist_today() - timedelta(days=1))
+    db.commit()
+    for approve in (True, False):
+        r = decide(client, warden, stale, approve=approve)
+        assert r.status_code == 409
+        assert r.json()["detail"] == "This request was for another day."
+
+
+def test_no_approval_after_todays_hours(client, db, riya, warden, form_day):
+    request = send(client, riya).json()
+    set_rules(db, "closed", max_minutes=180, needs_form=True)
+    r = decide(client, warden, request["id"])
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Today's outing hours are over, so this can't be approved."
+    declined = decide(client, warden, request["id"], approve=False)  # declining still works
+    assert declined.status_code == 200 and declined.json()["status"] == "declined"
+
+
+def test_the_approval_push_matches_the_email(client, riya, warden, push, form_day):
+    from tests.test_push import register_token
+
+    register_token(client, riya)
+    request = send(client, riya).json()
+    assert decide(client, warden, request["id"]).status_code == 200
+    _, message = push.outbox[-1]
+    assert message.title == "Outing approved"
+    assert message.body == "Tap out at the gate when you leave, or log your trip in Lumiback."
+    assert message.channel == "share-status"
+
+
+def test_the_limit_shown_is_for_the_requests_own_day(client, db, riya, warden, form_day):
+    other = ist_today() - timedelta(days=1)
+    holiday = {"day": other.isoformat(), "name": "Founders' Day"}
+    assert client.put(f"/admin/holidays/{other}", json=holiday, headers=warden).status_code == 200
+    db.execute(text("UPDATE day_rules SET max_minutes = 240 WHERE day_type = 'holiday'"))
+    insert_request(db, other)
+    insert_request(db, other - timedelta(days=7))  # same weekday a week before: not a holiday
+    db.commit()
+    send(client, riya)
+
+    assert [q["max_minutes"] for q in client.get("/admin/requests", headers=warden).json()] == [180]
+    [then] = client.get(f"/admin/requests?day={other}", headers=warden).json()
+    assert then["max_minutes"] == 240
+    week = other - timedelta(days=7)
+    [before] = client.get(f"/admin/requests?day={week}", headers=warden).json()
+    assert before["max_minutes"] == 180
+
+
+# ---------- hostel changes ----------
+
+
+def hostel_for(client, warden) -> str:
+    default = client.get("/admin/rule-sets", headers=warden).json()[0]
+    r = client.post(
+        "/admin/hostels", json={"name": "Hostel 3", "rule_set_id": default["id"]}, headers=warden
+    )
+    assert r.status_code == 201, r.text
+    return r.json()[0]["id"]
+
+
+HOSTEL_LOCKED = (
+    "You can't change your hostel while you're out or have an outing request for today. "
+    "Ask the hostel office."
+)
+
+
+def test_no_hostel_change_while_out(client, db, riya, warden):
+    hostel = hostel_for(client, warden)
+    set_rules(db, "open")
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    r = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)  # first pick, too
+    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
+    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
+
+    client.post("/outings/current/return", headers=riya)
+    r = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)
+    assert r.status_code == 200 and r.json()["hostel"] == "Hostel 3"
+
+
+def test_no_hostel_change_with_a_request_for_today(client, riya, warden, form_day):
+    hostel = hostel_for(client, warden)
+    assert client.patch("/profile", json={"hostel_id": hostel}, headers=riya).status_code == 200
+    request = send(client, riya).json()
+    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)
+    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
+    # Resending the same hostel isn't a change.
+    same = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)
+    assert same.status_code == 200
+    assert client.delete(f"/outings/request/{request['id']}", headers=riya).status_code == 204
+    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
+
+
+# ---------- rule-set save errors ----------
+
+
+def rule_set(name: str) -> dict:
+    return {
+        "name": name,
+        "days": [
+            {"day_type": d, "opens_at": "10:00", "return_by": "20:00"}
+            for d in ("weekday", "saturday", "sunday", "holiday")
+        ],
+    }
+
+
+def test_a_taken_rule_set_name_is_a_conflict(client, warden):
+    assert (
+        client.post("/admin/rule-sets", json=rule_set("Girls"), headers=warden).status_code == 201
+    )
+    r = client.post("/admin/rule-sets", json=rule_set("Girls"), headers=warden)
+    assert r.status_code == 409 and r.json()["detail"] == "That name is already used"
+    other = client.post("/admin/rule-sets", json=rule_set("Boys"), headers=warden).json()
+    boys = next(s["id"] for s in other if s["name"] == "Boys")
+    r = client.put(f"/admin/rule-sets/{boys}", json=rule_set("Girls"), headers=warden)
+    assert r.status_code == 409 and r.json()["detail"] == "That name is already used"
+
+
+def test_other_database_refusals_are_not_called_a_taken_name(client, warden, monkeypatch):
+    """A day rule the database refuses (the schema normally stops it first) is a 422, not a
+    500 and not "name taken"."""
+    from app.api import admin_rules
+
+    real = admin_rules._apply_days
+
+    def too_short(rule_set_id, days):
+        rules = real(rule_set_id, days)
+        rules[0].max_minutes = 5  # below the day_rules max_range check
+        return rules
+
+    monkeypatch.setattr(admin_rules, "_apply_days", too_short)
+    expected = "These rules aren't valid. Check the times."
+    r = client.post("/admin/rule-sets", json=rule_set("Odd"), headers=warden)
+    assert r.status_code == 422 and r.json()["detail"] == expected
+    default = client.get("/admin/rule-sets", headers=warden).json()[0]
+    r = client.put(f"/admin/rule-sets/{default['id']}", json=rule_set("Odd"), headers=warden)
+    assert r.status_code == 422 and r.json()["detail"] == expected
+    assert [s["name"] for s in client.get("/admin/rule-sets", headers=warden).json()] == [
+        default["name"]
+    ]

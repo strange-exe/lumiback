@@ -6,7 +6,8 @@ campus default. A rule set has one DayRule per day type: weekday, Saturday, Sund
 
 - Tap-out is allowed from `opens_at` until `return_by`.
 - Back by `return_by`; later than that is recorded as late (and highlighted to admins).
-- `max_minutes` caps the outing (weekends), never past `return_by`.
+- `max_minutes` caps the outing (weekends), never past `return_by`; a student may ask for less
+  on their request (`requested_minutes`).
 - `needs_form`: an approved outing request for the day is required (checked by the caller),
   except from `no_form_from` on: that part of the day works like a weekday evening (no form,
   no maximum).
@@ -104,6 +105,14 @@ def clock(moment: datetime) -> str:
     return f"{t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'}"
 
 
+def duration(minutes: int) -> str:
+    """'3 h', '1 h 30 min', '30 min'."""
+    hours, rest = divmod(minutes, 60)
+    if not hours:
+        return f"{rest} min"
+    return f"{hours} h {rest} min" if rest else f"{hours} h"
+
+
 def return_time(w: Window, now: datetime, *, requested_minutes: int | None = None) -> datetime:
     """When the student must be back if they tap out at `now`; raises Refused if they can't."""
     if now < w.opens:
@@ -111,9 +120,11 @@ def return_time(w: Window, now: datetime, *, requested_minutes: int | None = Non
     if now >= w.return_by:
         raise Refused(f"{w.label} outings end at {clock(w.return_by)}. Try again tomorrow.")
     latest = w.return_by
-    if w.max_minutes is not None and not w.free_at(now):
-        minutes = min(w.max_minutes, requested_minutes or w.max_minutes)
-        latest = min(latest, now + timedelta(minutes=minutes))
+    # The day's maximum and a shorter time the student asked for, whichever is shorter (the
+    # no-form part of a form day has neither).
+    caps = [m for m in (w.max_minutes, requested_minutes) if m is not None]
+    if caps and not w.free_at(now):
+        latest = min(latest, now + timedelta(minutes=min(caps)))
     if latest < now + MIN_AHEAD:
         raise Refused(f"{w.label} outings end at {clock(w.return_by)}. Try again tomorrow.")
     return latest
@@ -131,17 +142,26 @@ async def rule_set_for(session: AsyncSession, user: User) -> RuleSet | None:
     return await session.get(RuleSet, settings.default_rule_set_id)
 
 
-async def today_window(session: AsyncSession, user: User, now: datetime) -> Window:
-    day = ist_date(now)
-    rule_set = await rule_set_for(session, user)
-    if rule_set is None:
-        raise Refused("Outing rules aren't set up yet. Ask the hostel office.")
+async def window_in(session: AsyncSession, rule_set: RuleSet, day: date) -> Window:
+    """A rule set's window on `day` (holidays included)."""
     holiday = await session.get(Holiday, day)
     kind = day_type_of(day, holiday is not None)
     rule = await session.get(DayRule, (rule_set.id, kind))
     if rule is None:
         raise Refused("Outing rules aren't set up for today. Ask the hostel office.")
     return window_of(rule, rule_set.name, day, holiday.name if holiday else None)
+
+
+async def window_for(session: AsyncSession, user: User, day: date) -> Window:
+    """The student's window on `day` (their hostel's rules, or the campus default)."""
+    rule_set = await rule_set_for(session, user)
+    if rule_set is None:
+        raise Refused("Outing rules aren't set up yet. Ask the hostel office.")
+    return await window_in(session, rule_set, day)
+
+
+async def today_window(session: AsyncSession, user: User, now: datetime) -> Window:
+    return await window_for(session, user, ist_date(now))
 
 
 async def rule_sets(session: AsyncSession) -> list[tuple[RuleSet, list[DayRule]]]:

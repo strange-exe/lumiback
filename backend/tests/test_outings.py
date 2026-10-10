@@ -186,6 +186,14 @@ def test_return_times_cannot_be_extended(client, riya, db):
     assert after["expected_return_at"] == before and after["status"] == "overdue"
 
 
+@pytest.mark.parametrize("body", [None, {}, {"expected_return_at": "tomorrow"}, [1, 2]])
+def test_extending_is_refused_whatever_an_old_app_sends(client, riya, body):
+    """Never a schema error: the answer is always that return times are fixed."""
+    r = client.request("PATCH", "/outings/current", json=body, headers=riya)
+    assert r.status_code == 403
+    assert "can't be extended" in r.json()["detail"]
+
+
 # ---------- history & summary ----------
 
 

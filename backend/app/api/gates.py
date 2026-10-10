@@ -26,9 +26,8 @@ async def campus(me: CurrentUser, session: SessionDep) -> CampusOut:
     now = datetime.now(UTC)
     try:
         w = await rules.today_window(session, me, now)
-    except rules.Refused:  # rules not set up: fall back to the old single curfew
-        curfew = (await svc.campus_settings(session)).curfew
-        return CampusOut(curfew=curfew.strftime("%H:%M"), curfew_at=svc.curfew_today(curfew, now))
+    except rules.Refused:  # rules not set up: nobody can go out, so there's no return time
+        return CampusOut()
     hostel = await session.get(Hostel, me.hostel_id) if me.hostel_id else None
     return CampusOut(
         curfew=w.return_by.astimezone(rules.IST).strftime("%H:%M"),

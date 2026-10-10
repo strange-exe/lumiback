@@ -19,7 +19,12 @@ from app.services import rules
 
 
 class AlreadyRequested(Exception):
-    """A pending or approved request for today already exists."""
+    """A pending or approved request for today already exists; `used`: it was approved and
+    the student already went out on it."""
+
+    def __init__(self, used: bool = False) -> None:
+        super().__init__()
+        self.used = used
 
 
 class NotFound(Exception):
@@ -30,10 +35,20 @@ class NotPending(Exception):
     """Only pending requests can be decided; only unused ones cancelled."""
 
 
+class OtherDay(Exception):
+    """Requests are decided on their own day only."""
+
+
+class DayOver(Exception):
+    """Today's outing hours have ended for this student: approving would change nothing."""
+
+
 async def usable_today(
     session: AsyncSession, student_id: uuid.UUID, day: date
 ) -> OutingRequest | None:
-    """Today's approved request that hasn't been used for an outing yet."""
+    """Today's approved request that hasn't been used for an outing yet. Locked until the caller
+    commits, so a cancel at the same moment waits and then finds it used (and a request
+    cancelled first is no longer approved here)."""
     return (
         await session.execute(
             select(OutingRequest)
@@ -44,6 +59,7 @@ async def usable_today(
                 ~select(Outing.id).where(Outing.request_id == OutingRequest.id).exists(),
             )
             .limit(1)
+            .with_for_update(of=OutingRequest)
         )
     ).scalar_one_or_none()
 
@@ -71,6 +87,7 @@ async def is_used(session: AsyncSession, request_id: uuid.UUID) -> bool:
 
 async def create(session: AsyncSession, student: User, body: OutingRequestIn) -> OutingRequest:
     now = datetime.now(UTC)
+    student_id = student.id  # still readable after a rollback expires `student`
     window = await rules.today_window(session, student, now)
     if not window.needs_form:
         raise rules.Refused(f"{window.label} outings don't need a request. Just scan at the gate.")
@@ -87,9 +104,11 @@ async def create(session: AsyncSession, student: User, body: OutingRequestIn) ->
         and window.max_minutes
         and body.requested_minutes > window.max_minutes
     ):
-        raise rules.Refused(f"Today you can go out for at most {window.max_minutes // 60} h.")
+        raise rules.Refused(
+            f"Today you can go out for at most {rules.duration(window.max_minutes)}."
+        )
     request = OutingRequest(
-        student_id=student.id,
+        student_id=student_id,
         day=window.day,
         purpose=body.purpose,
         phone=body.phone,
@@ -108,7 +127,13 @@ async def create(session: AsyncSession, student: User, body: OutingRequestIn) ->
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        raise AlreadyRequested from None
+        live = await latest_today(session, student_id, window.day)
+        used = (
+            live is not None
+            and live.status is RequestStatus.APPROVED
+            and await is_used(session, live.id)
+        )
+        raise AlreadyRequested(used) from None
     await session.refresh(request)
     return request
 
@@ -133,9 +158,21 @@ async def decide(
         raise NotFound
     if request.status is not RequestStatus.PENDING:
         raise NotPending
+    now = datetime.now(UTC)
+    if request.day != rules.ist_date(now):
+        raise OtherDay
+    if approve:
+        student = await session.get(User, request.student_id)
+        assert student is not None  # requests are deleted with their student
+        try:
+            window = await rules.today_window(session, student, now)
+        except rules.Refused:
+            window = None  # no rules today: check_out refuses anyway
+        if window is not None and now >= window.return_by:
+            raise DayOver
     request.status = RequestStatus.APPROVED if approve else RequestStatus.DECLINED
     request.decided_by = admin.id
-    request.decided_at = datetime.now(UTC)
+    request.decided_at = now
     request.note = note
     return request  # the caller audits and commits
 

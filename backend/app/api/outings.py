@@ -12,7 +12,6 @@ from app.models import LateReply
 from app.schemas import (
     LateReplyIn,
     OutingCreateIn,
-    OutingExtendIn,
     OutingOut,
     OutingPage,
     OutingRequestIn,
@@ -51,8 +50,9 @@ async def current(me: CurrentUser, session: SessionDep) -> OutingOut | None:
 
 
 @router.patch("/current", deprecated=True)
-async def extend(_body: OutingExtendIn, _me: CurrentUser) -> OutingOut:
-    """Return times are fixed by the hostel's rules; kept so older apps get a clear answer."""
+async def extend(_me: CurrentUser) -> OutingOut:
+    """Return times are fixed by the hostel's rules; kept so older apps get a clear answer.
+    Whatever body an older app sends is ignored (never read, so never a validation error)."""
     raise HTTPException(
         status.HTTP_403_FORBIDDEN,
         detail="Return times can't be extended. If you'll be late, tell your warden.",
@@ -117,10 +117,12 @@ async def send_request(
         r = await requests.create(session, me, body)
     except rules.Refused as e:
         raise refused(e) from None
-    except requests.AlreadyRequested:
+    except requests.AlreadyRequested as e:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="You already asked for today's outing. Cancel it first to change it.",
+            detail="You've already used today's approved outing."
+            if e.used
+            else "You already asked for today's outing. Cancel it first to change it.",
         ) from None
     return await _request_out(session, r)
 
@@ -144,4 +146,6 @@ async def late_reply(body: LateReplyIn, me: CurrentUser, session: SessionDep) ->
         outing = await escalations.reply(session, me.id, LateReply(body.reply))
     except escalations.NotOut:
         raise NOT_OUT from None
+    except escalations.NotLate:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="You're not late yet.") from None
     return svc.to_out(outing, datetime.now(UTC))
