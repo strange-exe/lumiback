@@ -25,13 +25,14 @@ export function returnReminders(expectedReturnAt: string | null, now: number): R
       id: RETURN_SOON,
       at: new Date(due - SOON_MS),
       title: `Heading back? You're due at ${back}`,
-      body: "Running late? Open Lumiback to add time so nobody worries.",
+      // Return times can't be extended: the reminders only say when, and what late means.
+      body: "Start heading back now. Coming in after that is recorded as late.",
     },
     {
       id: RETURN_DUE,
       at: new Date(due),
       title: "You're due back now",
-      body: "Tap I'm back once you're in, or add time if you're still out.",
+      body: "Tap in at the gate, or tap I'm back in Lumiback once you're in.",
     },
   ];
   return all.filter((r) => r.at.getTime() > now + 5_000);
