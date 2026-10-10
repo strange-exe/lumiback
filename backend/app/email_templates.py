@@ -8,8 +8,9 @@ and subject shape) and all three reached the Inbox, so HTML_EMAILS is on. Rerun 
 (.claude/scripts/html_inbox_test.py) before changing the layout, sender or subject.
 
 The HTML here is built for filters as much as for people: one table column, inline styles only,
-system fonts, no images, no links, no hidden text, no <style> block, and the same words as the
-plain-text part (multipart/alternative). Every user-supplied value is HTML-escaped.
+system fonts, one small image (the app icon, see LOGO_URL), no hidden text, no <style> block,
+and the same words as the plain-text part (multipart/alternative). Every user-supplied value is
+HTML-escaped.
 """
 
 # Inline-styled email HTML (email clients ignore <style>) makes long lines; readable as they are.
@@ -83,6 +84,28 @@ def set_reply_to(address: str | None) -> None:
     REPLY_TO = address
 
 
+# The app icon beside the wordmark, served by the website (a PNG: Outlook doesn't show SVG).
+# Decorative (empty alt): with images blocked, the "Lumiback" wordmark still reads the same.
+# Set once at startup by set_logo(); unset, emails show the wordmark alone.
+LOGO_URL: str | None = None
+
+
+def set_logo(web_url: str | None) -> None:
+    global LOGO_URL
+    LOGO_URL = f"{web_url}/icons/icon-192.png" if web_url else None
+
+
+def _brand() -> str:
+    if not LOGO_URL:
+        return "Lumiback"
+    return (
+        f'<img src="{escape(LOGO_URL)}" width="28" height="28" alt="" '
+        'style="display:inline-block;width:28px;height:28px;border:0;border-radius:7px;'
+        'vertical-align:middle;margin-right:8px;">'
+        '<span style="vertical-align:middle;">Lumiback</span>'
+    )
+
+
 def _footer_text() -> str:
     return f"\n{HELP_LINE}\n" if REPLY_TO else ""
 
@@ -101,7 +124,7 @@ def _shell(*, title: str, card: str, to: str, reason: str) -> str:
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAGE};">
 <tr><td align="center" style="padding:28px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-<tr><td style="padding:0 4px 14px;font-family:{SANS};font-size:20px;font-weight:bold;color:{INK};">Lumiback</td></tr>
+<tr><td style="padding:0 4px 14px;font-family:{SANS};font-size:20px;line-height:28px;font-weight:bold;color:{INK};">{_brand()}</td></tr>
 <tr><td style="background:#ffffff;border:1px solid {LINE};border-radius:12px;padding:28px 26px;">
 {card}
 </td></tr>

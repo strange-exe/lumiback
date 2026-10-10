@@ -21,6 +21,7 @@ from app.email_templates import (
     password_reset_email,
     request_decision_email,
     request_decision_notice,
+    set_logo,
     set_reply_to,
     verification_email,
 )
@@ -142,6 +143,28 @@ def test_resend_mailer_raises_when_resend_refuses():
 
     with pytest.raises(RuntimeError, match="403"):
         asyncio.run(_resend_mailer(refuse).send(make()))
+
+
+# ---------- logo ----------
+
+
+@pytest.fixture(autouse=True)
+def no_logo():
+    """create_app() sets the logo for the process; these tests start without one."""
+    set_logo(None)
+    yield
+    set_logo(None)
+
+
+def test_logo_beside_the_wordmark_when_the_site_is_known():
+    assert "<img" not in (make().html or "")
+    set_logo("https://lumiback.test")
+    html = make().html or ""
+    assert html.count("<img") == 1
+    assert 'src="https://lumiback.test/icons/icon-192.png"' in html
+    assert 'alt=""' in html and 'width="28" height="28"' in html
+    assert ">Lumiback</span>" in html  # the wordmark still reads with images blocked
+    assert "<img" not in make().body
 
 
 # ---------- replies ----------
