@@ -133,7 +133,9 @@ function LastSeen({ escalation: e }: { escalation: Escalation }): ReactNode {
     return (
       <p className="flex gap-2 rounded-control bg-accent-soft px-4 py-3 text-sm text-ink">
         <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent" />
-        Last seen at <strong>{seen.gate}</strong>, {formatWhen(seen.at)} (gate scan).
+        <span>
+          Last seen at <strong>{seen.gate}</strong>, {formatWhen(seen.at)} (gate scan).
+        </span>
       </p>
     );
   }
@@ -170,7 +172,7 @@ function LastSeen({ escalation: e }: { escalation: Escalation }): ReactNode {
       {seen.mock_since ? (
         <p className="flex gap-2 font-bold text-danger">
           <Warning aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          Their phone has reported a faked location since {formatWhen(seen.mock_since)}.
+          <span>Their phone has reported a faked location since {formatWhen(seen.mock_since)}.</span>
         </p>
       ) : null}
       <p className="text-muted">
