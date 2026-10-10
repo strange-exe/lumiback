@@ -176,3 +176,10 @@ works, so Lumiback's emails invite replies.
 3. Test from another account: the message arrives in the inbox, and the sender gets the reply.
 
 `node --test infra/support-email/worker.test.mjs` checks the reply's MIME and the loop guards.
+
+**Keeping the API awake during outing hours.** Render's free plan spins the API down after 15
+minutes without traffic, and the late-alert sweep runs inside the API. The same Worker has a Cron
+Trigger (every 10 minutes) that pings `KEEP_AWAKE_URL` (the API's `/health`) between
+`KEEP_AWAKE_FROM` and `KEEP_AWAKE_UNTIL` (IST, default 09:30-22:00). That is about 396 of the
+workspace's 750 free hours a month, leaving about 354 for the website; narrow the window (for
+example to weekday evenings) if the website needs more. On a paid instance, remove the trigger.

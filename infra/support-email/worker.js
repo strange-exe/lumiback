@@ -146,7 +146,43 @@ export function buildReply({ from, to, subject, messageId, now = new Date(), id 
   ].join("\r\n");
 }
 
+// ---------- keeping the API awake during outing hours ----------
+//
+// Render's free plan spins the API down after 15 minutes without traffic, and the late-alert
+// sweep runs inside the API: a student 30 minutes late would get no alert until someone woke
+// it. A Cron Trigger (every 10 minutes) pings the API's /health, only inside the window.
+// Free hours (750/month, shared by the API and the website): 09:30-22:00 IST every day is about
+// 12.5 h x 31 + ~8 h of idle tails = ~396 h for the API, leaving ~354 h for the website.
+
+const IST_OFFSET_MIN = 5 * 60 + 30;
+
+const minutesOf = (hhmm) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+/** Is `now` inside the HH:MM window on the campus (IST) clock? */
+export function inAwakeWindow(now, from = "09:30", until = "22:00") {
+  const ist = (now.getUTCHours() * 60 + now.getUTCMinutes() + IST_OFFSET_MIN) % (24 * 60);
+  return ist >= minutesOf(from) && ist < minutesOf(until);
+}
+
+export async function keepAwake(now, env, fetcher = fetch) {
+  if (!env.KEEP_AWAKE_URL) return "keep-awake off (no KEEP_AWAKE_URL)";
+  if (!inAwakeWindow(now, env.KEEP_AWAKE_FROM, env.KEEP_AWAKE_UNTIL)) return "outside the window";
+  try {
+    const res = await fetcher(env.KEEP_AWAKE_URL, { headers: { "User-Agent": "lumiback-keep-awake" } });
+    return `pinged: ${res.status}`;
+  } catch (err) {
+    return `ping failed: ${describe(err)}`; // a cold start can time out; the next run retries
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(keepAwake(new Date(event.scheduledTime), env).then((r) => console.log(r)));
+  },
+
   // The Worker only handles email; its workers.dev address answers web visits with a plain
   // 404 instead of a "Worker threw exception" page (and an error in the logs).
   fetch() {

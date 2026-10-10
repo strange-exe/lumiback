@@ -98,6 +98,37 @@ test("automated mail is forwarded but never answered", () => {
   assert.match(worker.automatedReason("x@y.z", headers({ Precedence: "bulk" })), /Precedence: bulk/);
 });
 
+test("the keep-awake window is on the campus (IST) clock", () => {
+  const at = (iso) => new Date(iso);
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T03:59:00Z")), false); // 09:29 IST
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T04:00:00Z")), true); // 09:30 IST
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T16:29:00Z")), true); // 21:59 IST
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T16:30:00Z")), false); // 22:00 IST
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T20:00:00Z")), false); // 01:30 IST
+  // A narrower window, e.g. weekday evenings only.
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T12:00:00Z"), "17:30", "22:00"), true); // 17:30
+  assert.equal(worker.inAwakeWindow(at("2026-10-10T06:30:00Z"), "17:30", "22:00"), false); // 12:00
+});
+
+test("keep-awake pings only inside the window, and only when configured", async () => {
+  const hits = [];
+  const fetcher = async (url) => {
+    hits.push(url);
+    return new Response("ok", { status: 200 });
+  };
+  const noon = new Date("2026-10-10T06:30:00Z"); // 12:00 IST
+  const night = new Date("2026-10-10T20:00:00Z"); // 01:30 IST
+  const env = { KEEP_AWAKE_URL: "https://api.example/health" };
+  assert.equal(await worker.keepAwake(noon, {}, fetcher), "keep-awake off (no KEEP_AWAKE_URL)");
+  assert.equal(await worker.keepAwake(night, env, fetcher), "outside the window");
+  assert.equal(await worker.keepAwake(noon, env, fetcher), "pinged: 200");
+  assert.deepEqual(hits, ["https://api.example/health"]);
+  const failing = async () => {
+    throw new TypeError("network down");
+  };
+  assert.equal(await worker.keepAwake(noon, env, failing), "ping failed: TypeError: network down");
+});
+
 test("web visits get a plain 404, not an exception", async () => {
   const res = worker.default.fetch(new Request("https://example.workers.dev/"));
   assert.equal(res.status, 404);
