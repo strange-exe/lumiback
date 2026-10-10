@@ -172,7 +172,9 @@ function LastSeen({ escalation: e }: { escalation: Escalation }): ReactNode {
       {seen.mock_since ? (
         <p className="flex gap-2 font-bold text-danger">
           <Warning aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>Their phone has reported a faked location since {formatWhen(seen.mock_since)}.</span>
+          <span>
+            Their phone has reported a faked location since {formatWhen(seen.mock_since)}.
+          </span>
         </p>
       ) : null}
       <p className="text-muted">
