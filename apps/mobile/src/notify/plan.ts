@@ -62,6 +62,19 @@ export function endedMessage(reason: string | null): string {
   return (reason ? ENDED[reason] : undefined) ?? "Your live share has ended.";
 }
 
+/** Screens a tapped notification can open. */
+export type NotificationRoute = "/live" | "/today";
+const ROUTES: readonly string[] = ["/live", "/today"] satisfies NotificationRoute[];
+
+/**
+ * Where a tapped notification goes. A push without a known `url` (e.g. the hostel office's
+ * escalation alert, sent with none) opens Today rather than doing nothing.
+ */
+export function notificationRoute(data: unknown): NotificationRoute {
+  const url = data && typeof data === "object" ? (data as { url?: unknown }).url : undefined;
+  return typeof url === "string" && ROUTES.includes(url) ? (url as NotificationRoute) : "/today";
+}
+
 /** Server push channels (match the Android channels and backend PushMessage.channel). */
 export type PushChannel = "follow-requests" | "return-reminders" | "share-status";
 

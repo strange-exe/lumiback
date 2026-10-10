@@ -8,7 +8,8 @@ import { loadPrefs } from "@/lib/prefs";
 import { mutedChannels } from "@/notify/plan";
 
 /**
- * Server push (follow requests, approvals, overdue reminders) through Expo's push service.
+ * Server push (follow requests, outing request decisions, and the "Are you OK?" alert at 30
+ * minutes late) through Expo's push service.
  *
  * The token is registered after sign-in, once notifications are allowed, and removed on sign-out
  * so a shared phone never shows the previous student's notifications. Everything here fails

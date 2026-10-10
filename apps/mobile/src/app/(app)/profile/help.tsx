@@ -1,7 +1,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Clipboard from "expo-clipboard";
 import * as Updates from "expo-updates";
 import { useState, type ReactNode } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Alert, Linking, Pressable, View } from "react-native";
 
 import { SUPPORT_EMAIL } from "@/lib/config";
 import { supportMailto } from "@/lib/support";
@@ -12,7 +13,7 @@ import { space, useColors } from "@/ui/theme";
 const FAQ: { q: string; a: string }[] = [
   {
     q: "When can I go out?",
-    a: "Your hostel sets the hours, shown on the Today tab. Weekday evenings need no form. Weekend and holiday outings need the hostel office's OK first: ask from the Today tab on the day, then tap out once it's approved.",
+    a: "Weekday and Saturday evenings need no form. On days that need approval (currently Sundays and holidays), ask the hostel office from the Today tab on the day, then tap out once it's approved. You get one approved outing a day. Some hostels also need no form in the evening on those days. The Today tab always shows your hostel's times.",
   },
   {
     q: "What happens if I'm late?",
@@ -35,10 +36,35 @@ const FAQ: { q: string; a: string }[] = [
     a: "Open Live, choose Follow someone and enter the code, or paste the whole message. You'll see their location once they approve you.",
   },
   {
+    q: "How long is my data kept?",
+    a: "Gate scans, outing requests, records of who viewed your share, and records of how late follow-ups were handled are deleted after your hostel's retention period (180 days by default). Your outings and your share list stay until you delete your account. The privacy notice on Profile has the details.",
+  },
+  {
     q: "How do I delete my data?",
     a: "Profile, then Delete account. Your outings, shares and contacts are removed permanently, and anyone watching you loses access straight away.",
   },
 ];
+
+/** Opens the mail app; without one (openURL rejects), offers the address to copy instead. */
+async function emailSupport(): Promise<void> {
+  try {
+    await Linking.openURL(
+      supportMailto({
+        version: CURRENT.version,
+        runtimeVersion: Updates.runtimeVersion,
+        updateId: Updates.updateId,
+      }),
+    );
+  } catch {
+    Alert.alert("No email app found", `Write to ${SUPPORT_EMAIL}.`, [
+      { text: "Close", style: "cancel" },
+      {
+        text: "Copy address",
+        onPress: () => void Clipboard.setStringAsync(SUPPORT_EMAIL).catch(() => undefined),
+      },
+    ]);
+  }
+}
 
 export default function Help(): ReactNode {
   const c = useColors();
@@ -82,15 +108,7 @@ export default function Help(): ReactNode {
           title="Email Lumiback support"
           detail={SUPPORT_EMAIL}
           trailing={<Ionicons name="open-outline" size={18} color={c.muted} />}
-          onPress={() =>
-            void Linking.openURL(
-              supportMailto({
-                version: CURRENT.version,
-                runtimeVersion: Updates.runtimeVersion,
-                updateId: Updates.updateId,
-              }),
-            )
-          }
+          onPress={() => void emailSupport()}
           accessibilityLabel={`Email Lumiback support at ${SUPPORT_EMAIL}`}
         />
       </Section>

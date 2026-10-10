@@ -1,5 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { router, useFocusEffect } from "expo-router";
 import * as Updates from "expo-updates";
 import { useCallback, useState, type ReactNode } from "react";
 import { Linking, Text, View } from "react-native";
@@ -28,6 +29,15 @@ export default function Profile(): ReactNode {
   const { data: profile } = useData(loadProfile);
   const c = useColors();
   const [signingOut, setSigningOut] = useState(false);
+  // Re-checked on focus: the student may come back from Android settings.
+  const [blocked, setBlocked] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      void Notifications.getPermissionsAsync()
+        .then((p) => setBlocked(!p.granted))
+        .catch(() => undefined);
+    }, []),
+  );
   if (!user) return null;
 
   const initials = user.name
@@ -99,9 +109,11 @@ export default function Profile(): ReactNode {
           leading={icon("notifications-outline")}
           title="Notifications"
           detail={
-            [prefs.followRequests, prefs.returnReminders, prefs.shareStatus].every(Boolean)
-              ? "All on"
-              : "Some off"
+            blocked
+              ? "Blocked in Android settings"
+              : [prefs.followRequests, prefs.returnReminders, prefs.shareStatus].every(Boolean)
+                ? "All on"
+                : "Some off"
           }
           trailing={chevron}
           onPress={() => router.push("/profile/notifications")}

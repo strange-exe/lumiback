@@ -4,12 +4,13 @@ import { View } from "react-native";
 
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { Outing } from "@/lib/types";
+import { viaLabel } from "@/lib/words";
 import { StatusChip, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
 
 /**
  * One trip in a grouped list (History, and Recent trips on Today): where, when, how long,
- * on time or late, and whether it was verified at the gate. `first`/`last` round the group.
+ * on time or late, and how much of it the gate verified. `first`/`last` round the group.
  */
 export function OutingRow({
   outing,
@@ -24,13 +25,13 @@ export function OutingRow({
   const late = outing.late_minutes > 0;
   const chip =
     outing.status === "overdue"
-      ? { label: "Overdue", tone: "danger" as const }
+      ? { label: "Late", tone: "danger" as const }
       : outing.status === "out"
         ? { label: "Out now", tone: "accent" as const }
         : late
           ? { label: `${formatMinutes(outing.late_minutes)} late`, tone: "danger" as const }
           : { label: "On time", tone: "good" as const };
-  const via = outing.out_via === "gate" ? "Verified at gate" : "Self-reported";
+  const { label: via, verified } = viaLabel(outing);
 
   return (
     <View
@@ -64,10 +65,8 @@ export function OutingRow({
           {outing.duration_minutes != null ? `  ·  ${formatMinutes(outing.duration_minutes)}` : ""}
         </T>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
-          {outing.out_via === "gate" ? (
-            <Ionicons name="shield-checkmark" size={13} color={c.good} />
-          ) : null}
-          <T tone="caption" style={{ color: outing.out_via === "gate" ? c.good : c.muted }}>
+          {verified ? <Ionicons name="shield-checkmark" size={13} color={c.good} /> : null}
+          <T tone="caption" style={{ color: verified ? c.good : c.muted }}>
             {via}
           </T>
         </View>

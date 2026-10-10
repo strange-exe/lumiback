@@ -2,21 +2,23 @@ import { useEffect, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
-import { formatMinutes } from "@/lib/time";
+import { lengthOptions } from "@/lib/rules";
 import type { OutingRequest, Profile, TodayRules } from "@/lib/types";
+import { useNow } from "@/lib/use-now";
 import { haptic } from "@/ui/haptics";
 import { Button, Chips, Field, FormError, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
 import { space } from "@/ui/theme";
 
-type Length = "full" | "60" | "120" | "180";
+/** "full" (the day's allowance) or a shorter outing in whole minutes, e.g. "120". */
+type Length = string;
 
 function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
 }
 
 /**
- * The weekend/holiday outing form: purpose, the student's number and an emergency contact
+ * The outing request form, for days that need approval (currently Sundays and holidays): purpose, the student's number and an emergency contact
  * (prefilled from their profile, and saved back to it), and optionally a shorter outing than the
  * day allows. An admin approves it; then the gate lets them out once.
  */
@@ -37,6 +39,7 @@ export function RequestSheet({
   const [relation, setRelation] = useState("");
   const [emergency, setEmergency] = useState("");
   const [length, setLength] = useState<Length>("full");
+  const now = useNow(60_000);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,13 +61,12 @@ export function RequestSheet({
     };
   }, [open]);
 
-  const max = rules.max_minutes;
-  const lengths: { value: Length; label: string }[] = [
-    { value: "full", label: max ? `Up to ${formatMinutes(max)}` : "Full time" },
-    ...(["60", "120", "180"] as const)
-      .filter((m) => !max || Number(m) < max)
-      .map((m) => ({ value: m, label: formatMinutes(Number(m)) })),
-  ];
+  const lengths: { value: Length; label: string }[] = lengthOptions(rules, now).map((o) => ({
+    value: o.minutes === null ? "full" : String(o.minutes),
+    label: o.label,
+  }));
+  // A choice that no longer fits (time moved on) falls back to the full allowance.
+  const chosen = lengths.some((o) => o.value === length) ? length : "full";
 
   const send = async (): Promise<void> => {
     if (!purpose.trim()) return setError("Say where you're going and why.");
@@ -79,7 +81,7 @@ export function RequestSheet({
           emergency_name: name.trim(),
           emergency_relation: relation.trim(),
           emergency_phone: emergency,
-          requested_minutes: length === "full" ? null : Number(length),
+          requested_minutes: chosen === "full" ? null : Number(chosen),
         },
       });
       haptic.success();
@@ -107,7 +109,20 @@ export function RequestSheet({
         placeholder="Shopping at Pacific Mall"
         maxLength={200}
       />
-      <Chips label="How long" options={lengths} value={length} onChange={setLength} />
+      {lengths.length > 1 ? (
+        <View style={{ gap: space(1) }}>
+          <Chips
+            label="Shorter than the limit? (optional)"
+            options={lengths}
+            value={chosen}
+            onChange={setLength}
+          />
+          <T tone="caption">
+            You can only ask for less time than the limit, never more. Your return time can&apos;t
+            be changed later.
+          </T>
+        </View>
+      ) : null}
       <Field
         label="Your phone number"
         value={phone}

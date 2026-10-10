@@ -12,7 +12,8 @@ import { radius, space, useColors } from "@/ui/theme";
 
 /**
  * What the outing rules need from a student: their hostel (which decides the rules) and contacts
- * for when they're late and don't answer (also prefilled on weekend outing forms).
+ * for when they're late and don't answer (also prefilled on the outing request form, for days that
+ * need approval).
  */
 export default function OutingDetails(): ReactNode {
   const c = useColors();
@@ -95,7 +96,7 @@ export default function OutingDetails(): ReactNode {
       <T tone="caption">
         {hostels.length === 0
           ? "The hostel office adds hostels. Check back later."
-          : "Your hostel decides your outing hours and how long weekend outings can be."}
+          : "Your hostel decides your outing hours and how long outings can be on days that need approval (currently Sundays and holidays)."}
       </T>
 
       <Sheet open={picking} onClose={() => setPicking(false)} title="Choose your hostel">
@@ -175,7 +176,8 @@ function ContactsForm({
       <T tone="label">Contacts</T>
       <T tone="muted">
         If you&apos;re late and don&apos;t answer the app, the hostel office may call you or your
-        emergency contact. They&apos;re also filled in on weekend outing forms.
+        emergency contact. They&apos;re also filled in when you ask for an outing on a day that
+        needs approval.
       </T>
       <Field
         label="Your phone number"

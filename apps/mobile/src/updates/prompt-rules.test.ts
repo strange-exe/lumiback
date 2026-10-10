@@ -1,4 +1,10 @@
-import { CHECK_EVERY_MS, shouldCheck, shouldPrompt, SNOOZE_MS } from "./prompt-rules";
+import {
+  CHECK_EVERY_MS,
+  promptAllowed,
+  shouldCheck,
+  shouldPrompt,
+  SNOOZE_MS,
+} from "./prompt-rules";
 
 const T0 = 1_000_000;
 
@@ -22,4 +28,12 @@ test("remind me later: quiet for a few hours, then asks again", () => {
 test("a newer update asks straight away, even after remind me later", () => {
   const snooze = { id: "a", at: T0 };
   expect(shouldPrompt({ available: true, id: "b", snooze, now: T0 + 60_000 })).toBe(true);
+});
+
+test("never over the gate scanner, and only once signed in unless a build is required", () => {
+  expect(promptAllowed({ signedIn: true, pathname: "/today" })).toBe(true);
+  expect(promptAllowed({ signedIn: true, pathname: "/scan" })).toBe(false);
+  expect(promptAllowed({ signedIn: true, pathname: "/scan", required: true })).toBe(false);
+  expect(promptAllowed({ signedIn: false, pathname: "/sign-in" })).toBe(false);
+  expect(promptAllowed({ signedIn: false, pathname: "/sign-in", required: true })).toBe(true);
 });

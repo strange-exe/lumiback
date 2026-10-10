@@ -4,7 +4,14 @@ import { useEffect } from "react";
 import { Platform } from "react-native";
 
 import { loadPrefs } from "@/lib/prefs";
-import { endedMessage, RETURN_DUE, RETURN_SOON, returnReminders } from "@/notify/plan";
+import {
+  endedMessage,
+  notificationRoute,
+  RETURN_DUE,
+  RETURN_SOON,
+  returnReminders,
+  type NotificationRoute,
+} from "@/notify/plan";
 import { registerPush } from "@/notify/push";
 
 /**
@@ -48,8 +55,10 @@ function ensureChannels(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
     });
     await Notifications.setNotificationChannelAsync(CHANNELS.status, {
-      name: "Sharing status",
-      description: "When a live share ends on its own.",
+      // Same id as before: Android keeps the student's settings and updates the name.
+      name: "Sharing and requests",
+      description:
+        "When a live share ends on its own, and when the hostel office decides your outing request.",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   })().catch((error: unknown) => {
@@ -90,7 +99,7 @@ async function show(channelId: string, content: Notifications.NotificationConten
 
 /** Opened from a notification: where to go. Read by the root layout. */
 export interface NotificationData {
-  url: "/live" | "/today";
+  url: NotificationRoute;
 }
 
 export async function notifyFollowRequest(name: string): Promise<void> {
@@ -144,20 +153,18 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
   }
 }
 
-const ROUTES: readonly NotificationData["url"][] = ["/live", "/today"];
-
 /**
  * Opens the screen a tapped notification points at, including the tap that launched the app.
  * Waits until signed in, so a tap that launched the app is handled after sign-in, not lost.
+ * A notification without a known `url` (the escalation push has none) opens Today.
  */
 export function useNotificationRoutes(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
     const open = (response: Notifications.NotificationResponse | null): void => {
-      const url = (response?.notification.request.content.data as Partial<NotificationData>)?.url;
-      if (!url || !ROUTES.includes(url)) return;
+      if (!response) return;
       Notifications.clearLastNotificationResponse(); // handled: don't reopen on the next mount
-      router.navigate(url);
+      router.navigate(notificationRoute(response.notification.request.content.data));
     };
     open(Notifications.getLastNotificationResponse());
     const subscription = Notifications.addNotificationResponseReceivedListener(open);

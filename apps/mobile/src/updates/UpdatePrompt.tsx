@@ -18,7 +18,7 @@ import { radius, space, useColors } from "@/ui/theme";
 
 import { NATIVE_BUILDS } from "./changelog";
 import { nativeUpdateFor, type NativeUpdate } from "./native-build";
-import { shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
+import { promptAllowed, shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
 
 /**
  * Two kinds of update, one prompt:
@@ -56,10 +56,20 @@ export function useNativeUpdate(): NativeUpdate | null {
   );
 }
 
-export function UpdatePrompt(): ReactNode {
+interface Where {
+  signedIn: boolean;
+  /** The current route: the sheet stays away from some (see promptAllowed). */
+  pathname: string;
+}
+
+/**
+ * `signedIn`/`pathname` only decide whether the sheet may show; the checks keep running, so it
+ * appears as soon as the student is somewhere it's welcome.
+ */
+export function UpdatePrompt(where: Where): ReactNode {
   // Dev builds and Expo Go have no updates; the hook would never report one anyway.
   if (!Updates.isEnabled) return null;
-  return <Prompt />;
+  return <Prompt {...where} />;
 }
 
 const BUILD_FILE = `${WEB_URL}/app/android.json`;
@@ -72,7 +82,7 @@ async function latestBuild(): Promise<NativeUpdate | null> {
   return nativeUpdateFor(await res.json(), Updates.channel, installed);
 }
 
-function Prompt(): ReactNode {
+function Prompt({ signedIn, pathname }: Where): ReactNode {
   const { isUpdateAvailable, isUpdatePending, availableUpdate, downloadedUpdate } =
     Updates.useUpdates();
   const native = useNativeUpdate();
@@ -113,9 +123,10 @@ function Prompt(): ReactNode {
   if (native) {
     const id = `build-${native.build}`;
     const open = native.required || shouldPrompt({ available: true, id, snooze, now });
+    const allowed = promptAllowed({ signedIn, pathname, required: native.required });
     return (
       <DownloadSheet
-        open={open}
+        open={open && allowed}
         update={native}
         onLater={() => setSnooze({ id, at: Date.now() })}
       />
@@ -126,7 +137,10 @@ function Prompt(): ReactNode {
     <OverTheAirSheet
       available={isUpdateAvailable || isUpdatePending}
       pending={isUpdatePending}
-      open={shouldPrompt({ available: isUpdateAvailable || isUpdatePending, id, snooze, now })}
+      open={
+        promptAllowed({ signedIn, pathname }) &&
+        shouldPrompt({ available: isUpdateAvailable || isUpdatePending, id, snooze, now })
+      }
       onLater={() => setSnooze({ id, at: Date.now() })}
     />
   );

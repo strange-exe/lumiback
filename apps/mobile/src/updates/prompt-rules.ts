@@ -16,6 +16,23 @@ export function shouldCheck(lastCheck: number | null, now: number): boolean {
   return lastCheck === null || now - lastCheck >= CHECK_EVERY_MS;
 }
 
+/**
+ * May the prompt show on the current screen? Never over the gate scanner (the student is mid-scan),
+ * and only once signed in, except a required build: without it signing in can't work.
+ */
+export function promptAllowed({
+  signedIn,
+  pathname,
+  required = false,
+}: {
+  signedIn: boolean;
+  pathname: string;
+  required?: boolean;
+}): boolean {
+  if (pathname === "/scan") return false;
+  return signedIn || required;
+}
+
 export function shouldPrompt({
   available,
   id,

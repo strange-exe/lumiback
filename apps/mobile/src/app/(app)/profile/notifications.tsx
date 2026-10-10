@@ -26,8 +26,9 @@ const TOGGLES: { key: Toggle; title: string; detail: string }[] = [
   },
   {
     key: "shareStatus",
-    title: "Sharing ended",
-    detail: "When a live share ends on its own, with the reason.",
+    title: "Sharing and requests",
+    detail:
+      "When a live share ends on its own, and when the hostel office decides your outing request.",
   },
 ];
 

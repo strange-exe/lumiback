@@ -1,4 +1,11 @@
-import { formNeededAt, plannedReturn, rulesLine } from "./rules";
+import {
+  canAskAt,
+  formNeededAt,
+  freeEveningAhead,
+  lengthOptions,
+  plannedReturn,
+  rulesLine,
+} from "./rules";
 import type { TodayRules } from "./types";
 
 const at = (hhmm: string) => `2026-10-08T${hhmm}:00+05:30`;
@@ -31,6 +38,7 @@ test("before the window: when it opens", () => {
     detail: "Opens in 1 h 30 min",
     urgent: false,
     open: false,
+    closed: "before",
   });
 });
 
@@ -41,6 +49,7 @@ test("during the window: back-by time and time left", () => {
     urgent: false,
     open: true,
   });
+  expect(rulesLine(weekday, ms("18:10")).closed).toBeUndefined();
   expect(rulesLine(weekday, ms("19:30")).urgent).toBe(true);
 });
 
@@ -49,6 +58,68 @@ test("after the window", () => {
     title: "Outings are over for today",
     detail: "Weekday hours: 6:00 PM–8:00 PM",
     open: false,
+    closed: "after",
+  });
+});
+
+test("asking for the outing works before opening, not in a no-form evening or after", () => {
+  const boys: TodayRules = { ...sunday, max_minutes: 180, no_form_from: at("18:00") };
+  expect(canAskAt(sunday, ms("08:00"))).toBe(true); // before 10 AM opening
+  expect(canAskAt(sunday, ms("19:59"))).toBe(true);
+  expect(canAskAt(sunday, ms("20:00"))).toBe(false);
+  expect(canAskAt(boys, ms("17:59"))).toBe(true);
+  expect(canAskAt(boys, ms("18:00"))).toBe(false);
+  expect(canAskAt(weekday, ms("17:00"))).toBe(false);
+});
+
+test("the no-form evening still ahead", () => {
+  const boys: TodayRules = { ...sunday, max_minutes: 180, no_form_from: at("18:00") };
+  expect(freeEveningAhead(boys, ms("12:00"))).toBe(at("18:00"));
+  expect(freeEveningAhead(boys, ms("18:00"))).toBeNull();
+  expect(freeEveningAhead(sunday, ms("12:00"))).toBeNull();
+  expect(freeEveningAhead(weekday, ms("12:00"))).toBeNull();
+});
+
+describe("lengthOptions", () => {
+  const labels = (rules: TodayRules, now: number) =>
+    lengthOptions(rules, now).map((o) => [o.minutes, o.label]);
+
+  it("offers every whole hour below the maximum, the maximum first", () => {
+    expect(labels(sunday, ms("10:00"))).toEqual([
+      [null, "Up to 5 h"],
+      [60, "1 h"],
+      [120, "2 h"],
+      [180, "3 h"],
+      [240, "4 h"],
+    ]);
+    const boys: TodayRules = { ...sunday, max_minutes: 180 };
+    expect(labels(boys, ms("10:00"))).toEqual([
+      [null, "Up to 3 h"],
+      [60, "1 h"],
+      [120, "2 h"],
+    ]);
+  });
+
+  it("counts from opening time when asking early", () => {
+    expect(lengthOptions(sunday, ms("07:00"))).toHaveLength(5);
+  });
+
+  it("never offers more hours than are left before the return time", () => {
+    expect(labels(sunday, ms("17:30"))).toEqual([
+      [null, "Up to 5 h"],
+      [60, "1 h"],
+      [120, "2 h"],
+    ]);
+    expect(labels(sunday, ms("19:30"))).toEqual([[null, "Up to 5 h"]]);
+  });
+
+  it("without a maximum, offers the hours up to the time left", () => {
+    const open: TodayRules = { ...sunday, max_minutes: null };
+    expect(labels(open, ms("17:00"))).toEqual([
+      [null, "Until 8:00 PM"],
+      [60, "1 h"],
+      [120, "2 h"],
+    ]);
   });
 });
 
@@ -84,4 +155,8 @@ test("planned return matches the server's rule", () => {
   expect(plannedReturn(sunday, ms("11:00")).getTime()).toBe(ms("16:00"));
   expect(plannedReturn(sunday, ms("17:00")).getTime()).toBe(ms("20:00")); // never past back-by
   expect(plannedReturn(sunday, ms("11:00"), { requestedMinutes: 120 }).getTime()).toBe(ms("13:00"));
+  // A shorter length asked for still applies on a day with no maximum.
+  const noMax: TodayRules = { ...sunday, max_minutes: null };
+  expect(plannedReturn(noMax, ms("11:00"), { requestedMinutes: 60 }).getTime()).toBe(ms("12:00"));
+  expect(plannedReturn(noMax, ms("11:00")).getTime()).toBe(ms("20:00"));
 });

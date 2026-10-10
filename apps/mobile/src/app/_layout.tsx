@@ -5,7 +5,7 @@ import {
   Geist_700Bold,
   useFonts,
 } from "@expo-google-fonts/geist";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState, type ReactNode } from "react";
@@ -23,6 +23,7 @@ void SplashScreen.preventAutoHideAsync();
 
 function Navigator(): ReactNode {
   const { status } = useAuth();
+  const pathname = usePathname();
   const colors = useColors();
   const scheme = useColorScheme();
   const [fontsLoaded] = useFonts({
@@ -58,7 +59,8 @@ function Navigator(): ReactNode {
           }}
         />
       </Stack>
-      <UpdatePrompt />
+      {/* Not over sign-in or the gate scanner: the student is mid-task there. */}
+      <UpdatePrompt signedIn={status === "signedIn"} pathname={pathname} />
     </>
   );
 }

@@ -2,12 +2,15 @@
   {
     "version": "1.3.1",
     "date": "2026-10-10",
-    "title": "Help and support",
+    "title": "Clearer outings and support",
     "points": [
-      "Email Lumiback support from Profile → Help and questions. You get a reply in your inbox.",
-      "Help answers now match the outing rules and the late check-in.",
-      "After a weekend or holiday outing, Today says the day's approval is used instead of asking you to request again.",
-      "Return reminders no longer suggest adding time, which isn't possible."
+      "Email Lumiback support from Help (Profile in the app, Account on the website). You get a reply in your inbox.",
+      "On days that need approval, ask for your outing in the morning, before outings open, so it's approved in time. You can also cancel an approved request you haven't used.",
+      "Asking for a shorter outing: pick any whole number of hours below your limit. Once approved, you see when you'll be due back.",
+      "Today says when your approval is used, when outing rules aren't set up, when it can't load, and asks you to choose your hostel if you haven't.",
+      "Return reminders no longer suggest adding time, and a late tap-in at the gate says so.",
+      "The website's Share page shows who looked at your location, like the app.",
+      "Help explains when you can go out and how long your data is kept."
     ]
   },
   {
@@ -15,7 +18,7 @@
     "date": "2026-10-09",
     "title": "Outing rules",
     "points": [
-      "Your hostel sets your outing hours: weekdays 6–8 PM, and weekend or holiday outings with the hostel office's approval.",
+      "Your hostel sets your outing hours: weekday and Saturday evenings 6–8 PM, and Sunday or holiday outings with the hostel office's approval.",
       "Boys' hostels can go out 6–8 PM on Sundays and holidays without a form.",
       "Return times can't be extended. If you're late, the app checks you're OK.",
       "Updates now ask first: Update now, or Remind me later.",

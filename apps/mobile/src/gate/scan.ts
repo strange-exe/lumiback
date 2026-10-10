@@ -41,19 +41,28 @@ export interface Refusal {
   kind: "refused";
   message: string;
   retry: boolean;
+  /**
+   * Offer "Can't scan?" (log the trip, or tap I'm back) instead. Only for problems with the
+   * scanning itself (connection, server error); never when the server judged the scan, because
+   * its reasons include the outing rules, which logging the trip can't get around.
+   */
+  fallback: boolean;
 }
 
 /** Map an API failure (status + detail) to what the student sees and whether scanning again helps. */
 export function refusal(status: number, detail: string): Refusal {
-  if (status === 409) return { kind: "refused", message: detail, retry: false };
+  if (status === 409) return { kind: "refused", message: detail, retry: false, fallback: false };
   if (status === 0) {
     return {
       kind: "refused",
       message: "Can't reach Lumiback. Check your connection and scan again.",
       retry: true,
+      fallback: true,
     };
   }
+  if (status >= 500) return { kind: "refused", message: detail, retry: true, fallback: true };
   // 422: bad or old code, gate off, too far, weak or mock GPS, or the outing rules (outside the
-  // hours, no approved request). The server's wording explains which.
-  return { kind: "refused", message: detail, retry: true };
+  // hours, no approved request). The server's wording explains which; it sends no code to tell
+  // them apart, so none of them offers the fallback.
+  return { kind: "refused", message: detail, retry: true, fallback: false };
 }

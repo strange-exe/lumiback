@@ -119,7 +119,13 @@ export default function Watch(): ReactNode {
               title="Not sharing any more"
               lede={shown.reason}
             />
-            <Button label="Back to Follow" variant="secondary" onPress={() => router.back()} />
+            <Button
+              label="Back to Follow someone"
+              variant="secondary"
+              // Always land on Live's Follow view: back to it when it's below in the stack,
+              // otherwise (opened from a link or notification) this screen is replaced by it.
+              onPress={() => router.dismissTo({ pathname: "/live", params: { view: "follow" } })}
+            />
           </>
         ) : shown.kind === "live" ? (
           <Live first={first} share={shown.share} positions={shown.positions} now={now} />

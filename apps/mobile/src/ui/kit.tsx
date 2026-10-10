@@ -476,7 +476,7 @@ export function Chips<V extends string>({
       <View
         accessibilityRole="radiogroup"
         accessibilityLabel={label}
-        style={{ flexDirection: "row", gap: space(2) }}
+        style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}
       >
         {options.map((option) => {
           const selected = option.value === value;
@@ -484,7 +484,11 @@ export function Chips<V extends string>({
           const fg = selected ? (onHero ? c.hero : c.onAccent) : onHero ? c.onHero : c.ink;
           const border = selected ? bg : onHero ? c.heroLine : c.line;
           return (
-            <View key={option.value} style={{ flex: 1 }}>
+            // Up to four share one row; more wrap, three to a row, so labels stay readable.
+            <View
+              key={option.value}
+              style={{ flexGrow: 1, flexShrink: 1, flexBasis: options.length > 4 ? "30%" : 0 }}
+            >
               <Press
                 onPress={() => onChange(option.value)}
                 accessibilityRole="radio"
@@ -574,7 +578,7 @@ export function Segmented<V extends string>({
   );
 }
 
-/** Small rounded status label: "Verified at gate", "Self-reported", "Overdue". */
+/** Small rounded status label: "Verified at gate", "Self-reported", "Late". */
 export function StatusChip({
   label,
   tone,

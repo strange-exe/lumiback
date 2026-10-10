@@ -23,19 +23,19 @@ const STEPS: Step[] = [
     art: "gate",
     eyebrow: "Going out",
     title: "Tap out at the gate",
-    body: "Scan the code at the gate when you leave and again when you're back. No register, no queue.",
+    body: "Scan the code at the gate when you leave and again when you're back. No register, no queue. On days that need approval, ask the hostel office from Today first.",
   },
   {
     art: "pin",
     eyebrow: "On your terms",
     title: "Share your way back",
-    body: "Friends and family see your live location only after you approve them, and only until you stop.",
+    body: "Friends and family see your live location only after you approve them, and only while you're sharing.",
   },
   {
     art: "lantern-lit",
     eyebrow: "Stay in the loop",
     title: "Nudges that matter",
-    body: "A reminder before you're due back, and a ping when someone asks to follow you. Nothing else.",
+    body: "Reminders 10 minutes before you're due back and when you're due, a check-in if you're running late, word when your outing request is decided, and a ping when someone asks to follow you.",
   },
 ];
 

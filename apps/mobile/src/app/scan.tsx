@@ -10,8 +10,8 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { gateCode, refusal, toFix, type Fix } from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatTime } from "@/lib/time";
-import type { GateScanned } from "@/lib/types";
+import { formatMinutes, formatTime } from "@/lib/time";
+import type { GateScanned, Outing } from "@/lib/types";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
@@ -22,7 +22,7 @@ type Phase =
   | { kind: "camera" }
   | { kind: "checking"; step: "location" | "server" }
   | { kind: "done"; result: GateScanned }
-  | { kind: "refused"; message: string; retry: boolean; settings?: boolean };
+  | { kind: "refused"; message: string; retry: boolean; fallback: boolean; settings?: boolean };
 
 const LOCATION_TIMEOUT_MS = 20_000;
 
@@ -84,8 +84,28 @@ export default function Scan(): ReactNode {
       ? { kind: "camera" }
       : gateCode(linked)
         ? { kind: "checking", step: "location" }
-        : { kind: "refused", message: "That link isn't a Lumiback gate code.", retry: true },
+        : {
+            kind: "refused",
+            message: "That link isn't a Lumiback gate code.",
+            retry: true,
+            fallback: true,
+          },
   );
+  // Out on a trip? Then a scan taps in, and the fallback is "I'm back", not logging a trip.
+  // Unknown (offline) reads as at the hostel: Today shows the right card either way.
+  const [out, setOut] = useState(false);
+  useEffect(() => {
+    if (status !== "signedIn") return;
+    let alive = true;
+    void api<Outing | null>("/outings/current")
+      .then((o) => {
+        if (alive) setOut(o !== null);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [status]);
   const [notGate, setNotGate] = useState(false);
   // The camera reports the same code many times a second: handle one at a time.
   const busy = useRef(false);
@@ -123,6 +143,7 @@ export default function Scan(): ReactNode {
           kind: "refused",
           message: e instanceof NoFix ? e.message : "Couldn't get your location. Scan again.",
           retry: true,
+          fallback: true, // a phone/GPS problem, not the rules
           settings: e instanceof NoFix && e.settings,
         });
       }
@@ -214,6 +235,7 @@ export default function Scan(): ReactNode {
           requestPermission={requestPermission}
           notGate={notGate}
           linked={Boolean(linked)}
+          out={out}
           onScanAgain={scanAgain}
         />
       </SafeAreaView>
@@ -227,6 +249,7 @@ function Body({
   requestPermission,
   notGate,
   linked,
+  out,
   onScanAgain,
 }: {
   phase: Phase;
@@ -234,6 +257,7 @@ function Body({
   requestPermission: ReturnType<typeof useCameraPermissions>[1];
   notGate: boolean;
   linked: boolean;
+  out: boolean;
   onScanAgain: () => void;
 }): ReactNode {
   const c = useColors();
@@ -262,7 +286,7 @@ function Body({
                 onPress={() => void Linking.openSettings()}
               />
             )}
-            <LogInstead />
+            <CantScan out={out} />
           </Panel>
         );
       }
@@ -293,7 +317,8 @@ function Body({
           ) : (
             <Button label="Done" variant="onHero" onPress={() => router.back()} />
           )}
-          {phase.retry ? <LogInstead /> : null}
+          {/* Tapping in has no rules to get round, so "I'm back" is always a fair way out. */}
+          {phase.retry && (phase.fallback || out) ? <CantScan out={out} /> : null}
         </Panel>
       );
     case "done":
@@ -361,7 +386,9 @@ function Done({ result }: { result: GateScanned }): ReactNode {
       <Detail>
         {out
           ? `Tapped out at ${result.gate}. Back by ${formatTime(result.outing.expected_return_at)}.`
-          : `Tapped in at ${result.gate}. Your trip is closed.`}
+          : result.outing.late_minutes > 0
+            ? `Tapped in at ${result.gate}, ${formatMinutes(result.outing.late_minutes)} late. This is recorded as late.`
+            : `Tapped in at ${result.gate}. Your trip is closed.`}
       </Detail>
       <Button
         label="Done"
@@ -375,17 +402,27 @@ function Done({ result }: { result: GateScanned }): ReactNode {
   );
 }
 
-function LogInstead(): ReactNode {
+/** The way round a scan that can't work: log the trip, or (when out) tap I'm back on Today. */
+function CantScan({ out }: { out: boolean }): ReactNode {
   const c = useColors();
   return (
     <Press
       onPress={() =>
-        router.replace({ pathname: "/today", params: { action: "log", at: String(Date.now()) } })
+        out
+          ? router.replace("/today")
+          : router.replace({
+              pathname: "/today",
+              params: { action: "log", at: String(Date.now()) },
+            })
       }
-      accessibilityLabel="Log a trip without scanning"
+      accessibilityLabel={
+        out ? "Go to Today to tap I'm back without scanning" : "Log a trip without scanning"
+      }
       style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
     >
-      <Text style={[type.label, { color: c.heroAccent }]}>Can&apos;t scan? Log a trip instead</Text>
+      <Text style={[type.label, { color: c.heroAccent }]}>
+        {out ? "Can't scan? Tap I'm back instead" : "Can't scan? Log a trip instead"}
+      </Text>
     </Press>
   );
 }

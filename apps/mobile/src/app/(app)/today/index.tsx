@@ -5,7 +5,7 @@ import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formNeededAt, plannedReturn, rulesLine } from "@/lib/rules";
+import { canAskAt, formNeededAt, freeEveningAhead, plannedReturn, rulesLine } from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
   Campus,
@@ -17,6 +17,7 @@ import type {
 } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
+import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
 import { RequestSheet } from "@/screens/outing-request";
 import { haptic } from "@/ui/haptics";
@@ -31,11 +32,15 @@ function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
 }
 
+/** Today's rules: loaded, not set up by the hostel office (campus has none), or not loaded. */
+type RulesStatus = "ok" | "none" | "failed";
+
 interface TodayData {
   outing: Outing | null;
   // The rest is nice to have: Today never fails because of it.
   summary: OutingSummary | null;
   rules: TodayRules | null;
+  rulesStatus: RulesStatus;
   request: OutingRequest | null;
   recent: Outing[] | null;
 }
@@ -47,7 +52,7 @@ export default function Today(): ReactNode {
     const [outing, summary, campus, page, request] = await Promise.all([
       api<Outing | null>("/outings/current"),
       api<OutingSummary>("/outings/summary").catch(() => null),
-      api<Campus>("/campus").catch(() => null),
+      api<Campus>("/campus").catch(() => undefined),
       api<OutingPage>("/outings?limit=4").catch(() => null),
       api<OutingRequest | null>("/outings/request").catch(() => null),
     ]);
@@ -56,7 +61,9 @@ export default function Today(): ReactNode {
     void syncReturnReminders(outing?.expected_return_at ?? null);
     // The trip in progress is already the status card; Recent lists finished ones.
     const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
-    return { outing, summary, rules: campus?.today ?? null, request, recent };
+    const rules = campus?.today ?? null;
+    const rulesStatus: RulesStatus = campus === undefined ? "failed" : rules ? "ok" : "none";
+    return { outing, summary, rules, rulesStatus, request, recent };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
@@ -110,15 +117,20 @@ export default function Today(): ReactNode {
         <HeroSkeleton />
       ) : data?.outing ? (
         <Out outing={data.outing} onChange={reload} />
+      ) : !data ? (
+        // Never loaded (offline at launch): we don't know if the student is out, so don't
+        // offer to tap out.
+        <LoadFailed message={error} busy={refreshing} onRetry={reload} />
       ) : (
         <AtHostel
-          rules={data?.rules ?? null}
-          request={data?.request ?? null}
+          rules={data.rules}
+          rulesStatus={data.rulesStatus}
+          request={data.request}
           onDone={reload}
           logRequest={logRequest}
         />
       )}
-      <FormError message={error} />
+      {data ? <FormError message={error} /> : null}
       {data?.rules ? (
         <RulesCard rules={data.rules} request={data.request} onChange={reload} />
       ) : null}
@@ -193,13 +205,62 @@ function approved(request: OutingRequest | null): boolean {
   return request?.status === "approved" && !request.used;
 }
 
+/** On a form day with a no-form evening still ahead: when it starts, as a sentence. */
+function freeEveningNote(rules: TodayRules, now: number): string {
+  const from = freeEveningAhead(rules, now);
+  return from ? ` From ${formatTime(from)} you can go out without one.` : "";
+}
+
+/** Today's first load failed (usually offline): say so and offer a retry, nothing else. */
+function LoadFailed({
+  message: text,
+  busy,
+  onRetry,
+}: {
+  message: string | null;
+  busy: boolean;
+  onRetry: () => Promise<void>;
+}): ReactNode {
+  const c = useColors();
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{
+        gap: space(3),
+        backgroundColor: c.surface,
+        borderColor: c.line,
+        borderWidth: 1,
+        borderRadius: radius.sheet,
+        borderCurve: "continuous",
+        padding: space(5),
+      }}
+    >
+      <Ionicons name="cloud-offline-outline" size={28} color={c.muted} />
+      <T tone="headline">Couldn&apos;t load Today</T>
+      <T tone="muted">
+        {text ?? "Something went wrong."} Your trip and today&apos;s hours show here once Lumiback
+        can be reached.
+      </T>
+      <Button
+        label="Try again"
+        variant="secondary"
+        busy={busy}
+        busyLabel="Loading…"
+        onPress={() => void onRetry()}
+      />
+    </View>
+  );
+}
+
 function AtHostel({
   rules,
+  rulesStatus,
   request,
   onDone,
   logRequest,
 }: {
   rules: TodayRules | null;
+  rulesStatus: RulesStatus;
   request: OutingRequest | null;
   onDone: () => Promise<void>;
   logRequest: string | null;
@@ -209,33 +270,45 @@ function AtHostel({
   const [tapped, setTapped] = useState(false);
   // A request opens the sheet once: it stays "handled" after closing until the next one.
   const [handled, setHandled] = useState<string | null>(null);
-  const open = tapped || (logRequest !== null && logRequest !== handled);
+  const line = rules ? rulesLine(rules, now) : null;
+  const formNeeded = rules !== null && formNeededAt(rules, now);
+  const needsApproval = formNeeded && !approved(request);
+  const used = request?.status === "approved" && request.used;
+  // Rules not loaded (offline): the server decides, so offer everything. Not set up at all:
+  // there's nothing to tap out against, so the hero steps back like on a closed day.
+  const canGoOut = rulesStatus !== "none" && (!line || (line.open && !needsApproval));
+  // "Can't scan? Log a trip instead" only opens the sheet when a trip can be logged now;
+  // otherwise it just lands here, where the card says why (and it isn't reopened later).
+  if (logRequest !== null && logRequest !== handled && !canGoOut) setHandled(logRequest);
+  const open = tapped || (canGoOut && logRequest !== null && logRequest !== handled);
   const setOpen = (next: boolean): void => {
     setTapped(next);
     if (!next) setHandled(logRequest);
   };
-  const line = rules ? rulesLine(rules, now) : null;
-  const needsApproval = rules !== null && formNeededAt(rules, now) && !approved(request);
-  // Without rules (offline, or not set up) the server decides; offer everything.
-  const canGoOut = !line || (line.open && !needsApproval);
   const backBy =
     rules && line?.open
       ? plannedReturn(rules, now, { requestedMinutes: request?.requested_minutes })
       : null;
 
   const body = !line
-    ? "Scan the code at the gate to tap out. We'll remind you before you're due back."
-    : !line.open
-      ? line.title === "Outings are over for today"
-        ? "Outings are over for today. See you tomorrow."
-        : `Outings open at ${formatTime(rules!.opens_at)}.`
-      : needsApproval
-        ? request?.status === "pending"
-          ? "Your request is with the hostel office. Once they approve it, scan at the gate."
-          : request?.status === "approved" && request.used
-            ? "You've used today's approved outing. Form days allow one outing a day."
-            : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
-        : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
+    ? rulesStatus === "none"
+      ? "Outing rules aren't set up yet. Ask the hostel office."
+      : "Couldn't load today's outing hours. Pull down to try again, or scan at the gate: it checks the rules itself."
+    : line.closed === "after"
+      ? "Outings are over for today. See you tomorrow."
+      : line.closed === "before"
+        ? needsApproval && !used
+          ? request?.status === "pending"
+            ? `Outings open at ${formatTime(rules!.opens_at)}. Your request is with the hostel office.`
+            : `Outings open at ${formatTime(rules!.opens_at)}. Ask for today's outing now so it's approved by then.`
+          : `Outings open at ${formatTime(rules!.opens_at)}.`
+        : needsApproval
+          ? request?.status === "pending"
+            ? "Your request is with the hostel office. Once they approve it, scan at the gate."
+            : used
+              ? `You've used today's approved outing. You get one approved outing a day.${freeEveningNote(rules!, now)}`
+              : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
+          : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
 
   return (
     <>
@@ -302,9 +375,11 @@ function LogTripSheet({
   const [destination, setDestination] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const back = rules
-    ? plannedReturn(rules, now, { requestedMinutes: request?.requested_minutes })
-    : null;
+  // Only a time the server would really set: none while outings are closed (it will refuse).
+  const back =
+    rules && rulesLine(rules, now).open
+      ? plannedReturn(rules, now, { requestedMinutes: request?.requested_minutes })
+      : null;
   const parts = back ? clockParts(back) : null;
 
   const submit = async (): Promise<void> => {
@@ -346,12 +421,7 @@ function LogTripSheet({
         returnKeyType="done"
       />
       <FormError message={error} />
-      <Button
-        label="Check out"
-        busy={busy}
-        busyLabel="Checking out…"
-        onPress={() => void submit()}
-      />
+      <Button label="Log trip" busy={busy} busyLabel="Logging…" onPress={() => void submit()} />
     </Sheet>
   );
 }
@@ -395,7 +465,7 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
     <Hero art="lantern-lit">
       <View style={{ gap: space(2), paddingRight: space(28) }}>
         {overdue ? (
-          <StatusChip label="Overdue" tone="danger" />
+          <StatusChip label="Late" tone="danger" />
         ) : (
           <Text style={[type.eyebrow, { color: c.heroMuted }]}>You&apos;re out</Text>
         )}
@@ -447,8 +517,9 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         ) : (
           <View style={{ gap: space(2) }}>
             <Text style={[type.body, { color: c.onHero }]}>
-              You&apos;re late. Tell the hostel office you&apos;re OK. If there&apos;s no answer,
-              they may call you or your emergency contact.
+              You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine. At 30
+              minutes late we ask if you&apos;re OK; with no answer 10 minutes later the hostel
+              office is told and may call you or your emergency contact.
             </Text>
             <View style={{ flexDirection: "row", gap: space(2) }}>
               <View style={{ flex: 1 }}>
@@ -521,6 +592,8 @@ function RulesCard({
   const line = rulesLine(rules, now);
   // False in a no-form evening: the request controls step aside, like on a weekday.
   const formNeeded = formNeededAt(rules, now);
+  // Asking works from the morning, before outings open, so it can be approved in time.
+  const canAsk = canAskAt(rules, now);
   const live = request && request.status !== "cancelled" ? request : null;
 
   const cancel = async (id: string): Promise<void> => {
@@ -576,7 +649,24 @@ function RulesCard({
         </View>
       </View>
 
-      {formNeeded && line.open && !(live?.used ?? false) ? (
+      {rules.hostel == null ? (
+        <Press
+          onPress={() => {
+            haptic.tap();
+            router.navigate("/profile/outing-details");
+          }}
+          accessibilityLabel="Choose your hostel so these are your hostel's times"
+          style={{ flexDirection: "row", alignItems: "center", gap: space(2), minHeight: 44 }}
+        >
+          <Ionicons name="home-outline" size={18} color={c.accent} />
+          <T tone="label" style={{ flex: 1, color: c.accent }}>
+            Choose your hostel so these are your hostel&apos;s times
+          </T>
+          <Ionicons name="chevron-forward" size={16} color={c.accent} />
+        </Press>
+      ) : null}
+
+      {canAsk && !(live?.used ?? false) ? (
         <View
           style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
         >
@@ -597,7 +687,8 @@ function RulesCard({
             <>
               <StatusChip label="Waiting for approval" tone="accent" />
               <T tone="small">
-                {live.purpose}. You&apos;ll get a notification when the hostel office decides.
+                {sentence(live.purpose)} You&apos;ll get a notification when the hostel office
+                decides.
               </T>
               <Button
                 label="Cancel request"
@@ -611,11 +702,21 @@ function RulesCard({
             <>
               <StatusChip label="Approved" tone="good" />
               <T tone="small">
-                Scan at the gate when you leave.
+                {line.closed === "before"
+                  ? `Scan at the gate when you leave, from ${formatTime(rules.opens_at)}.`
+                  : "Scan at the gate when you leave."}
                 {live.requested_minutes
                   ? ` You asked for ${formatMinutes(live.requested_minutes)}.`
                   : ""}
               </T>
+              {/* Not going after all: an approved request can be cancelled until it's used. */}
+              <Button
+                label="Cancel request"
+                variant="quiet"
+                busy={busy}
+                busyLabel="Cancelling…"
+                onPress={() => void cancel(live.id)}
+              />
             </>
           )}
           <FormError message={error} />
@@ -626,8 +727,7 @@ function RulesCard({
         >
           <StatusChip label="Used today" tone="accent" />
           <T tone="small">
-            Your approved outing for today is done. Form days allow one outing a day; you can ask
-            again tomorrow.
+            {`Your approved outing for today is done. You get one approved outing a day.${freeEveningNote(rules, now)}`}
           </T>
         </View>
       ) : null}
@@ -742,7 +842,7 @@ const STEPS = [
   },
   {
     title: "You're due back by your hostel's time",
-    detail: "On weekends and holidays, ask for the outing first.",
+    detail: "On days that need approval, ask the hostel office first. Today tells you when.",
   },
   {
     title: "Scan again when you're back",

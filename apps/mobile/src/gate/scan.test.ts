@@ -48,11 +48,12 @@ describe("toFix", () => {
 });
 
 describe("refusal", () => {
-  it("passes on the outing rules' reason", () => {
+  it("passes on the outing rules' reason, without offering to log the trip instead", () => {
     expect(refusal(422, "Weekday outings end at 8:00 PM. Try again tomorrow.")).toEqual({
       kind: "refused",
       message: "Weekday outings end at 8:00 PM. Try again tomorrow.",
       retry: true,
+      fallback: false,
     });
   });
 
@@ -61,8 +62,15 @@ describe("refusal", () => {
       kind: "refused",
       message: "You're about 300 m from North Gate.",
       retry: true,
+      fallback: false,
     });
     expect(refusal(0, "")).toMatchObject({ kind: "refused", retry: true });
+  });
+
+  it("offers the fallback only when the scan itself couldn't be checked", () => {
+    expect(refusal(0, "")).toMatchObject({ retry: true, fallback: true });
+    expect(refusal(503, "Service unavailable")).toMatchObject({ retry: true, fallback: true });
+    expect(refusal(403, "Not allowed")).toMatchObject({ fallback: false });
   });
 
   it("doesn't offer a retry for a double scan", () => {
@@ -70,6 +78,7 @@ describe("refusal", () => {
       kind: "refused",
       message: "You just scanned.",
       retry: false,
+      fallback: false,
     });
   });
 });

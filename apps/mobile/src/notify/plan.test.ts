@@ -1,6 +1,7 @@
 import {
   endedMessage,
   mutedChannels,
+  notificationRoute,
   newRequests,
   RETURN_DUE,
   RETURN_SOON,
@@ -68,5 +69,18 @@ describe("mutedChannels", () => {
     expect(
       mutedChannels({ followRequests: false, returnReminders: false, shareStatus: false }),
     ).toEqual(["follow-requests", "return-reminders", "share-status"]);
+  });
+});
+
+describe("notificationRoute", () => {
+  it("opens the screen the notification names", () => {
+    expect(notificationRoute({ url: "/live" })).toBe("/live");
+    expect(notificationRoute({ url: "/today" })).toBe("/today");
+  });
+
+  it("opens Today when the url is missing or unknown", () => {
+    for (const data of [undefined, null, {}, { url: null }, { url: "/admin" }, { url: 3 }, "x"]) {
+      expect(notificationRoute(data)).toBe("/today");
+    }
   });
 });

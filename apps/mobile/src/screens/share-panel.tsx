@@ -143,7 +143,7 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
   const facts: { icon: React.ComponentProps<typeof Ionicons>["name"]; text: string }[] = [
     {
       icon: "checkmark-circle-outline",
-      text: "You approve every person before they see anything.",
+      text: "You approve every person before they see anything. The hostel office can see your last position only if you're very late and don't answer.",
     },
     { icon: "notifications-outline", text: "A notification stays on the whole time you share." },
     { icon: "time-outline", text: "It ends when time runs out, or after 15 quiet minutes." },

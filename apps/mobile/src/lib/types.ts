@@ -60,14 +60,16 @@ export interface TodayRules {
 }
 
 export interface Campus {
-  curfew: string;
-  curfew_at: string;
+  /** Legacy single curfew; null (or absent) when the outing rules aren't set up. Unused here. */
+  curfew?: string | null;
+  curfew_at?: string | null;
+  /** Null when the outing rules aren't set up. */
   today: TodayRules | null;
 }
 
 export type RequestStatus = "pending" | "approved" | "declined" | "cancelled";
 
-/** Today's weekend/holiday outing request (the form). */
+/** Today's outing request (the form), on a day that needs approval (currently Sundays and holidays). */
 export interface OutingRequest {
   id: string;
   day: string;

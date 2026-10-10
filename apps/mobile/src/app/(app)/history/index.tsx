@@ -144,7 +144,7 @@ export default function History(): ReactNode {
               <Illustration name="lantern-unlit" size={180} />
               <T tone="headline">No outings yet</T>
               <T tone="muted" style={{ textAlign: "center", maxWidth: 280 }}>
-                Your trips appear here once you check out from Today.
+                Your trips appear here once you tap out at the gate or log a trip from Today.
               </T>
             </View>
           )
