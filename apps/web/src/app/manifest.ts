@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Lumiback",
     short_name: "Lumiback",
     description:
-      "Log where you're going and when you'll be back. Share your live location only with people you approve.",
+      "Tap out at the gate or log your trip, and share your live location only with people you approve.",
     start_url: "/home", // signed-out visitors are sent on to sign in
     scope: "/",
     display: "standalone",

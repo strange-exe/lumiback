@@ -8,6 +8,7 @@ import { LiveMap } from "@/components/map/LiveMap";
 import { formatTime } from "@/features/outings/time";
 import { InviteCode } from "@/features/share/components/InviteCode";
 import { ViewerList } from "@/features/share/components/ViewerList";
+import { WhoLooked } from "@/features/share/components/WhoLooked";
 import { useShare } from "@/features/share/ShareProvider";
 import { ago } from "@/lib/ago";
 import { useNow } from "@/lib/use-now";
@@ -168,6 +169,7 @@ function LiveShare(): ReactNode {
       />
 
       <ViewerList viewers={session.viewers} sessionId={session.id} />
+      <WhoLooked sessionId={session.id} />
       <InviteCode sessionId={session.id} />
 
       <div className="flex flex-col gap-2 border-t border-line pt-6">

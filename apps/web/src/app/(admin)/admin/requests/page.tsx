@@ -21,14 +21,15 @@ export default async function RequestsPage(): Promise<ReactNode> {
           Outing requests
         </h1>
         <p className="max-w-[65ch] text-muted">
-          Weekend and holiday outings need an approved form. Students send it on the day; once you
-          approve it they can tap out at the gate, once, for up to the day&apos;s limit.
+          Days that need approval (currently Sundays and holidays) need an approved form. Students
+          send it on the day; once you approve it they can tap out at the gate or check out on the
+          website, once, for up to the day&apos;s limit.
           {pending ? ` ${pending} waiting for you.` : ""}
         </p>
       </div>
       {requests.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-10 text-center text-muted">
-          No requests today. They appear here on weekends and holidays, as students send them.
+          No requests today. They appear here on days that need approval, as students send them.
         </p>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">

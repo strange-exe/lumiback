@@ -71,9 +71,9 @@ export default async function Landing(): Promise<ReactNode> {
               <br />
               <span className="text-accent">Get back safe.</span>
             </h1>
-            <p className="max-w-[34ch] text-lg leading-relaxed text-muted">
-              Log where you&apos;re going and when you&apos;ll be back. Share your live location
-              only with people you approve.
+            <p className="max-w-[40ch] text-lg leading-relaxed text-muted">
+              Tap out at the gate or log your trip; your hostel&apos;s rules set when you&apos;re
+              due back. Share your live location only with people you approve.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link href="/register" className={PRIMARY}>
@@ -185,8 +185,9 @@ export default async function Landing(): Promise<ReactNode> {
           <p className="max-w-[60ch] leading-relaxed text-muted">
             Only your latest position is stored while you share, and it is deleted when sharing
             ends. Hostel staff see when you left and came back, not where you are. The one exception
-            is safety: if you&apos;re over 40 minutes late, don&apos;t answer, and are sharing right
-            then, they see that last position, and you see that they looked. No ads, no tracking.{" "}
+            is safety: if you&apos;re 30 minutes late and don&apos;t answer within 10 minutes while
+            you&apos;re sharing, they see that last position, and you see that they looked. No ads,
+            no tracking.{" "}
             <Link
               href="/privacy"
               className="font-bold text-accent underline-offset-4 hover:underline"

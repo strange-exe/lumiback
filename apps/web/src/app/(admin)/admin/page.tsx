@@ -95,7 +95,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           <p className="rounded-sheet border border-dashed border-line px-5 py-10 text-center text-muted">
             {state === "overdue"
               ? "Nobody is overdue."
-              : "Nobody is out right now. Students appear here when they tap out at a gate or log a trip in the app."}
+              : "Nobody is out right now. Students appear here when they tap out at a gate or check out in the app or on the website."}
           </p>
         ) : (
           <OutingsTable outings={outings} />

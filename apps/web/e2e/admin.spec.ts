@@ -238,6 +238,31 @@ test.describe("as an admin", () => {
     await expect(holidays.getByText("No upcoming holidays.")).toBeVisible();
   });
 
+  test("rules form: approval reveals its own settings, and the summary says what students see", async ({
+    page,
+  }) => {
+    await page.goto("/admin/rules");
+    const sunday = page.getByRole("group", { name: "Sunday" });
+    await expect(sunday.getByText("no form needed")).toBeVisible();
+    await expect(sunday.getByLabel(/Sunday: maximum hours/)).toHaveCount(0);
+
+    await sunday.getByLabel(/Sunday: needs a form/).check();
+    await sunday.getByLabel(/Sunday: outings from/).fill("10:00");
+    await sunday.getByLabel(/Sunday: back by/).fill("20:00");
+    await sunday.getByLabel(/Sunday: maximum hours/).fill("3");
+    await sunday.getByLabel(/Sunday: no form needed from/).fill("18:00");
+    await expect(
+      sunday.getByText(
+        "10:00 AM–8:00 PM · needs approval · up to 3 h · no form needed from 6:00 PM",
+      ),
+    ).toBeVisible();
+    await page.screenshot({ path: "e2e/shots/after/admin-rules-approval.png", fullPage: true });
+
+    // Times in the wrong order are flagged before saving. Nothing is saved in this test.
+    await sunday.getByLabel(/Sunday: back by/).fill("09:00");
+    await expect(sunday.getByText("“Back by” must be after “Outings from”")).toBeVisible();
+  });
+
   test("a weekend request: the student asks, an admin approves", async ({ page, request }) => {
     const admin = { Authorization: `Bearer ${adminToken()}` };
     const student = { Authorization: `Bearer ${studentToken()}` };

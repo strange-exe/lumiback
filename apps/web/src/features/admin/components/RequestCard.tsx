@@ -17,7 +17,7 @@ const STATUS: Record<AdminRequest["status"], { label: string; className: string 
   cancelled: { label: "Cancelled by student", className: "bg-line text-muted" },
 };
 
-/** One weekend/holiday outing request: who, why, for how long, whom to call; and a decision. */
+/** One outing request (a day that needs approval): who, why, for how long, whom to call; and a decision. */
 export function RequestCard({ request }: { request: AdminRequest }): ReactNode {
   const [state, action] = useActionState(decideRequest, EMPTY);
   const status = STATUS[request.status];

@@ -39,6 +39,12 @@ export default async function RulesPage(): Promise<ReactNode> {
             times can&apos;t be extended once a student is out.
           </p>
         </div>
+        {sets.length === 0 ? (
+          <p role="status" className="rounded-control bg-danger-soft px-4 py-3 text-ink">
+            <strong>No outing rules yet.</strong> Students can&apos;t check out until you add a set
+            below.
+          </p>
+        ) : null}
         {sets.map((set) => (
           <RuleSetForm key={set.id} ruleSet={set} />
         ))}
@@ -55,6 +61,9 @@ export default async function RulesPage(): Promise<ReactNode> {
             shown when a late student doesn&apos;t answer.
           </p>
         </div>
+        {sets.length === 0 ? (
+          <p className="text-sm text-muted">Add a set of rules first: every hostel follows one.</p>
+        ) : null}
         {sets.map((set) => {
           const inSet = hostels.filter((h) => h.rule_set_id === set.id);
           return (
@@ -87,7 +96,7 @@ export default async function RulesPage(): Promise<ReactNode> {
             Holidays
           </h2>
           <p className="max-w-[65ch] text-sm text-muted">
-            On these dates the holiday rules apply instead of the weekday or weekend ones.
+            On these dates the holiday rules apply instead of the weekday, Saturday or Sunday ones.
           </p>
         </div>
         {upcoming.length ? (

@@ -19,7 +19,7 @@ const dateFormat = new Intl.DateTimeFormat("en-IN", {
   month: "short",
 });
 
-/** "8:30 pm" -> split so the period can be typeset smaller. */
+/** "8:00 pm" -> split so the period can be typeset smaller. */
 export function clockParts(iso: string | Date): { time: string; period: string } {
   const formatted = timeFormat.format(new Date(iso)).replace(/ /g, " ");
   const [time, period = ""] = formatted.split(" ");

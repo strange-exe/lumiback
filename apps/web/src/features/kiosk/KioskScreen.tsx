@@ -226,6 +226,10 @@ function CodeView({
           Open the Lumiback app, tap <strong className="text-on-hero">Scan</strong>, and point your
           camera here.
         </p>
+        <p className="text-hero-muted">
+          No app? Check out on <strong className="text-on-hero">lumiback.abhinesh.codes</strong>{" "}
+          instead.
+        </p>
         <p
           aria-live="polite"
           className={offline ? "font-bold text-hero-danger" : "text-hero-muted"}

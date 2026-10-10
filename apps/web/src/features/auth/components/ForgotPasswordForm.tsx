@@ -6,7 +6,7 @@ import { useActionState, type ReactNode } from "react";
 import { Field, FormError } from "@/components/ui/Field";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { SubmitButton } from "@/components/ui/SubmitButton";
-import { requestPasswordReset, resetPassword } from "@/features/auth/actions";
+import { requestPasswordReset, resendPasswordReset, resetPassword } from "@/features/auth/actions";
 import type { FormState } from "@/lib/types";
 
 const INITIAL: FormState = { error: null };
@@ -39,7 +39,7 @@ export function RequestResetForm({ email }: { email?: string }): ReactNode {
 
 export function SetNewPasswordForm({ email }: { email: string }): ReactNode {
   const [state, action] = useActionState(resetPassword, INITIAL);
-  const [, resend] = useActionState(requestPasswordReset, INITIAL);
+  const [resent, resend] = useActionState(resendPasswordReset, INITIAL);
   return (
     <div className="flex flex-col gap-4">
       <form action={action} className="flex flex-col gap-4" noValidate>
@@ -64,11 +64,17 @@ export function SetNewPasswordForm({ email }: { email: string }): ReactNode {
         <FormError message={state.error} />
         <SubmitButton pendingLabel="Saving…">Set new password</SubmitButton>
       </form>
-      <form action={resend} className="self-center">
+      <form action={resend} className="flex flex-col items-center gap-1">
         <input type="hidden" name="email" value={email} />
         <SubmitButton variant="quiet" pendingLabel="Sending…">
           Send a new code
         </SubmitButton>
+        <p
+          role="status"
+          className={`min-h-5 text-sm ${resent.error ? "font-bold text-danger" : "text-muted"}`}
+        >
+          {resent.error ?? resent.notice ?? ""}
+        </p>
       </form>
     </div>
   );

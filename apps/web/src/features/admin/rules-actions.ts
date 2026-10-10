@@ -8,7 +8,7 @@ import type { DayRule, DayType, FormState, RuleSet } from "@/lib/types";
 
 const DAY_TYPES: DayType[] = ["weekday", "saturday", "sunday", "holiday"];
 
-// ---------- weekend / holiday requests ----------
+// ---------- outing requests (days that need approval) ----------
 
 export async function decideRequest(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
@@ -52,14 +52,19 @@ export async function resolveEscalation(_: FormState, form: FormData): Promise<F
 
 // ---------- rule sets ----------
 
-/** One rule set's form: four day types, each with its times, an optional limit and form. */
+/**
+ * One rule set's form (DayRuleRow): four day types, each with its times and whether it needs
+ * approval. The maximum and the no-form time only exist on days that need approval: the form
+ * doesn't render (or post) them otherwise, and they are cleared here either way.
+ */
 function daysFrom(form: FormData): { days: DayRule[] } | { error: string } {
   const days: DayRule[] = [];
   for (const day of DAY_TYPES) {
     const opens = text(form, `${day}.opens_at`);
     const returnBy = text(form, `${day}.return_by`);
     if (!opens || !returnBy) return { error: "Every day needs an opening and a return time." };
-    const hours = number(form, `${day}.max_hours`);
+    const needsForm = form.get(`${day}.needs_form`) === "on";
+    const hours = needsForm ? number(form, `${day}.max_hours`) : null;
     if (hours !== null && (hours < 0.5 || hours > 12)) {
       return { error: "A maximum outing is between 0.5 and 12 hours." };
     }
@@ -68,12 +73,22 @@ function daysFrom(form: FormData): { days: DayRule[] } | { error: string } {
       opens_at: opens,
       return_by: returnBy,
       max_minutes: hours === null ? null : Math.round(hours * 60),
-      needs_form: form.get(`${day}.needs_form`) === "on",
-      no_form_from: text(form, `${day}.no_form_from`) || null,
+      needs_form: needsForm,
+      no_form_from: (needsForm && text(form, `${day}.no_form_from`)) || null,
     });
   }
   return { days };
 }
+
+/** A new rule set when there is none to copy: every day 6–8 PM, no form needed. */
+const BLANK_DAYS: DayRule[] = DAY_TYPES.map((day_type) => ({
+  day_type,
+  opens_at: "18:00",
+  return_by: "20:00",
+  max_minutes: null,
+  needs_form: false,
+  no_form_from: null,
+}));
 
 export async function saveRuleSet(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
@@ -91,20 +106,23 @@ export async function saveRuleSet(_: FormState, form: FormData): Promise<FormSta
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/rules");
-  return { error: null, notice: "Saved. New tap-outs follow these rules." };
+  return { error: null, notice: "Saved. New outings follow these rules." };
 }
 
 export async function createRuleSet(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const name = text(form, "name");
   if (!name) return { error: "Give the new rules a name.", fields: { name } };
-  // Start as a copy of an existing set, then edit it.
-  const sets = await callBackend<RuleSet[]>("/admin/rule-sets", { token });
+  // Start as a copy of an existing set (or a blank one if there is none yet), then edit it.
+  const listed = await attempt(() => callBackend<RuleSet[]>("/admin/rule-sets", { token }), {
+    name,
+  });
+  if ("error" in listed) return listed.error;
+  const sets = listed.ok;
   const from = sets.find((s) => s.id === text(form, "copy_from")) ?? sets[0];
-  if (!from) return { error: "There are no rules to copy.", fields: { name } };
+  const days = from?.days ?? BLANK_DAYS;
   const result = await attempt(
-    () =>
-      callBackend("/admin/rule-sets", { method: "POST", token, body: { name, days: from.days } }),
+    () => callBackend("/admin/rule-sets", { method: "POST", token, body: { name, days } }),
     { name },
   );
   if ("error" in result) return result.error;

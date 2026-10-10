@@ -24,7 +24,7 @@ export function SettingsForm({ current }: { current: CampusSettings }): ReactNod
         max={730}
         required
         defaultValue={state.fields?.retention ?? String(current.scan_retention_days)}
-        hint="Gate scans, weekend and holiday requests, handled late escalations, and records of who viewed a shared location are deleted automatically after this. Open escalations stay until handled. Trips in the register are kept until the student deletes their account."
+        hint="Gate scans, outing requests, handled late escalations, and records of who viewed a shared location are deleted automatically after this. Open escalations stay until handled. Trips in the register are kept until the student deletes their account."
       />
       <FormError message={state.error} />
       <div className="flex flex-wrap items-center gap-3">

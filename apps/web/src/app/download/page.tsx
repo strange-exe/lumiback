@@ -119,9 +119,9 @@ export default function DownloadPage(): ReactNode {
           </h2>
           <p className="max-w-[60ch] leading-relaxed text-muted">
             There&apos;s no iPhone app yet. Everything works on this website: check out, see your
-            outing hours, ask for weekend outings and share your location. Approvals and the
-            &ldquo;Are you OK?&rdquo; alert come to your university email instead of as
-            notifications.
+            outing hours, ask for outings on days that need approval and share your location.
+            Approvals and the &ldquo;Are you OK?&rdquo; alert come to your university email instead
+            of as notifications.
           </p>
           <Link
             href="/sign-in"

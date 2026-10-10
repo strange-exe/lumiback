@@ -16,7 +16,7 @@ export function RoleForm({ person, isMe }: { person: AdminUser; isMe: boolean })
       action={action}
       onSubmit={(event) => {
         const question = promote
-          ? `Make ${person.name} an admin? They'll see who is out, gate scans and settings.`
+          ? `Make ${person.name} an admin? They'll see the register, outing requests (with phone numbers), escalations (with emergency and warden contacts), gate scans, rules and settings. Never a live location, except a sharing student's last position when that student is late and hasn't answered.`
           : isMe
             ? "Remove your own admin access? You'll need another admin to give it back."
             : `Remove ${person.name}'s admin access?`;

@@ -31,6 +31,16 @@ export default function GateCodePage(): ReactNode {
             The app checks you&apos;re at the gate using your phone&apos;s location at that moment.
             Nothing is recorded from this page.
           </p>
+          <p className="text-muted">
+            No app? Check out on{" "}
+            <Link
+              href="/sign-in"
+              className="font-bold text-accent underline-offset-4 hover:underline"
+            >
+              lumiback.abhinesh.codes
+            </Link>{" "}
+            instead.
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <Link

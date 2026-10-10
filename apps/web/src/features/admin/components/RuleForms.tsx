@@ -14,16 +14,11 @@ import {
   saveHostel,
   saveRuleSet,
 } from "@/features/admin/rules-actions";
-import type { DayType, FormState, Holiday, Hostel, RuleSet } from "@/lib/types";
+import type { FormState, Holiday, Hostel, RuleSet } from "@/lib/types";
+
+import { DayRuleRow } from "./DayRuleRow";
 
 const EMPTY: FormState = { error: null };
-
-const DAY_LABEL: Record<DayType, string> = {
-  weekday: "Weekdays",
-  saturday: "Saturday",
-  sunday: "Sunday",
-  holiday: "Holidays",
-};
 
 const input =
   "min-h-11 w-full rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none";
@@ -78,101 +73,16 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
             : "No hostel follows these rules yet."}
         </p>
 
-        <div className="-mx-5 overflow-x-auto px-5 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="text-muted">
-              <tr>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Day
-                </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Outings from
-                </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Back by
-                </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Max hours
-                </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
-                  Form + approval
-                </th>
-                <th scope="col" className="py-2 font-normal">
-                  No form from
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line border-y border-line">
-              {ruleSet.days.map((d) => {
-                const key = `${id}-${d.day_type}`;
-                return (
-                  <tr key={d.day_type}>
-                    <th scope="row" className="py-2 pr-3 font-bold text-ink">
-                      {DAY_LABEL[d.day_type]}
-                    </th>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="time"
-                        name={`${d.day_type}.opens_at`}
-                        defaultValue={d.opens_at}
-                        required
-                        aria-label={`${DAY_LABEL[d.day_type]}: outings from`}
-                        className={input}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="time"
-                        name={`${d.day_type}.return_by`}
-                        defaultValue={d.return_by}
-                        required
-                        aria-label={`${DAY_LABEL[d.day_type]}: back by`}
-                        className={input}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number"
-                        name={`${d.day_type}.max_hours`}
-                        min={0.5}
-                        max={12}
-                        step={0.5}
-                        defaultValue={d.max_minutes ? d.max_minutes / 60 : ""}
-                        placeholder="No limit"
-                        aria-label={`${DAY_LABEL[d.day_type]}: maximum hours (empty: until back-by)`}
-                        className={input}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        id={key}
-                        type="checkbox"
-                        name={`${d.day_type}.needs_form`}
-                        defaultChecked={d.needs_form}
-                        aria-label={`${DAY_LABEL[d.day_type]}: needs a form approved by an admin`}
-                        className="size-5 accent-[var(--accent)]"
-                      />
-                    </td>
-                    <td className="py-2">
-                      <input
-                        type="time"
-                        name={`${d.day_type}.no_form_from`}
-                        defaultValue={d.no_form_from ?? ""}
-                        aria-label={`${DAY_LABEL[d.day_type]}: no form needed from (form days only; empty: always needed)`}
-                        className={input}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex flex-col">
+          {ruleSet.days.map((d) => (
+            <DayRuleRow key={d.day_type} setId={id} rule={d} />
+          ))}
         </div>
         <p className="text-sm text-muted">
           Coming back after &ldquo;Back by&rdquo; is recorded as late and listed on the Register. On
-          form days, &ldquo;No form from&rdquo; lets students go out without one from that time
-          until &ldquo;Back by&rdquo;, with no maximum, like a weekday evening. Holidays are the
-          dates in the list below, whatever day they fall on.
+          days that need approval, &ldquo;No form needed from&rdquo; lets students go out without
+          one from that time until &ldquo;Back by&rdquo;, with no limit, like a weekday evening.
+          Holidays are the dates in the list below, whatever day they fall on.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton pendingLabel="Saving…">Save rules</SubmitButton>
@@ -213,7 +123,9 @@ export function NewRuleSetForm({ sets }: { sets: RuleSet[] }): ReactNode {
       action={action}
       className="flex flex-col gap-4 rounded-sheet border border-dashed border-line p-5 sm:p-6"
     >
-      <h3 className="font-display text-lg text-ink">Add another set of rules</h3>
+      <h3 className="font-display text-lg text-ink">
+        {sets.length ? "Add another set of rules" : "Add a set of rules"}
+      </h3>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Name"
@@ -223,16 +135,23 @@ export function NewRuleSetForm({ sets }: { sets: RuleSet[] }): ReactNode {
           maxLength={60}
           defaultValue={state.fields?.name}
         />
-        <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
-          Start from a copy of
-          <select name="copy_from" className={`${input} min-h-12`}>
-            {sets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {sets.length ? (
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            Start from a copy of
+            <select name="copy_from" className={`${input} min-h-12`}>
+              {sets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="self-end text-sm text-muted">
+            Starts with every day 6:00–8:00 PM and no form needed. Edit its times once it&apos;s
+            added.
+          </p>
+        )}
       </div>
       <FormError message={state.error} />
       <div className="flex flex-wrap items-center gap-3">

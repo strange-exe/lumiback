@@ -2,7 +2,7 @@ import { formatDay, formatTime } from "@/features/outings/time";
 
 const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
 
-/** "8:30 PM" today; "Mon 6 Oct, 8:30 PM" otherwise. Always IST. */
+/** "8:00 PM" today; "Mon 6 Oct, 8:00 PM" otherwise. Always IST. */
 export function formatWhen(iso: string, now: Date = new Date()): string {
   const sameDay = dayKey.format(new Date(iso)) === dayKey.format(now);
   return sameDay ? formatTime(iso) : `${formatDay(iso)}, ${formatTime(iso)}`;

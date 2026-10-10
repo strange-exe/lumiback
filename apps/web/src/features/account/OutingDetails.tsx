@@ -51,8 +51,9 @@ export function OutingDetails({
           Hostel and contacts
         </h2>
         <p className="text-sm text-muted">
-          Your hostel decides your outing hours and how long weekend outings can be. If you&apos;re
-          late and don&apos;t answer, the hostel office may call you or your emergency contact.
+          Your hostel decides your outing hours and how long outings can be on days that need
+          approval. If you&apos;re late and don&apos;t answer, the hostel office may call you or
+          your emergency contact.
         </p>
       </div>
 

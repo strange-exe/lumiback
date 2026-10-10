@@ -51,21 +51,31 @@ export async function GET(
     start(controller) {
       let open = true;
       let socket: WebSocket | null = null;
-      const send = (event: WatchEvent): void => {
-        if (open) controller.enqueue(frame(event));
+      // The browser can go away at any moment (cancel/abort); after that the controller
+      // throws on enqueue and close, so every write goes through these guarded helpers.
+      const write = (chunk: Uint8Array): void => {
+        if (!open) return;
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          finish();
+        }
       };
-      const keepalive = setInterval(() => {
-        if (open) controller.enqueue(encoder.encode(": keepalive\n\n"));
-      }, KEEPALIVE_MS);
+      const send = (event: WatchEvent): void => write(frame(event));
+      const keepalive = setInterval(() => write(encoder.encode(": keepalive\n\n")), KEEPALIVE_MS);
       finish = () => {
         if (!open) return;
         open = false;
         clearInterval(keepalive);
         socket?.close();
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already cancelled by the browser: nothing left to close.
+        }
       };
       request.signal.addEventListener("abort", finish);
-      controller.enqueue(encoder.encode("retry: 2000\n\n"));
+      write(encoder.encode("retry: 2000\n\n"));
 
       if (!isUuid(id) || (!guest && !token)) {
         send({ type: "gone" });

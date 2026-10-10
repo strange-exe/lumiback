@@ -68,7 +68,7 @@ export async function replyLate(_: FormState, form: FormData): Promise<FormState
   );
 }
 
-// ---------- weekend / holiday request ----------
+// ---------- outing request (days that need approval) ----------
 
 export async function sendRequest(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
@@ -121,6 +121,8 @@ export async function cancelRequest(_: FormState, form: FormData): Promise<FormS
 export async function saveHostel(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const hostel = text(form, "hostel_id");
+  // Errors (including the 409 for changing hostel while out, or with a request today) come
+  // back as the backend's own explanation.
   return run(
     () =>
       callBackend("/profile", {
@@ -129,7 +131,9 @@ export async function saveHostel(_: FormState, form: FormData): Promise<FormStat
         body: { hostel_id: hostel || null },
       }),
     undefined,
-    "Saved. Your hostel's rules apply from now on.",
+    hostel
+      ? "Saved. Your hostel's rules apply from now on."
+      : "Saved. The campus default rules apply until you choose a hostel.",
   );
 }
 

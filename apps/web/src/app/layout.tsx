@@ -19,7 +19,7 @@ const geist = Geist({
 export const metadata: Metadata = {
   title: { default: "Lumiback", template: "%s · Lumiback" },
   description:
-    "Log where you're going and when you'll be back. Share your live location only with people you approve.",
+    "Tap out at the gate or log your trip; your hostel's rules set when you're due back. Share your live location only with people you approve.",
   applicationName: "Lumiback",
   // Installed on iOS: open full-screen with the page colour behind the status bar.
   appleWebApp: { capable: true, title: "Lumiback", statusBarStyle: "default" },

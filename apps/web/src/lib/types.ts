@@ -57,12 +57,13 @@ export interface TodayRules {
 }
 
 export interface Campus {
-  curfew: string;
-  curfew_at: string;
+  /** Null when no outing rules are set up yet. */
+  curfew?: string | null;
+  curfew_at?: string | null;
   today: TodayRules | null;
 }
 
-/** Today's weekend/holiday outing request (the form), as the student sees it. */
+/** Today's outing request for a day that needs approval (the form), as the student sees it. */
 export interface OutingRequest {
   id: string;
   day: string;
@@ -104,6 +105,16 @@ export interface OutingSummary {
 }
 
 // ---------- live sharing ----------
+
+/** GET /sessions/{id}/access-log: one read of the sharer's location, newest first. */
+export interface AccessLogEntry {
+  /** Null for an admin following up a late-return escalation. */
+  viewer_id: string | null;
+  viewer_name: string;
+  kind: "user" | "guest" | "admin";
+  channel: string;
+  viewed_at: string;
+}
 
 export type ViewerStatus = "pending" | "granted" | "revoked";
 
@@ -202,7 +213,7 @@ export interface AdminOuting {
   returned_at?: string | null;
   /** The answer to the "are you OK?" alert, if any. */
   late_reply?: LateReply | null;
-  /** A weekend/holiday outing an admin approved. */
+  /** An outing on a day that needs approval, which an admin approved. */
   on_request?: boolean;
 }
 
@@ -315,6 +326,7 @@ export interface AdminRequest {
 export interface LastSeen {
   kind: "live" | "gate";
   at: string;
+  /** Null for a "live" share that only has a faked (mock) location: see `mock_since`. */
   lat: number | null;
   lng: number | null;
   accuracy_m: number | null;
@@ -339,7 +351,8 @@ export interface Escalation {
   purpose: string | null;
   left_at: string;
   expected_return_at: string;
-  returned_at: string | null;
+  /** IST; set once the student is back, even while the escalation is still open. */
+  returned_at?: string | null;
   late_minutes: number;
   alert_at: string | null;
   late_reply: LateReply | null;

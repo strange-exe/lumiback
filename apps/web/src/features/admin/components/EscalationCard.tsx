@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Warning } from "@phosphor-icons/react";
+import { CheckCircle, MapPin, Warning } from "@phosphor-icons/react";
 import { useActionState, type ReactNode } from "react";
 
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -14,7 +14,10 @@ const EMPTY: FormState = { error: null };
 
 const REPLY = { on_my_way: "Answered: on the way", safe: "Answered: safe" } as const;
 
-/** A late student who didn't answer the app's alert: who to call, where they were last seen. */
+/**
+ * A late student who didn't answer the "are you OK?" alert (a notification in the app, or an
+ * email if they only use the website): who to call, and where they were last seen.
+ */
 export function EscalationCard({ escalation: e }: { escalation: Escalation }): ReactNode {
   const [state, action] = useActionState(resolveEscalation, EMPTY);
   const open = e.resolved_at === null;
@@ -40,7 +43,7 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
           }`}
         >
           {e.returned_at
-            ? `Back ${formatWhen(e.returned_at)}`
+            ? `Back at ${formatWhen(e.returned_at)}`
             : `${formatMinutes(e.late_minutes)} late`}
         </span>
       </header>
@@ -71,7 +74,20 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
         />
       </dl>
 
-      {open ? <LastSeen escalation={e} /> : null}
+      {open && e.returned_at ? (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-control bg-good-soft px-4 py-3 text-ink"
+        >
+          <CheckCircle aria-hidden="true" weight="fill" className="size-5 shrink-0 text-good" />
+          <span>
+            <strong className="text-lg">Back at {formatWhen(e.returned_at)}</strong>. Mark this as
+            handled once you&apos;ve checked in with them.
+          </span>
+        </p>
+      ) : null}
+
+      {open && !e.returned_at ? <LastSeen escalation={e} /> : null}
 
       {open ? (
         <form action={action} className="flex flex-col gap-3 border-t border-line pt-4">
@@ -121,6 +137,19 @@ function LastSeen({ escalation: e }: { escalation: Escalation }): ReactNode {
       </p>
     );
   }
+  if (seen.lat === null || seen.lng === null) {
+    // Sharing, but the phone only ever sent a faked (mock) location: nothing real to show.
+    return (
+      <p className="flex gap-2 rounded-control bg-danger-soft px-4 py-3 text-sm font-bold text-ink">
+        <Warning aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger" />
+        <span>
+          Sharing, but only a faked location
+          {seen.mock_since ? ` (since ${formatWhen(seen.mock_since)})` : ""}. There is no real
+          position to show.
+        </span>
+      </p>
+    );
+  }
   return (
     <div className="flex flex-col gap-2 rounded-control bg-accent-soft px-4 py-3 text-sm text-ink">
       <p className="flex gap-2">
@@ -144,7 +173,9 @@ function LastSeen({ escalation: e }: { escalation: Escalation }): ReactNode {
           Their phone has reported a faked location since {formatWhen(seen.mock_since)}.
         </p>
       ) : null}
-      <p className="text-muted">They can see in the app that the hostel office looked at this.</p>
+      <p className="text-muted">
+        They can see in their share&apos;s viewer history that the hostel office looked at this.
+      </p>
     </div>
   );
 }

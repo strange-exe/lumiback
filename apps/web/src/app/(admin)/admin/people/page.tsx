@@ -24,7 +24,9 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         </h1>
         <p className="max-w-[65ch] text-muted">
           Find a student or staff member who has signed up, and give or remove admin access. Admins
-          see the register, gate scans and settings, never anyone&apos;s live location.
+          see the register, outing requests (with phone numbers), escalations (with emergency and
+          warden contacts), gate scans, rules and settings. They never see a live location, except a
+          sharing student&apos;s last position when that student is late and hasn&apos;t answered.
         </p>
       </div>
       <form method="get" role="search" className="flex flex-wrap items-end gap-3">

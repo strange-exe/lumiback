@@ -138,15 +138,31 @@ export async function requestPasswordReset(_: FormState, form: FormData): Promis
   const email = text(form, "email").toLowerCase();
   if (!email.includes("@")) return { error: "Enter your university email.", fields: { email } };
   try {
-    await callBackend("/auth/forgot-password", {
-      method: "POST",
-      body: { email },
-      clientIp: await visitorIp(),
-    });
+    await sendResetCode(email);
   } catch (error) {
     return failure(error, { email });
   }
   redirect(`/forgot-password?sent=1&email=${encodeURIComponent(email)}`);
+}
+
+/** "Send a new code" on step 2: stays on the page and says what happened. */
+export async function resendPasswordReset(_: FormState, form: FormData): Promise<FormState> {
+  const email = text(form, "email").toLowerCase();
+  if (!email.includes("@")) return { error: "Start again with your university email." };
+  try {
+    await sendResetCode(email);
+  } catch (error) {
+    return failure(error);
+  }
+  return { error: null, notice: "If that account exists, a new code is on its way." };
+}
+
+async function sendResetCode(email: string): Promise<void> {
+  await callBackend("/auth/forgot-password", {
+    method: "POST",
+    body: { email },
+    clientIp: await visitorIp(),
+  });
 }
 
 /** Step 2: the emailed code sets a new password (signing out every device), then sign in here. */

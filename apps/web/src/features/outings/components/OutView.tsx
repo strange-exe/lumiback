@@ -46,8 +46,8 @@ export function OutView({ outing, serverNow }: { outing: Outing; serverNow: stri
       {overdue ? (
         outing.late_reply ? (
           <p role="status" className="rounded-control bg-accent-soft px-4 py-3 text-ink">
-            Thanks. The hostel office knows you&apos;re{" "}
-            {outing.late_reply === "safe" ? "safe" : "on your way"}.
+            Thanks. You said you&apos;re {outing.late_reply === "safe" ? "safe" : "on your way"};
+            the hostel office can see your answer.
           </p>
         ) : (
           <LateReply />

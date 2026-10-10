@@ -28,7 +28,7 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
         <h1 className="font-display text-title text-ink">No outings yet</h1>
         <p className="max-w-xs text-muted">Your trips will appear here once you check out.</p>
         <Link href="/home" className="font-bold text-accent underline-offset-4 hover:underline">
-          Plan an outing
+          Go to Today
         </Link>
       </section>
     );

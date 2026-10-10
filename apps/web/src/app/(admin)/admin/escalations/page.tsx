@@ -27,9 +27,10 @@ export default async function EscalationsPage({ searchParams }: PageProps): Prom
             Escalations
           </h1>
           <p className="max-w-[65ch] text-muted">
-            Students 30 minutes late get an &ldquo;are you OK?&rdquo; alert in the app. If they
-            don&apos;t answer within 10 minutes, they appear here. Call them, their emergency
-            contact, or their hostel&apos;s warden.
+            Students 30 minutes late get an &ldquo;are you OK?&rdquo; alert: a notification in the
+            app, or an email if they only use the website. If they don&apos;t answer within 10
+            minutes, they appear here. Call them, their emergency contact, or their hostel&apos;s
+            warden.
           </p>
         </div>
         <nav aria-label="Filter" className="flex gap-1 rounded-control bg-accent-soft p-1">

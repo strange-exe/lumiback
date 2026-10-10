@@ -49,8 +49,12 @@ export function KioskLink({ gate, token }: { gate: string; token: string }): Rea
         <button
           type="button"
           onClick={async () => {
-            await navigator.clipboard.writeText(link);
-            setCopied(true);
+            try {
+              await navigator.clipboard.writeText(link);
+              setCopied(true);
+            } catch {
+              // Clipboard blocked (permissions, insecure context): the link is on screen to copy.
+            }
           }}
           className="inline-flex min-h-11 items-center gap-2 rounded-control bg-ink px-4 text-sm font-bold text-page hover:opacity-90"
         >
