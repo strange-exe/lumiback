@@ -7,6 +7,7 @@ import { OutingDetails } from "@/features/account/OutingDetails";
 import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
 import { requireUser } from "@/lib/session";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -37,13 +38,28 @@ export default async function AccountPage(): Promise<ReactNode> {
         ))}
       </dl>
       <OutingDetails profile={profile} hostels={hostels} />
-      <p className="text-muted">
-        How your data is handled:{" "}
-        <Link href="/privacy" className="font-bold text-accent underline-offset-4 hover:underline">
-          privacy notice
-        </Link>
-        .
-      </p>
+      <div className="flex flex-col gap-2 text-muted">
+        <p>
+          Need help?{" "}
+          <a
+            href={SUPPORT_MAILTO}
+            className="font-bold text-accent underline-offset-4 hover:underline"
+          >
+            Email {SUPPORT_EMAIL}
+          </a>{" "}
+          and you&apos;ll get a reply in your inbox. If it&apos;s urgent, call your hostel office.
+        </p>
+        <p>
+          How your data is handled:{" "}
+          <Link
+            href="/privacy"
+            className="font-bold text-accent underline-offset-4 hover:underline"
+          >
+            privacy notice
+          </Link>
+          .
+        </p>
+      </div>
       <DeleteAccountForm />
     </section>
   );

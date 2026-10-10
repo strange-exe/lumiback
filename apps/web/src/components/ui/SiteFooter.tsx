@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { CURRENT } from "@/lib/changelog";
+import { SUPPORT_MAILTO } from "@/lib/support";
 
 const link = "font-bold text-accent underline-offset-4 hover:underline";
 
@@ -22,6 +23,9 @@ export function SiteFooter({ className = "" }: { className?: string }): ReactNod
         <Link href="/privacy" className={link}>
           Privacy
         </Link>
+        <a href={SUPPORT_MAILTO} className={link}>
+          Contact
+        </a>
       </span>
     </footer>
   );

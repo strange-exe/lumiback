@@ -3,11 +3,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { SiteFooter } from "@/components/ui/SiteFooter";
+import { SUPPORT_EMAIL } from "@/lib/support";
 
 export const metadata: Metadata = { title: "Privacy" };
 
-/** Optional public contact for privacy requests; the line is left out when unset. */
-const CONTACT = process.env.PRIVACY_CONTACT_EMAIL?.trim() || null;
+/** Contact for privacy requests: PRIVACY_CONTACT_EMAIL when set, otherwise support. */
+const CONTACT = process.env.PRIVACY_CONTACT_EMAIL?.trim() || SUPPORT_EMAIL;
 
 interface Part {
   heading: string;
@@ -96,17 +97,15 @@ export default function PrivacyPage(): ReactNode {
             </ul>
           </section>
         ))}
-        {CONTACT && (
-          <p className="leading-relaxed text-muted">
-            Questions or requests:{" "}
-            <a
-              href={`mailto:${CONTACT}`}
-              className="font-bold text-accent underline underline-offset-4"
-            >
-              {CONTACT}
-            </a>
-          </p>
-        )}
+        <p className="leading-relaxed text-muted">
+          Questions or requests:{" "}
+          <a
+            href={`mailto:${CONTACT}`}
+            className="font-bold text-accent underline underline-offset-4"
+          >
+            {CONTACT}
+          </a>
+        </p>
       </main>
       <SiteFooter />
     </div>
