@@ -92,8 +92,13 @@ when native code changes (new native modules, permissions, app config); `runtime
 `fingerprint` policy, so an update never reaches a build it isn't compatible with.
 
 ```bash
-npx eas-cli update --channel preview --environment preview --message "What changed"
+npx eas-cli update --branch production --environment production --message "What changed"
 ```
+
+Releases go to the `production` update branch. Builds read the channel they were built with, so
+both channels point at that branch: `production` (builds from now on) and `preview` (the first
+APKs people installed; relinked with `npx eas-cli channel:edit preview --branch production`).
+Check with `npx eas-cli channel:list`.
 
 **Versions.** The version people see (`1.3.0`) is the newest entry in
 `apps/mobile/src/updates/changelog.json`, shown under Profile and in a one-time "What's new"
@@ -105,7 +110,8 @@ for features (1.4.0), major for big changes (2.0.0). Copy the file to
 updates for a different runtime, so they learn about the new build from
 `apps/web/public/app/android.json` and ask people to download it:
 
-1. Build it: `npx eas-cli build --profile preview --platform android`.
+1. Build it: `npx eas-cli build --profile production-apk --platform android` (an installable APK
+   on the `production` channel; the `production` profile makes the Play Store bundle).
 2. Publish the APK as a GitHub release asset named `lumiback.apk`; the app links to
    `releases/latest/download/lumiback.apk`.
 3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
