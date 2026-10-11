@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export const STUDENT_STATE = "e2e/.auth/student.json";
 export const ADMIN_STATE = "e2e/.auth/admin.json";
+export const WARDEN_STATE = "e2e/.auth/warden.json";
 
 /**
  * End-to-end and design checks against the real stack:
@@ -33,7 +34,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "uv run python scripts/e2e_server.py --reset --seed",
+      // E2E_DEMO=1 adds a busy sample hostel (for e2e/office.spec.ts screenshots).
+      command: `uv run python scripts/e2e_server.py --reset --seed${process.env.E2E_DEMO ? " --demo" : ""}`,
       cwd: "../../backend",
       url: "http://127.0.0.1:8100/health",
       reuseExistingServer: false,

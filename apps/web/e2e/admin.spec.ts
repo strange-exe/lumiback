@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
-import { ADMIN_STATE, STUDENT_STATE } from "../playwright.config";
+import { ADMIN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";
 
 /** An access token from a session the setup project saved. */
@@ -221,7 +221,7 @@ test.describe("as an admin", () => {
     await expect(hostels.getByText("Added Hostel 7.")).toBeVisible();
     const saved = hostels.locator("form").filter({ has: page.locator('input[value="Hostel 7"]') });
     await expect(saved.getByLabel("Warden's phone")).toHaveValue("+919876500000"); // dialable
-    await hostels.getByRole("button", { name: "Remove" }).first().click();
+    await hostels.getByRole("button", { name: "Remove Hostel 7" }).click();
     await expect(page.locator('input[value="Hostel 7"]')).toHaveCount(0);
 
     const holidays = page.getByRole("region", { name: "Holidays" });
@@ -325,14 +325,28 @@ test.describe("as an admin", () => {
     }
   });
 
-  test("promote someone to admin and back", async ({ page }) => {
-    page.on("dialog", (dialog) => void dialog.accept());
+  test("make someone a hostel's warden, then a student again", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void dialog.accept();
+    });
     await page.goto("/admin/people?q=riya");
     const riya = page.getByRole("listitem").filter({ hasText: "Riya Sharma" });
-    await riya.getByRole("button", { name: "Make admin" }).click();
-    await expect(riya).toContainText("Now an admin.");
-    await riya.getByRole("button", { name: "Remove admin" }).click();
+    // Nothing changed yet: nothing to save.
+    await expect(riya.getByRole("button", { name: "Save role" })).toHaveCount(0);
+
+    await riya.getByText("Warden", { exact: true }).click();
+    await riya.getByRole("checkbox", { name: "Hostel 3" }).check();
+    await riya.getByRole("button", { name: "Save role" }).click();
+    await expect(riya).toContainText("Now a warden.");
+    await expect(riya).toContainText("Warden of Hostel 3");
+    expect(asked.at(-1)).toContain("Make Riya Sharma the warden of Hostel 3?");
+
+    await riya.getByText("Student", { exact: true }).click();
+    await riya.getByRole("button", { name: "Save role" }).click();
     await expect(riya).toContainText("Now a student.");
+    await expect(riya).not.toContainText("Warden of");
   });
 
   test("download the register as CSV", async ({ page }) => {
@@ -345,5 +359,37 @@ test.describe("as an admin", () => {
     );
     const text = readFileSync(await file.path(), "utf8");
     expect(text.split("\n")[0]).toContain("Name,Email,Roll no.,Destination");
+  });
+});
+
+test.describe("as a warden", () => {
+  test.use({ storageState: WARDEN_STATE });
+
+  test("sees the daily pages and their hostel, not campus setup", async ({ page }) => {
+    const errors = watchForErrors(page);
+    await page.goto("/admin");
+    const nav = page.getByRole("navigation", { name: "Hostel office" });
+    for (const name of ["Register", "Requests", "Escalations", "Scans", "My hostel"]) {
+      await expect(nav.getByRole("link", { name })).toBeVisible();
+    }
+    for (const name of ["Gates", "Rules", "People", "Settings"]) {
+      await expect(nav.getByRole("link", { name })).toHaveCount(0);
+    }
+    expect(errors).toEqual([]);
+    for (const path of ["/admin/gates", "/admin/rules", "/admin/people", "/admin/settings"]) {
+      expect((await page.goto(path))?.status(), path).toBe(404);
+    }
+  });
+
+  test("updates their hostel's warden contact", async ({ page }) => {
+    await page.goto("/admin/hostel");
+    const form = page.getByRole("form", { name: "Hostel 3" });
+    await form.getByLabel("Warden's phone").fill("98765 00033");
+    await form.getByRole("button", { name: "Save contact" }).click();
+    await expect(form).toContainText("Saved.");
+    await page.reload();
+    await expect(
+      page.getByRole("form", { name: "Hostel 3" }).getByLabel("Warden's phone"),
+    ).toHaveValue("+919876500033");
   });
 });

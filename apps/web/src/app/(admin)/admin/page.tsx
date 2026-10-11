@@ -7,14 +7,14 @@ import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
 import { formatMinutes } from "@/features/outings/time";
-import { requireAdmin } from "@/lib/session";
+import { requireStaff } from "@/lib/session";
 import type { AdminOuting } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Register" };
 
 const STATES = [
   { value: "all", label: "Everyone out" },
-  { value: "overdue", label: "Overdue" },
+  { value: "overdue", label: "Late" },
   { value: "out", label: "Not yet due" },
 ] as const;
 type State = (typeof STATES)[number]["value"];
@@ -24,7 +24,7 @@ interface PageProps {
 }
 
 export default async function RegisterPage({ searchParams }: PageProps): Promise<ReactNode> {
-  const { token } = await requireAdmin();
+  const { token } = await requireStaff();
   const requested = (await searchParams).state;
   const state: State = STATES.find((s) => s.value === requested)?.value ?? "all";
   const [overview, outings, late] = await Promise.all([
@@ -35,7 +35,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
 
   const stats = [
     { label: "Out now", value: overview.out_now, alert: false },
-    { label: "Overdue", value: overview.overdue, alert: overview.overdue > 0 },
+    { label: "Late", value: overview.overdue, alert: overview.overdue > 0 },
     { label: "Gate scans today", value: overview.scans_today, alert: false },
     { label: "Refused scans today", value: overview.rejected_today, alert: false },
   ];
@@ -94,7 +94,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
         {outings.length === 0 ? (
           <p className="rounded-sheet border border-dashed border-line px-5 py-10 text-center text-muted">
             {state === "overdue"
-              ? "Nobody is overdue."
+              ? "Nobody is late."
               : "Nobody is out right now. Students appear here when they tap out at a gate or check out in the app or on the website."}
           </p>
         ) : (
@@ -151,7 +151,7 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
               <span className="flex flex-wrap gap-1.5">
                 {o.status === "overdue" ? (
                   <span className="inline-flex rounded-full bg-danger-soft px-2.5 py-1 text-danger">
-                    Overdue {formatMinutes(o.late_minutes)}
+                    {formatMinutes(o.late_minutes)} late
                   </span>
                 ) : (
                   <span className="inline-flex rounded-full bg-accent-soft px-2.5 py-1 text-accent">

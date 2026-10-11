@@ -11,7 +11,7 @@ function Outcome({ outing }: { outing: Outing }): ReactNode {
         <span aria-hidden="true" className={overdue ? undefined : "text-accent"}>
           ●{" "}
         </span>
-        {overdue ? "Overdue" : "Out now"}
+        {overdue ? "Late" : "Out now"}
       </span>
     );
   }

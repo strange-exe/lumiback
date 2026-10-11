@@ -259,7 +259,7 @@ export function HostelForm({
             >
               <input type="hidden" name="hostel_id" value={hostel.id} />
               <SubmitButton variant="quiet" pendingLabel="Removing…" className="min-h-11 text-sm">
-                Remove
+                Remove<span className="sr-only"> {hostel.name}</span>
               </SubmitButton>
             </form>
           </>

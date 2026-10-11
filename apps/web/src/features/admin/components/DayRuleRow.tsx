@@ -66,7 +66,8 @@ export function DayRuleRow({ setId, rule }: { setId: string; rule: DayRule }): R
       className="flex flex-col gap-3 border-t border-line py-4 first:border-t-0"
     >
       <legend className="sr-only">{label}</legend>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      {/* Stacked on phones so every day reads the same; side by side from sm up. */}
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <span aria-hidden="true" className="font-bold text-ink">
           {label}
         </span>

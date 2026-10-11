@@ -83,8 +83,11 @@ export default async function RulesPage(): Promise<ReactNode> {
                 {inSet.map((h) => (
                   <HostelForm key={h.id} hostel={h} sets={sets} />
                 ))}
-                <HostelForm sets={sets} group={set.id} />
               </div>
+              <h4 className="mt-3 text-sm font-bold text-muted">
+                Add a hostel that follows {set.name}
+              </h4>
+              <HostelForm sets={sets} group={set.id} />
             </div>
           );
         })}

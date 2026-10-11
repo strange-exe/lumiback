@@ -4,12 +4,12 @@ import type { ReactNode } from "react";
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { RequestCard } from "@/features/admin/components/RequestCard";
-import { requireAdmin } from "@/lib/session";
+import { requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Requests" };
 
 export default async function RequestsPage(): Promise<ReactNode> {
-  const { token } = await requireAdmin();
+  const { token } = await requireStaff();
   const requests = await adminApi.requests(token);
   const pending = requests.filter((r) => r.status === "pending").length;
 

@@ -65,6 +65,10 @@ export const adminApi = {
     return callBackend<RuleSet[]>("/admin/rule-sets", { token });
   },
 
+  /** The hostels this person looks after (a warden's own; every hostel for an admin). */
+  myHostels(token: string): Promise<Hostel[]> {
+    return callBackend<Hostel[]>("/admin/my-hostels", { token });
+  },
   hostels(token: string): Promise<Hostel[]> {
     return callBackend<Hostel[]>("/admin/hostels", { token });
   },

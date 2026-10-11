@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { EscalationCard } from "@/features/admin/components/EscalationCard";
-import { requireAdmin } from "@/lib/session";
+import { requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Escalations" };
 
@@ -14,7 +14,7 @@ interface PageProps {
 }
 
 export default async function EscalationsPage({ searchParams }: PageProps): Promise<ReactNode> {
-  const { token } = await requireAdmin();
+  const { token } = await requireStaff();
   const all = (await searchParams).state === "all";
   const escalations = await adminApi.escalations(token, all ? "all" : "open");
 

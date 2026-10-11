@@ -185,6 +185,31 @@ export async function saveHostel(_: FormState, form: FormData): Promise<FormStat
   return { error: null, notice: id ? "Saved." : `Added ${fields.name}.` };
 }
 
+/** A warden's own hostel: only the contact shown on escalations (the API checks it's theirs). */
+export async function saveHostelContact(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "hostel_id");
+  const fields = {
+    warden_name: text(form, "warden_name"),
+    warden_phone: text(form, "warden_phone"),
+  };
+  const result = await attempt(
+    () =>
+      callBackend(`/admin/hostels/${encodeURIComponent(id)}/contact`, {
+        method: "PATCH",
+        token,
+        body: {
+          warden_name: fields.warden_name || null,
+          warden_phone: fields.warden_phone || null,
+        },
+      }),
+    fields,
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/hostel");
+  return { error: null, notice: "Saved." };
+}
+
 export async function deleteHostel(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const id = text(form, "hostel_id");

@@ -187,7 +187,7 @@ const SCREENS: Screen[] = [
     name: "admin-people",
     auth: "admin",
     prepare: async (page) => void (await page.goto("/admin/people?q=sharma")),
-    primary: (page) => page.getByRole("button", { name: "Make admin" }).first(),
+    primary: (page) => page.getByRole("button", { name: "Search" }),
   },
   {
     name: "admin-requests",

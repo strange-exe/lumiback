@@ -114,15 +114,21 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
 export async function setRole(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const id = text(form, "user_id");
-  const role = text(form, "role") === "admin" ? "admin" : "student";
+  const picked = text(form, "role");
+  const role = picked === "admin" || picked === "warden" ? picked : "student";
+  const hostelIds =
+    role === "warden"
+      ? form.getAll("hostel_ids").filter((v): v is string => typeof v === "string")
+      : [];
   const result = await attempt(() =>
     callBackend(`/admin/users/${encodeURIComponent(id)}/role`, {
       method: "POST",
       token,
-      body: { role },
+      body: { role, hostel_ids: hostelIds },
     }),
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/people");
-  return { error: null, notice: role === "admin" ? "Now an admin." : "Now a student." };
+  const notice = { admin: "Now an admin.", warden: "Now a warden.", student: "Now a student." };
+  return { error: null, notice: notice[role] };
 }

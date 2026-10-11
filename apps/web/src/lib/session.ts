@@ -54,7 +54,15 @@ export async function requireUser(): Promise<{ user: User; token: string }> {
   return { user, token };
 }
 
-/** For admin pages. Students get a plain 404: the admin area's existence isn't advertised. */
+/** For the hostel office's daily pages: admins and wardens. Students get a plain 404, so the
+ * area's existence isn't advertised; a warden's data is limited to their hostels by the API. */
+export async function requireStaff(): Promise<{ user: User; token: string }> {
+  const session = await requireUser();
+  if (session.user.role === "student") notFound();
+  return session;
+}
+
+/** For campus-wide setup (gates, rules, people, settings): admins only. */
 export async function requireAdmin(): Promise<{ user: User; token: string }> {
   const session = await requireUser();
   if (session.user.role !== "admin") notFound();

@@ -4,20 +4,21 @@ import type { ReactNode } from "react";
 
 import { signOut } from "@/features/auth/actions";
 import { AdminNav } from "@/features/admin/components/AdminNav";
-import { requireAdmin } from "@/lib/session";
+import { requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = {
-  title: { default: "Admin", template: "%s · Admin · Lumiback" },
+  title: { default: "Hostel office", template: "%s · Hostel office · Lumiback" },
   robots: { index: false, follow: false },
 };
 
-/** Wardens and security: the gate register. Students get a 404 (see requireAdmin). */
+/** The hostel office: admins (every hostel, plus setup) and wardens (their hostels).
+ * Students get a 404 (see requireStaff); setup pages also call requireAdmin. */
 export default async function AdminLayout({
   children,
 }: {
   children: ReactNode;
 }): Promise<ReactNode> {
-  const { user } = await requireAdmin();
+  const { user } = await requireStaff();
   return (
     <div className="mx-auto flex min-h-dvh max-w-6xl flex-col px-4 sm:px-6">
       <header className="flex flex-col gap-3 border-b border-line py-4">
@@ -25,7 +26,7 @@ export default async function AdminLayout({
           <Link href="/admin" className="flex items-center gap-2">
             <span className="font-display text-xl text-ink">Lumiback</span>
             <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-bold text-accent">
-              Admin
+              {user.role === "admin" ? "Admin" : "Warden"}
             </span>
           </Link>
           <div className="flex items-center gap-1 text-sm">
@@ -46,7 +47,7 @@ export default async function AdminLayout({
             </form>
           </div>
         </div>
-        <AdminNav />
+        <AdminNav role={user.role} />
       </header>
       <main className="flex-1 py-6 sm:py-8">{children}</main>
     </div>

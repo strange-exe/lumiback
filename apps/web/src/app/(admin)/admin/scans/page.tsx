@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { formatWhen } from "@/features/admin/format";
-import { requireAdmin } from "@/lib/session";
+import { requireStaff } from "@/lib/session";
 import type { AdminScan, ScanResult } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Scans" };
@@ -23,7 +23,7 @@ interface PageProps {
 }
 
 export default async function ScansPage({ searchParams }: PageProps): Promise<ReactNode> {
-  const { token } = await requireAdmin();
+  const { token } = await requireStaff();
   const params = await searchParams;
   const result =
     params.result && params.result in RESULTS ? (params.result as ScanResult) : undefined;

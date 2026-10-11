@@ -21,17 +21,20 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
             Lumiback
           </Link>
           <nav aria-label="Main" className="flex items-center text-sm">
-            {[...NAV, ...(user.role === "admin" ? [{ href: "/admin", label: "Admin" }] : [])].map(
-              (item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex min-h-11 items-center rounded-control px-3 font-bold text-ink hover:bg-accent-soft"
-                >
-                  {item.label}
-                </Link>
-              ),
-            )}
+            {[
+              ...NAV,
+              ...(user.role !== "student"
+                ? [{ href: "/admin", label: user.role === "admin" ? "Admin" : "Warden" }]
+                : []),
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex min-h-11 items-center rounded-control px-3 font-bold text-ink hover:bg-accent-soft"
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </header>
         <main className="flex-1 pb-12 pt-2">{children}</main>

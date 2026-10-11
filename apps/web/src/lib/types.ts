@@ -8,8 +8,11 @@ export interface User {
   hostel: string | null;
   email_verified: boolean;
   created_at: string;
-  role: "student" | "admin";
+  role: Role;
 }
+
+/** A warden is the hostel office for the hostels an admin assigned; an admin, for everyone. */
+export type Role = "student" | "warden" | "admin";
 
 export interface TokenPair {
   access_token: string;
@@ -368,7 +371,10 @@ export interface AdminUser {
   name: string;
   email: string;
   roll_no: string | null;
-  role: "student" | "admin";
+  role: Role;
+  /** A warden's hostels. */
+  hostel_ids: string[];
+  hostels: string[];
 }
 
 /** What a gate kiosk shows (GET /kiosk/qr). */

@@ -14,7 +14,10 @@ interface PageProps {
 export default async function PeoplePage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token, user } = await requireAdmin();
   const q = ((await searchParams).q ?? "").trim().slice(0, 100);
-  const results = q.length >= 2 ? await adminApi.users(token, q) : null;
+  const [results, hostels] = await Promise.all([
+    q.length >= 2 ? adminApi.users(token, q) : null,
+    adminApi.hostels(token),
+  ]);
 
   return (
     <section aria-labelledby="people-heading" className="flex max-w-3xl flex-col gap-6">
@@ -23,10 +26,11 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
           People
         </h1>
         <p className="max-w-[65ch] text-muted">
-          Find a student or staff member who has signed up, and give or remove admin access. Admins
-          see the register, outing requests (with phone numbers), escalations (with emergency and
-          warden contacts), gate scans, rules and settings. They never see a live location, except a
-          sharing student&apos;s last position when that student is late and hasn&apos;t answered.
+          Find someone who has signed up and choose their role. A <strong>warden</strong> handles
+          outing requests and escalations, and sees who&apos;s out and gate scans, for their own
+          hostels&apos; students only. An <strong>admin</strong> sees every hostel and also changes
+          gates, rules, people and settings. Neither sees a live location, except a sharing
+          student&apos;s last position when that student is late and hasn&apos;t answered.
         </p>
       </div>
       <form method="get" role="search" className="flex flex-wrap items-end gap-3">
@@ -58,13 +62,16 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         ) : (
           <ul className="divide-y divide-line border-y border-line">
             {results.map((person) => (
-              <li key={person.id} className="flex items-center justify-between gap-4 py-3.5">
+              <li
+                key={person.id}
+                className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] sm:items-start sm:gap-6"
+              >
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 font-bold text-ink">
                     <span className="truncate">{person.name}</span>
-                    {person.role === "admin" && (
+                    {person.role !== "student" && (
                       <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent">
-                        Admin
+                        {person.role === "admin" ? "Admin" : "Warden"}
                       </span>
                     )}
                     {person.id === user.id && <span className="text-xs text-muted">(you)</span>}
@@ -72,8 +79,11 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                   <p className="truncate text-sm text-muted">
                     {[person.email, person.roll_no].filter(Boolean).join(" · ")}
                   </p>
+                  {person.role === "warden" && (
+                    <p className="text-sm text-muted">Warden of {person.hostels.join(", ")}</p>
+                  )}
                 </div>
-                <RoleForm person={person} isMe={person.id === user.id} />
+                <RoleForm person={person} hostels={hostels} isMe={person.id === user.id} />
               </li>
             ))}
           </ul>
