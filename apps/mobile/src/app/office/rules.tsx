@@ -3,7 +3,7 @@ import { Linking, RefreshControl, View } from "react-native";
 
 import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
-import { DAY_LABEL, dayLine } from "@/lib/office";
+import { canEditRules, DAY_LABEL, dayLine } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import { formatDate } from "@/lib/time";
 import { useData } from "@/lib/use-data";
@@ -14,7 +14,7 @@ import { space, useColors } from "@/ui/theme";
 export default function Rules(): ReactNode {
   const { user } = useAuth();
   const c = useColors();
-  const admin = user?.role === "admin";
+  const editor = canEditRules(user?.role);
   const load = useCallback(async () => {
     const year = new Date().getFullYear();
     const [sets, holidays] = await Promise.all([office.ruleSets(), office.holidays(year)]);
@@ -39,12 +39,12 @@ export default function Rules(): ReactNode {
       <Heading
         title="Rules"
         lede={
-          admin
+          editor
             ? "When students may go out, when they must be back, and which days need approval. Change them on the website, where the full form fits."
-            : "When your hostel's students may go out, when they must be back, and which days need approval. Only an admin can change them."
+            : "When your hostel's students may go out, when they must be back, and which days need approval. Only an admin or a head warden can change them."
         }
       />
-      {admin ? (
+      {editor ? (
         <T
           accessibilityRole="link"
           onPress={() => void Linking.openURL(`${WEB_URL}/admin/rules`).catch(() => undefined)}

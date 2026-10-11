@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { signOut } from "@/features/auth/actions";
 import { requireUser } from "@/lib/session";
+import { ROLE_LABEL } from "@/lib/types";
 
 const NAV = [
   { href: "/home", label: "Today" },
@@ -24,7 +25,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
             {[
               ...NAV,
               ...(user.role !== "student"
-                ? [{ href: "/admin", label: user.role === "admin" ? "Admin" : "Warden" }]
+                ? [{ href: "/admin", label: ROLE_LABEL[user.role] }]
                 : []),
             ].map((item) => (
               <Link

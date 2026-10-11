@@ -34,21 +34,28 @@ export function kioskLink(webUrl: string, token: string): string {
 }
 
 export function isStaff(role: Role | undefined): boolean {
-  return role === "warden" || role === "admin";
+  return role === "warden" || role === "head_warden" || role === "admin";
 }
+
+/** Admins and head wardens look after every hostel; a warden, only theirs. */
+export function everyHostel(role: Role | undefined): boolean {
+  return role === "head_warden" || role === "admin";
+}
+
+/** Who may change the outing rules (on the website): admins and head wardens. */
+export function canEditRules(role: Role | undefined): boolean {
+  return everyHostel(role);
+}
+
+export const ROLE_LABEL: Record<Role, string> = {
+  student: "Student",
+  warden: "Warden",
+  head_warden: "Head warden",
+  admin: "Admin",
+};
 
 /** "+919876543210" -> "+91 98765 43210"; anything else is shown as stored. */
 export function formatPhone(phone: string): string {
   const india = /^\+91(\d{5})(\d{5})$/.exec(phone);
   return india ? `+91 ${india[1]} ${india[2]}` : phone;
-}
-
-/** Where to look at the office first: an unanswered late student, then requests, then the list. */
-export function officeStart(o: {
-  open_escalations?: number;
-  pending_requests?: number;
-}): "escalations" | "requests" | "out" {
-  if ((o.open_escalations ?? 0) > 0) return "escalations";
-  if ((o.pending_requests ?? 0) > 0) return "requests";
-  return "out";
 }

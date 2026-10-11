@@ -4,6 +4,7 @@ import { Alert, Pressable, RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { everyHostel, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { OfficeHostel, OfficeStudent, Role } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -61,7 +62,9 @@ export default function Students(): ReactNode {
         lede={
           admin
             ? "Students by hostel, with their contacts. Search finds staff too, to change a role."
-            : "Your hostels' students, with the contacts they gave."
+            : everyHostel(user?.role)
+              ? "Every hostel's students, with the contacts they gave."
+              : "Your hostels' students, with the contacts they gave."
         }
       />
       {choices.length > 1 ? (
@@ -143,7 +146,7 @@ function StudentRow({
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`${s.name}, ${
-          s.role === "student" ? status.label : s.role === "admin" ? "Admin" : "Warden"
+          s.role === "student" ? status.label : ROLE_LABEL[s.role]
         }. ${open ? "Hide" : "Show"} contacts`}
         android_ripple={{ color: c.line }}
         style={{ padding: space(4), gap: space(1) }}
@@ -153,7 +156,7 @@ function StudentRow({
             {s.name}
           </T>
           {s.role !== "student" ? (
-            <StatusChip label={s.role === "admin" ? "Admin" : "Warden"} tone="accent" />
+            <StatusChip label={ROLE_LABEL[s.role]} tone="accent" />
           ) : (
             <StatusChip label={status.label} tone={status.tone} />
           )}
@@ -183,6 +186,7 @@ function StudentRow({
 const ROLES: { value: Role; label: string }[] = [
   { value: "student", label: "Student" },
   { value: "warden", label: "Warden" },
+  { value: "head_warden", label: "Head warden" },
   { value: "admin", label: "Admin" },
 ];
 
@@ -211,11 +215,13 @@ function RoleSheet({
   const question =
     role === "admin"
       ? `Make ${person.name} an admin? They'll see every hostel and can change gates, rules, people and settings.`
-      : role === "warden"
-        ? `Make ${person.name} the warden of ${names.join(", ")}? They'll decide requests and handle escalations for those hostels' students only.`
-        : isMe
-          ? "Remove your own access to the hostel office? You'll need an admin to give it back."
-          : `Make ${person.name} a student? They lose access to the hostel office.`;
+      : role === "head_warden"
+        ? `Make ${person.name} a head warden? They'll see every hostel's students and can change the outing rules, but not gates, people or settings.`
+        : role === "warden"
+          ? `Make ${person.name} the warden of ${names.join(", ")}? They'll decide requests and handle escalations for those hostels' students only.`
+          : isMe
+            ? "Remove your own access to the hostel office? You'll need an admin to give it back."
+            : `Make ${person.name} a student? They lose access to the hostel office.`;
 
   const save = async (): Promise<void> => {
     if (role === "warden" && chosen.length === 0) {

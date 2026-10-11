@@ -4,6 +4,8 @@ import type { ComponentProps, ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/lib/auth";
+import { isStaff } from "@/lib/office";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
 import { dock, fonts, useColors } from "@/ui/theme";
@@ -21,6 +23,7 @@ const TABS: Record<string, { label: string; icon: IconName; active: IconName }> 
 };
 const LEFT = ["today", "live"];
 const RIGHT = ["history", "profile"];
+const STAFF_TABS = ["today", "profile"];
 
 /**
  * Floating dock: four destinations and the raised Scan action in the middle (tap in/out at the
@@ -29,6 +32,8 @@ const RIGHT = ["history", "profile"];
 export function Dock({ state, navigation }: DockProps): ReactNode {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const staff = isStaff(user?.role);
   const activeName = state.routes[state.index]?.name;
 
   const item = (name: string): ReactNode => {
@@ -91,31 +96,46 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           boxShadow: "0 10px 30px rgba(11, 12, 16, 0.28)",
         }}
       >
-        {LEFT.map(item)}
-        <View style={{ width: 76, alignItems: "center" }}>
-          <Press
-            onPress={() => {
-              haptic.tap();
-              router.push("/scan");
-            }}
-            accessibilityLabel="Scan at the gate"
-            style={{
-              width: 60,
-              height: 60,
-              marginTop: -26,
-              borderRadius: 30,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: c.accent,
-              borderWidth: 4,
-              borderColor: c.page,
-            }}
-          >
-            <Ionicons name="scan" size={26} color={c.onAccent} />
-          </Press>
-        </View>
-        {RIGHT.map(item)}
+        {staff ? (
+          // Staff don't go out through the app: no Scan, Live or History, just their office
+          // (Today) and Profile.
+          STAFF_TABS.map(item)
+        ) : (
+          <>
+            {LEFT.map(item)}
+            <ScanButton />
+            {RIGHT.map(item)}
+          </>
+        )}
       </View>
+    </View>
+  );
+}
+
+function ScanButton(): ReactNode {
+  const c = useColors();
+  return (
+    <View style={{ width: 76, alignItems: "center" }}>
+      <Press
+        onPress={() => {
+          haptic.tap();
+          router.push("/scan");
+        }}
+        accessibilityLabel="Scan at the gate"
+        style={{
+          width: 60,
+          height: 60,
+          marginTop: -26,
+          borderRadius: 30,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: c.accent,
+          borderWidth: 4,
+          borderColor: c.page,
+        }}
+      >
+        <Ionicons name="scan" size={26} color={c.onAccent} />
+      </Press>
     </View>
   );
 }

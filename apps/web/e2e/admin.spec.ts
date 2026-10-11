@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
-import { ADMIN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
+import { ADMIN_STATE, HEAD_WARDEN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";
 
 /** An access token from a session the setup project saved. */
@@ -391,5 +391,30 @@ test.describe("as a warden", () => {
     await expect(
       page.getByRole("form", { name: "Hostel 3" }).getByLabel("Warden's phone"),
     ).toHaveValue("+919876500033");
+  });
+});
+
+test.describe("as a head warden", () => {
+  test.use({ storageState: HEAD_WARDEN_STATE });
+
+  test("sees every hostel's office and the rules, not gates, people or settings", async ({
+    page,
+  }) => {
+    const errors = watchForErrors(page);
+    await page.goto("/admin");
+    await expect(page.getByText("Head warden", { exact: true })).toBeVisible();
+    const nav = page.getByRole("navigation", { name: "Hostel office" });
+    for (const name of ["Register", "Requests", "Escalations", "Scans", "Rules"]) {
+      await expect(nav.getByRole("link", { name })).toBeVisible();
+    }
+    for (const name of ["Gates", "People", "Settings", "My hostel"]) {
+      await expect(nav.getByRole("link", { name })).toHaveCount(0);
+    }
+    await nav.getByRole("link", { name: "Rules" }).click();
+    await expect(page.getByRole("heading", { name: "Outing rules" })).toBeVisible();
+    expect(errors).toEqual([]);
+    for (const path of ["/admin/gates", "/admin/people", "/admin/settings"]) {
+      expect((await page.goto(path))?.status(), path).toBe(404);
+    }
   });
 });

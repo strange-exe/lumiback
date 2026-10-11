@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { adminApi } from "@/features/admin/api";
 import { RoleForm } from "@/features/admin/components/RoleForm";
 import { requireAdmin } from "@/lib/session";
+import { ROLE_LABEL } from "@/lib/types";
 
 export const metadata: Metadata = { title: "People" };
 
@@ -28,9 +29,10 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         <p className="max-w-[65ch] text-muted">
           Find someone who has signed up and choose their role. A <strong>warden</strong> handles
           outing requests and escalations, and sees who&apos;s out and gate scans, for their own
-          hostels&apos; students only. An <strong>admin</strong> sees every hostel and also changes
-          gates, rules, people and settings. Neither sees a live location, except a sharing
-          student&apos;s last position when that student is late and hasn&apos;t answered.
+          hostels&apos; students only. A <strong>head warden</strong> does that for every hostel and
+          also sets the outing rules. An <strong>admin</strong> can do everything, including gates,
+          people and settings. None of them sees a live location, except a sharing student&apos;s
+          last position when that student is late and hasn&apos;t answered.
         </p>
       </div>
       <form method="get" role="search" className="flex flex-wrap items-end gap-3">
@@ -71,7 +73,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                     <span className="truncate">{person.name}</span>
                     {person.role !== "student" && (
                       <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent">
-                        {person.role === "admin" ? "Admin" : "Warden"}
+                        {ROLE_LABEL[person.role]}
                       </span>
                     )}
                     {person.id === user.id && <span className="text-xs text-muted">(you)</span>}

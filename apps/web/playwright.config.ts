@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 export const STUDENT_STATE = "e2e/.auth/student.json";
 export const ADMIN_STATE = "e2e/.auth/admin.json";
 export const WARDEN_STATE = "e2e/.auth/warden.json";
+export const HEAD_WARDEN_STATE = "e2e/.auth/head-warden.json";
 
 /**
  * End-to-end and design checks against the real stack:

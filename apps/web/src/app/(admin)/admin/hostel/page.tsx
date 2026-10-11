@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "My hostel" };
 /** A warden's hostels and the contact shown when one of their students is late. */
 export default async function MyHostelPage(): Promise<ReactNode> {
   const { token, user } = await requireStaff();
-  if (user.role === "admin") redirect("/admin/rules"); // admins edit every hostel there
+  if (user.role !== "warden") redirect("/admin/rules"); // they edit every hostel there
   const hostels = await adminApi.myHostels(token);
   return (
     <section aria-labelledby="hostel-heading" className="flex max-w-2xl flex-col gap-6">

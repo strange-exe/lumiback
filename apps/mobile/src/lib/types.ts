@@ -12,7 +12,9 @@ export interface User {
   role?: Role;
 }
 
-export type Role = "student" | "warden" | "admin";
+/** Warden: their assigned hostels. Head warden: every hostel, plus the outing rules.
+ * Admin: everything, including gates, roles and settings. */
+export type Role = "student" | "warden" | "head_warden" | "admin";
 
 export interface TokenPair {
   access_token: string;

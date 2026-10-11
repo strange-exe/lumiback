@@ -115,7 +115,8 @@ export async function setRole(_: FormState, form: FormData): Promise<FormState> 
   const token = await tokenOrSignIn();
   const id = text(form, "user_id");
   const picked = text(form, "role");
-  const role = picked === "admin" || picked === "warden" ? picked : "student";
+  const role =
+    picked === "admin" || picked === "warden" || picked === "head_warden" ? picked : "student";
   const hostelIds =
     role === "warden"
       ? form.getAll("hostel_ids").filter((v): v is string => typeof v === "string")
@@ -129,6 +130,11 @@ export async function setRole(_: FormState, form: FormData): Promise<FormState> 
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/people");
-  const notice = { admin: "Now an admin.", warden: "Now a warden.", student: "Now a student." };
+  const notice = {
+    admin: "Now an admin.",
+    head_warden: "Now a head warden.",
+    warden: "Now a warden.",
+    student: "Now a student.",
+  };
   return { error: null, notice: notice[role] };
 }

@@ -62,7 +62,14 @@ export async function requireStaff(): Promise<{ user: User; token: string }> {
   return session;
 }
 
-/** For campus-wide setup (gates, rules, people, settings): admins only. */
+/** For the outing rules, holidays and hostels: admins and head wardens. */
+export async function requireRulesEditor(): Promise<{ user: User; token: string }> {
+  const session = await requireUser();
+  if (session.user.role !== "admin" && session.user.role !== "head_warden") notFound();
+  return session;
+}
+
+/** For campus-wide setup (gates, people, settings): admins only. */
 export async function requireAdmin(): Promise<{ user: User; token: string }> {
   const session = await requireUser();
   if (session.user.role !== "admin") notFound();

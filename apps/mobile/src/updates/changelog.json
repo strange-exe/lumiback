@@ -4,10 +4,10 @@
     "date": "2026-10-11",
     "title": "The hostel office in the app",
     "points": [
-      "Wardens and admins get a Hostel office on Today: outing requests, late students who aren't answering, and who's out.",
+      "Wardens, head wardens and admins open straight into the Hostel office on Today: outing requests, late students who aren't answering, and who's out. Tap-out, sharing and history stay with students.",
       "Approve or decline outing requests, call a student or their family, and mark escalations as handled, right from your phone.",
       "Students, rules and gates in the office too: each hostel's students with their contacts, the outing hours each hostel follows, and the gates taking scans. Admins can add a gate standing at it and make a new kiosk link.",
-      "New role: warden. A warden sees only their own hostels' students and can't change rules or gates; admins also change roles from the app.",
+      "New roles: a warden sees only their own hostels' students; a head warden sees every hostel and sets the outing rules. Admins also change roles from the app.",
       "Notifications about new requests and escalations open the right screen."
     ]
   },

@@ -5,6 +5,7 @@ export const STUDENT = { email: "e2e@geu.ac.in", password: "lantern-at-dusk-2029
 export const ADMIN = { email: "e2e-admin@geu.ac.in", password: "lantern-at-dusk-2029" };
 /** Warden of the seeded "Hostel 3". */
 export const WARDEN = { email: "e2e-warden@geu.ac.in", password: "lantern-at-dusk-2029" };
+export const HEAD_WARDEN = { email: "e2e-head@geu.ac.in", password: "lantern-at-dusk-2029" };
 /** The seeded "North Gate" kiosk's device token (see e2e_server.py). */
 export const KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000";
 export const API = "http://127.0.0.1:8100";

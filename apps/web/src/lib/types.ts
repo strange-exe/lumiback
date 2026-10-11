@@ -11,8 +11,16 @@ export interface User {
   role: Role;
 }
 
-/** A warden is the hostel office for the hostels an admin assigned; an admin, for everyone. */
-export type Role = "student" | "warden" | "admin";
+/** A warden is the hostel office for the hostels an admin assigned; a head warden, for every
+ * hostel, and also sets the outing rules; an admin, for everything. */
+export type Role = "student" | "warden" | "head_warden" | "admin";
+
+export const ROLE_LABEL: Record<Role, string> = {
+  student: "Student",
+  warden: "Warden",
+  head_warden: "Head warden",
+  admin: "Admin",
+};
 
 export interface TokenPair {
   access_token: string;

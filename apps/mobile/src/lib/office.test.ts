@@ -1,4 +1,13 @@
-import { clock, dayLine, formatPhone, isStaff, kioskLink, officeStart } from "@/lib/office";
+import { canEditRules, clock, dayLine, formatPhone, isStaff, kioskLink } from "@/lib/office";
+
+describe("canEditRules", () => {
+  it("is admins and head wardens; wardens only read the rules", () => {
+    expect(canEditRules("admin")).toBe(true);
+    expect(canEditRules("head_warden")).toBe(true);
+    expect(canEditRules("warden")).toBe(false);
+    expect(canEditRules("student")).toBe(false);
+  });
+});
 
 describe("dayLine", () => {
   it("says a day's rules the way the website does", () => {
@@ -27,8 +36,9 @@ describe("kioskLink", () => {
 });
 
 describe("isStaff", () => {
-  it("is wardens and admins, never students or an older server without roles", () => {
+  it("is wardens, head wardens and admins, never students or an older server without roles", () => {
     expect(isStaff("warden")).toBe(true);
+    expect(isStaff("head_warden")).toBe(true);
     expect(isStaff("admin")).toBe(true);
     expect(isStaff("student")).toBe(false);
     expect(isStaff(undefined)).toBe(false);
@@ -39,13 +49,5 @@ describe("formatPhone", () => {
   it("groups Indian mobile numbers and leaves anything else as stored", () => {
     expect(formatPhone("+919876543210")).toBe("+91 98765 43210");
     expect(formatPhone("+441632960123")).toBe("+441632960123");
-  });
-});
-
-describe("officeStart", () => {
-  it("opens an unanswered late student first, then requests, then who's out", () => {
-    expect(officeStart({ open_escalations: 1, pending_requests: 3 })).toBe("escalations");
-    expect(officeStart({ open_escalations: 0, pending_requests: 3 })).toBe("requests");
-    expect(officeStart({})).toBe("out");
   });
 });

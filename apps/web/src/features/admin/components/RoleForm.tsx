@@ -11,6 +11,7 @@ const EMPTY: FormState = { error: null };
 const ROLES: { value: Role; label: string }[] = [
   { value: "student", label: "Student" },
   { value: "warden", label: "Warden" },
+  { value: "head_warden", label: "Head warden" },
   { value: "admin", label: "Admin" },
 ];
 
@@ -18,6 +19,9 @@ const ROLES: { value: Role; label: string }[] = [
 function question(person: AdminUser, role: Role, hostels: string[], isMe: boolean): string {
   if (role === "admin") {
     return `Make ${person.name} an admin? They'll see every hostel's register, outing requests (with phone numbers), escalations (with emergency and warden contacts) and gate scans, and can change gates, rules, people and settings. Never a live location, except a sharing student's last position when that student is late and hasn't answered.`;
+  }
+  if (role === "head_warden") {
+    return `Make ${person.name} a head warden? For every hostel's students, they'll decide outing requests, handle escalations (with emergency contacts), and see who's out and gate scans. They can also change the outing rules, holidays and which rules each hostel follows, but not gates, people or settings.`;
   }
   if (role === "warden") {
     return `Make ${person.name} the warden of ${hostels.join(", ")}? For those hostels' students only, they'll decide outing requests, handle escalations (with emergency contacts), and see who's out and gate scans. They can't change rules, gates, people or settings.`;
@@ -58,11 +62,11 @@ export function RoleForm({
       <input type="hidden" name="user_id" value={person.id} />
       <fieldset className="flex flex-col gap-2">
         <legend className="sr-only">Role for {person.name}</legend>
-        <div className="flex flex-wrap gap-1 rounded-control bg-accent-soft/60 p-1">
+        <div className="grid grid-cols-2 gap-1 rounded-control bg-accent-soft/60 p-1 sm:grid-cols-4">
           {ROLES.map((r) => (
             <label
               key={r.value}
-              className={`flex min-h-11 flex-1 cursor-pointer items-center justify-center rounded-control px-3 text-sm font-bold transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
+              className={`flex min-h-11 cursor-pointer items-center justify-center rounded-control px-2 text-center text-sm font-bold transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
                 role === r.value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
               }`}
             >

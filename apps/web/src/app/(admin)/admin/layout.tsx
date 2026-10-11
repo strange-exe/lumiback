@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { signOut } from "@/features/auth/actions";
 import { AdminNav } from "@/features/admin/components/AdminNav";
 import { requireStaff } from "@/lib/session";
+import { ROLE_LABEL } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: { default: "Hostel office", template: "%s · Hostel office · Lumiback" },
@@ -26,7 +27,7 @@ export default async function AdminLayout({
           <Link href="/admin" className="flex items-center gap-2">
             <span className="font-display text-xl text-ink">Lumiback</span>
             <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-bold text-accent">
-              {user.role === "admin" ? "Admin" : "Warden"}
+              {ROLE_LABEL[user.role]}
             </span>
           </Link>
           <div className="flex items-center gap-1 text-sm">

@@ -10,7 +10,7 @@ interface Section {
   href: string;
   label: string;
   /** Who sees it: the daily pages are for everyone in the office, setup for admins. */
-  for: "staff" | "admin" | "warden";
+  for: readonly Role[] | "staff";
 }
 
 const SECTIONS: readonly Section[] = [
@@ -18,18 +18,18 @@ const SECTIONS: readonly Section[] = [
   { href: "/admin/requests", label: "Requests", for: "staff" },
   { href: "/admin/escalations", label: "Escalations", for: "staff" },
   { href: "/admin/scans", label: "Scans", for: "staff" },
-  { href: "/admin/hostel", label: "My hostel", for: "warden" },
-  { href: "/admin/gates", label: "Gates", for: "admin" },
-  { href: "/admin/rules", label: "Rules", for: "admin" },
-  { href: "/admin/people", label: "People", for: "admin" },
-  { href: "/admin/settings", label: "Settings", for: "admin" },
+  { href: "/admin/hostel", label: "My hostel", for: ["warden"] },
+  { href: "/admin/gates", label: "Gates", for: ["admin"] },
+  { href: "/admin/rules", label: "Rules", for: ["admin", "head_warden"] },
+  { href: "/admin/people", label: "People", for: ["admin"] },
+  { href: "/admin/settings", label: "Settings", for: ["admin"] },
 ];
 
 /** Section tabs. They wrap onto a second row on a phone, so every section and the current
  * one stay in view (a sideways-scrolling strip hid half of them). */
 export function AdminNav({ role }: { role: Role }): ReactNode {
   const path = usePathname();
-  const sections = SECTIONS.filter((s) => s.for === "staff" || s.for === role);
+  const sections = SECTIONS.filter((s) => s.for === "staff" || s.for.includes(role));
   return (
     <nav aria-label="Hostel office">
       <ul className="flex flex-wrap gap-1">

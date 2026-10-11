@@ -1,11 +1,12 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { isStaff } from "@/lib/office";
+import { isStaff, ROLE_LABEL } from "@/lib/office";
+import { office } from "@/lib/office-api";
 import { canAskAt, formNeededAt, freeEveningAhead, plannedReturn, rulesLine } from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
@@ -14,13 +15,14 @@ import type {
   OutingPage,
   OutingRequest,
   OutingSummary,
+  Role,
   TodayRules,
 } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
-import { OfficeCard } from "@/screens/office/OfficeCard";
+import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { RequestSheet } from "@/screens/outing-request";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
@@ -47,7 +49,88 @@ interface TodayData {
   recent: Outing[] | null;
 }
 
+/** Students get their outing; wardens, head wardens and admins get the hostel office (no
+ * tap-out, outing rules or sharing: those are for students). */
 export default function Today(): ReactNode {
+  const { user } = useAuth();
+  return isStaff(user?.role) ? <StaffToday /> : <StudentToday />;
+}
+
+const OFFICE_POLL_MS = 30_000;
+
+function StaffToday(): ReactNode {
+  const c = useColors();
+  const { user } = useAuth();
+  const load = useCallback(() => office.overview(), []);
+  const { data, refreshing, reload, refetch } = useData(load);
+  // Keep the counts current while Today is on screen, like the website's register.
+  useFocusEffect(
+    useCallback(() => {
+      const timer = setInterval(() => void refetch(), OFFICE_POLL_MS);
+      return () => clearInterval(timer);
+    }, [refetch]),
+  );
+  return (
+    <Screen
+      edges={["top"]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void reload()}
+          colors={[c.accent]}
+          tintColor={c.accent}
+        />
+      }
+    >
+      <Greeting name={user?.name ?? ""} role={user?.role} />
+      <T tone="muted">{officeScope(user?.role)}</T>
+      <OfficeHome role={user?.role} overview={data} />
+    </Screen>
+  );
+}
+
+/** Date, "Hi, name", and the avatar that opens Profile. */
+function Greeting({ name, role }: { name: string; role?: Role }): ReactNode {
+  const c = useColors();
+  const first = name.split(" ")[0] ?? "";
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
+      <View style={{ flex: 1, gap: space(1) }}>
+        <Text style={[type.eyebrow, { color: c.accent }]}>
+          {formatDay(new Date())}
+          {role && role !== "student" ? ` · ${ROLE_LABEL[role]}` : ""}
+        </Text>
+        <T tone="title" accessibilityRole="header">
+          {first ? `Hi, ${first}` : "Hi"}
+        </T>
+      </View>
+      <Press
+        onPress={() => router.navigate("/profile")}
+        accessibilityLabel="Profile"
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: c.accentSoft,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
+          {initials || "?"}
+        </Text>
+      </Press>
+    </View>
+  );
+}
+
+function StudentToday(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
   const load = useCallback(async (): Promise<TodayData> => {
@@ -71,13 +154,6 @@ export default function Today(): ReactNode {
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
   const { action, at } = useLocalSearchParams<{ action?: string; at?: string }>();
   const logRequest = action === "log" ? (at ?? null) : null;
-  const first = user?.name.split(" ")[0] ?? "";
-  const initials = (user?.name ?? "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
 
   return (
     <Screen
@@ -90,32 +166,7 @@ export default function Today(): ReactNode {
         />
       }
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
-        <View style={{ flex: 1, gap: space(1) }}>
-          <Text style={[type.eyebrow, { color: c.accent }]}>{formatDay(new Date())}</Text>
-          <T tone="title" accessibilityRole="header">
-            {first ? `Hi, ${first}` : "Hi"}
-          </T>
-        </View>
-        <Press
-          onPress={() => router.navigate("/profile")}
-          accessibilityLabel="Profile"
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: c.accentSoft,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
-            {initials || "?"}
-          </Text>
-        </Press>
-      </View>
-
-      {isStaff(user?.role) ? <OfficeCard warden={user?.role === "warden"} /> : null}
+      <Greeting name={user?.name ?? ""} />
 
       {loading ? (
         <HeroSkeleton />
@@ -589,7 +640,6 @@ function RulesCard({
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
-  const { user } = useAuth();
   const now = useNow(30_000);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -654,8 +704,7 @@ function RulesCard({
         </View>
       </View>
 
-      {/* Students pick a hostel; wardens and admins look after hostels instead. */}
-      {rules.hostel == null && !isStaff(user?.role) ? (
+      {rules.hostel == null ? (
         <Press
           onPress={() => {
             haptic.tap();

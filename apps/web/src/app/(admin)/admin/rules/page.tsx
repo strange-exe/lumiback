@@ -10,12 +10,12 @@ import {
   RuleSetForm,
 } from "@/features/admin/components/RuleForms";
 import { istToday } from "@/features/admin/format";
-import { requireAdmin } from "@/lib/session";
+import { requireRulesEditor } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Outing rules" };
 
 export default async function RulesPage(): Promise<ReactNode> {
-  const { token } = await requireAdmin();
+  const { token } = await requireRulesEditor();
   const today = istToday();
   const year = Number(today.slice(0, 4));
   const [sets, hostels, thisYear, nextYear] = await Promise.all([

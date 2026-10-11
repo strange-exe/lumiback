@@ -3,6 +3,7 @@ import { useCallback, useEffect, type ReactNode } from "react";
 import { RefreshControl, View } from "react-native";
 
 import { useAuth } from "@/lib/auth";
+import { everyHostel } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { Escalation, OfficeOuting, OfficeRequest } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -62,8 +63,9 @@ export default function OfficeScreen(): ReactNode {
     }, [refetch]),
   );
 
-  const scope =
-    user?.role === "warden" ? "Your hostels' students only." : "Every hostel's students.";
+  const scope = everyHostel(user?.role)
+    ? "Every hostel's students."
+    : "Your hostels' students only.";
   const current = data?.section === section ? data : undefined;
 
   return (

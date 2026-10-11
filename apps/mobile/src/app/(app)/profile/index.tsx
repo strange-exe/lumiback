@@ -7,7 +7,7 @@ import { Linking, Text, View } from "react-native";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { isStaff } from "@/lib/office";
+import { isStaff, ROLE_LABEL } from "@/lib/office";
 import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
@@ -80,6 +80,7 @@ export default function Profile(): ReactNode {
           </T>
           <T tone="caption">
             {[
+              user.role && user.role !== "student" ? ROLE_LABEL[user.role] : null,
               user.roll_no ? `Roll no. ${user.roll_no}` : null,
               `Joined ${formatDate(user.created_at)}`,
             ]
@@ -89,33 +90,24 @@ export default function Profile(): ReactNode {
         </View>
       </View>
 
-      {isStaff(user?.role) ? (
-        <Section title="Hostel office">
+      {/* A student's hostel and contacts; staff run the office from Today instead. */}
+      {isStaff(user.role) ? null : (
+        <Section title="Outings">
           <Row
-            leading={icon("shield-checkmark-outline")}
-            title="Requests, escalations, students, rules, gates"
-            detail={user?.role === "warden" ? "Your hostels' students" : "Every hostel"}
+            leading={icon("home-outline")}
+            title="Hostel and contacts"
+            detail={
+              profile
+                ? [profile.hostel ?? "Hostel not chosen", profile.phone ? null : "add your number"]
+                    .filter(Boolean)
+                    .join(" · ")
+                : undefined
+            }
             trailing={chevron}
-            onPress={() => router.push("/office/index")}
+            onPress={() => router.push("/profile/outing-details")}
           />
         </Section>
-      ) : null}
-
-      <Section title="Outings">
-        <Row
-          leading={icon("home-outline")}
-          title="Hostel and contacts"
-          detail={
-            profile
-              ? [profile.hostel ?? "Hostel not chosen", profile.phone ? null : "add your number"]
-                  .filter(Boolean)
-                  .join(" · ")
-              : undefined
-          }
-          trailing={chevron}
-          onPress={() => router.push("/profile/outing-details")}
-        />
-      </Section>
+      )}
 
       <Section title="Settings">
         <Row
