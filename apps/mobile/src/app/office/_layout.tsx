@@ -22,6 +22,12 @@ export default function OfficeLayout(): ReactNode {
         contentStyle: { backgroundColor: c.page },
         animation: "none", // switching sections replaces the screen in place
       }}
-    />
+    >
+      {/* The hub's own heading already says "Hostel office". */}
+      <Stack.Screen name="index" options={{ title: "" }} />
+      <Stack.Screen name="students" options={{ animation: "default" }} />
+      <Stack.Screen name="rules" options={{ animation: "default" }} />
+      <Stack.Screen name="gates" options={{ animation: "default" }} />
+    </Stack>
   );
 }

@@ -269,3 +269,77 @@ export interface Escalation {
   resolved_at: string | null;
   note: string | null;
 }
+
+export interface OfficeStudent {
+  id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  role: Role;
+  hostel_id: string | null;
+  hostel: string | null;
+  phone: string | null;
+  emergency_name: string | null;
+  emergency_relation: string | null;
+  emergency_phone: string | null;
+  /** Right now. */
+  status: "in" | "out" | "overdue";
+}
+
+export interface OfficeHostel {
+  id: string;
+  name: string;
+  rule_set_id: string;
+  rule_set: string;
+  warden_name: string | null;
+  warden_phone: string | null;
+  students: number;
+}
+
+export interface DayRule {
+  day_type: "weekday" | "saturday" | "sunday" | "holiday";
+  opens_at: string;
+  return_by: string;
+  max_minutes: number | null;
+  needs_form: boolean;
+  no_form_from: string | null;
+}
+
+export interface RuleSet {
+  id: string;
+  name: string;
+  is_default: boolean;
+  hostels: string[];
+  days: DayRule[];
+}
+
+export interface Holiday {
+  day: string;
+  name: string;
+}
+
+export interface Gate {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface GateCreated {
+  gate: Gate;
+  /** Shown once: the kiosk link's secret. */
+  kiosk_token: string;
+}
+
+export interface Person {
+  id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  role: Role;
+  hostel_ids: string[];
+  hostels: string[];
+}

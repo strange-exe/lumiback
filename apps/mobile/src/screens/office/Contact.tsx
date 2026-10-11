@@ -35,7 +35,7 @@ export function Contact({
       {phone ? (
         <Press
           onPress={call}
-          accessibilityLabel={`Call ${name ?? label}, ${formatPhone(phone)}`}
+          accessibilityLabel={`Call ${name ?? formatPhone(phone)}${name ? `, ${formatPhone(phone)}` : ""}`}
           style={{
             width: 48,
             height: 48,

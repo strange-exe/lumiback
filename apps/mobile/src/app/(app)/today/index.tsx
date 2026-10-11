@@ -589,6 +589,7 @@ function RulesCard({
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
+  const { user } = useAuth();
   const now = useNow(30_000);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -653,7 +654,8 @@ function RulesCard({
         </View>
       </View>
 
-      {rules.hostel == null ? (
+      {/* Students pick a hostel; wardens and admins look after hostels instead. */}
+      {rules.hostel == null && !isStaff(user?.role) ? (
         <Press
           onPress={() => {
             haptic.tap();

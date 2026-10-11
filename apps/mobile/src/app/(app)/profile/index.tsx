@@ -93,12 +93,10 @@ export default function Profile(): ReactNode {
         <Section title="Hostel office">
           <Row
             leading={icon("shield-checkmark-outline")}
-            title="Requests, escalations, who's out"
+            title="Requests, escalations, students, rules, gates"
             detail={user?.role === "warden" ? "Your hostels' students" : "Every hostel"}
             trailing={chevron}
-            onPress={() =>
-              router.push({ pathname: "/office/[section]", params: { section: "requests" } })
-            }
+            onPress={() => router.push("/office/index")}
           />
         </Section>
       ) : null}
