@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.4.0",
+    "date": "2026-10-11",
+    "title": "The hostel office in the app",
+    "points": [
+      "Wardens and admins get a Hostel office on Today: outing requests, late students who aren't answering, and who's out.",
+      "Approve or decline outing requests, call a student or their family, and mark escalations as handled, right from your phone.",
+      "New role: warden. A warden sees only their own hostels' students; rules, gates and settings stay with admins.",
+      "Notifications about new requests and escalations open the right screen."
+    ]
+  },
+  {
     "version": "1.3.1",
     "date": "2026-10-10",
     "title": "Clearer outings and support",

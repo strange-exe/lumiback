@@ -63,12 +63,20 @@ export function endedMessage(reason: string | null): string {
 }
 
 /** Screens a tapped notification can open. */
-export type NotificationRoute = "/live" | "/today";
-const ROUTES: readonly string[] = ["/live", "/today"] satisfies NotificationRoute[];
+export type NotificationRoute =
+  "/live" | "/today" | "/office/requests" | "/office/escalations" | "/office/out";
+const ROUTES: readonly string[] = [
+  "/live",
+  "/today",
+  "/office/requests",
+  "/office/escalations",
+  "/office/out",
+] satisfies NotificationRoute[];
 
 /**
- * Where a tapped notification goes. A push without a known `url` (e.g. the hostel office's
- * escalation alert, sent with none) opens Today rather than doing nothing.
+ * Where a tapped notification goes. A push without a known `url` opens Today rather than doing
+ * nothing. The hostel office's pushes (new request, escalation) open its screens; the office
+ * screen itself sends a student who isn't staff back to Today.
  */
 export function notificationRoute(data: unknown): NotificationRoute {
   const url = data && typeof data === "object" ? (data as { url?: unknown }).url : undefined;

@@ -5,6 +5,7 @@ import { RefreshControl, Text, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isStaff } from "@/lib/office";
 import { canAskAt, formNeededAt, freeEveningAhead, plannedReturn, rulesLine } from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
@@ -19,6 +20,7 @@ import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
+import { OfficeCard } from "@/screens/office/OfficeCard";
 import { RequestSheet } from "@/screens/outing-request";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
@@ -112,6 +114,8 @@ export default function Today(): ReactNode {
           </Text>
         </Press>
       </View>
+
+      {isStaff(user?.role) ? <OfficeCard warden={user?.role === "warden"} /> : null}
 
       {loading ? (
         <HeroSkeleton />

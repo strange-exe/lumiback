@@ -7,6 +7,7 @@ import { Linking, Text, View } from "react-native";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isStaff } from "@/lib/office";
 import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
@@ -87,6 +88,20 @@ export default function Profile(): ReactNode {
           </T>
         </View>
       </View>
+
+      {isStaff(user?.role) ? (
+        <Section title="Hostel office">
+          <Row
+            leading={icon("shield-checkmark-outline")}
+            title="Requests, escalations, who's out"
+            detail={user?.role === "warden" ? "Your hostels' students" : "Every hostel"}
+            trailing={chevron}
+            onPress={() =>
+              router.push({ pathname: "/office/[section]", params: { section: "requests" } })
+            }
+          />
+        </Section>
+      ) : null}
 
       <Section title="Outings">
         <Row

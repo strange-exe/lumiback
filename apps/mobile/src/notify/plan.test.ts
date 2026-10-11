@@ -76,6 +76,8 @@ describe("notificationRoute", () => {
   it("opens the screen the notification names", () => {
     expect(notificationRoute({ url: "/live" })).toBe("/live");
     expect(notificationRoute({ url: "/today" })).toBe("/today");
+    expect(notificationRoute({ url: "/office/requests" })).toBe("/office/requests");
+    expect(notificationRoute({ url: "/office/escalations" })).toBe("/office/escalations");
   });
 
   it("opens Today when the url is missing or unknown", () => {

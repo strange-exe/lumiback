@@ -8,7 +8,11 @@ export interface User {
   hostel: string | null;
   email_verified: boolean;
   created_at: string;
+  /** Wardens (their hostels) and admins (every hostel) also get the hostel office. */
+  role?: Role;
 }
+
+export type Role = "student" | "warden" | "admin";
 
 export interface TokenPair {
   access_token: string;
@@ -184,4 +188,84 @@ export interface Redeemed {
 export interface Registered {
   email: string;
   code_expires_in_minutes: number;
+}
+
+// ---------- the hostel office (admins and wardens; the API limits a warden to their hostels) ----------
+
+export type LateReply = "on_my_way" | "safe";
+
+export interface OfficeOverview {
+  out_now: number;
+  overdue: number;
+  pending_requests?: number;
+  open_escalations?: number;
+}
+
+export interface OfficeOuting {
+  id: string;
+  name: string;
+  roll_no: string | null;
+  hostel?: string | null;
+  destination: string | null;
+  left_at: string;
+  expected_return_at: string;
+  status: OutingStatus;
+  late_minutes: number;
+  out_via: "self" | "gate";
+  out_gate: string | null;
+  late_reply?: LateReply | null;
+}
+
+export interface OfficeRequest {
+  id: string;
+  name: string;
+  roll_no: string | null;
+  hostel: string | null;
+  purpose: string;
+  phone: string;
+  emergency_name: string;
+  emergency_relation: string;
+  emergency_phone: string;
+  requested_minutes: number | null;
+  max_minutes: number | null;
+  status: RequestStatus;
+  note: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  used: boolean;
+}
+
+export interface LastSeen {
+  kind: "live" | "gate";
+  at: string;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  gate: string | null;
+  mock_since: string | null;
+}
+
+export interface Escalation {
+  id: string;
+  name: string;
+  roll_no: string | null;
+  hostel: string | null;
+  warden_name: string | null;
+  warden_phone: string | null;
+  phone: string | null;
+  emergency_name: string | null;
+  emergency_relation: string | null;
+  emergency_phone: string | null;
+  destination: string | null;
+  left_at: string;
+  expected_return_at: string;
+  returned_at?: string | null;
+  late_minutes: number;
+  alert_at: string | null;
+  late_reply: LateReply | null;
+  last_seen: LastSeen | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  note: string | null;
 }
