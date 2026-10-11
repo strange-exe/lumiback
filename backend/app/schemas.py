@@ -254,7 +254,7 @@ class UserOut(BaseModel):
     hostel: str | None
     email_verified: bool
     created_at: datetime
-    role: Literal["student", "warden", "admin"] = "student"
+    role: Literal["student", "warden", "head_warden", "admin"] = "student"
 
 
 # ---------- outings ----------
@@ -571,7 +571,7 @@ class AdminUser(BaseModel):
     name: str
     email: str
     roll_no: str | None
-    role: Literal["student", "warden", "admin"]
+    role: Literal["student", "warden", "head_warden", "admin"]
     hostel_ids: list[uuid.UUID] = []  # a warden's hostels
     hostels: list[str] = []
 
@@ -583,7 +583,7 @@ class StudentOut(BaseModel):
     name: str
     email: str
     roll_no: str | None
-    role: Literal["student", "warden", "admin"]
+    role: Literal["student", "warden", "head_warden", "admin"]
     hostel_id: uuid.UUID | None
     hostel: str | None
     phone: str | None
@@ -594,7 +594,7 @@ class StudentOut(BaseModel):
 
 
 class RoleIn(Input):
-    role: Literal["student", "warden", "admin"]
+    role: Literal["student", "warden", "head_warden", "admin"]
     # Required (at least one) for a warden; ignored for other roles.
     hostel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 

@@ -8,7 +8,9 @@ demo students (e2e@geu.ac.in, and e2e-delete@geu.ac.in for the account-deletion 
 tests can sign in without reading an email. It also adds an admin (e2e-admin@geu.ac.in), one
 gate, "North Gate", whose kiosk token is fixed so the kiosk page can be opened directly, and
 "Hostel 3" with its warden (e2e-warden@geu.ac.in). --demo fills Hostel 3 with sample students
-who are out, late, escalated or waiting on a request (for screenshots and demos).
+who are out, late, escalated or waiting on a request (for screenshots and demos), and adds one
+account per role (ROLE_ACCOUNTS: admin@, headwarden@, warden@, warden2@, student@geu.ac.in, all
+with E2E_PASSWORD). Everything here goes into the local *_test database only.
 """
 
 import argparse
@@ -31,6 +33,7 @@ DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase 
 E2E_PASSWORD = "lantern-at-dusk-2029"  # noqa: S105 - test-only, local *_test database
 ADMIN_EMAIL = "e2e-admin@geu.ac.in"
 WARDEN_EMAIL = "e2e-warden@geu.ac.in"  # warden of Hostel 3
+HEAD_WARDEN_EMAIL = "e2e-head@geu.ac.in"
 KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000"  # noqa: S105 - test-only
 
 
@@ -105,9 +108,81 @@ def reset_and_seed(url: str, seed: bool, demo: bool = False) -> None:
                 text("INSERT INTO warden_hostels (user_id, hostel_id) VALUES (:u, :h)"),
                 {"u": warden, "h": hostel},
             )
+            conn.execute(
+                text(
+                    "INSERT INTO users (name, email, password_hash, role, email_verified_at) "
+                    "VALUES ('Vikram Negi', :email, :hash, 'head_warden', now())"
+                ),
+                {"email": HEAD_WARDEN_EMAIL, "hash": hash_password(E2E_PASSWORD)},
+            )
             if demo:
                 seed_demo(conn, hostel, warden)
+                seed_role_accounts(conn, rule_set, hostel)
     engine.dispose()
+
+
+# One account per role, for trying the app and website by hand (local database only; the
+# password is E2E_PASSWORD). warden2 looks after Hostel 5, which has one student of its own.
+ROLE_ACCOUNTS = [
+    # email, name, role, hostel ("3", "5" or None)
+    ("admin@geu.ac.in", "Demo Admin", "admin", None),
+    ("headwarden@geu.ac.in", "Demo Head Warden", "head_warden", None),
+    ("warden@geu.ac.in", "Demo Warden", "warden", "3"),
+    ("warden2@geu.ac.in", "Demo Warden Two", "warden", "5"),
+    ("student@geu.ac.in", "Demo Student", "student", "3"),
+]
+
+
+def seed_role_accounts(conn, rule_set, hostel3) -> None:
+    hostel5 = conn.execute(
+        text(
+            "INSERT INTO hostels (name, rule_set_id, warden_name, warden_phone) "
+            "VALUES ('Hostel 5', :s, 'Demo Warden Two', '+919876500005') RETURNING id"
+        ),
+        {"s": rule_set},
+    ).scalar_one()
+    hostels = {"3": hostel3, "5": hostel5}
+    for email, name, role, hostel in ROLE_ACCOUNTS:
+        user = conn.execute(
+            text(
+                "INSERT INTO users (name, email, password_hash, role, hostel_id, roll_no, phone, "
+                "emergency_name, emergency_relation, emergency_phone, email_verified_at) "
+                "VALUES (:name, :email, :hash, :role, :hostel, :roll, :phone, :ename, 'Parent', "
+                ":ephone, now()) RETURNING id"
+            ),
+            {
+                "name": name,
+                "email": email,
+                "hash": hash_password(E2E_PASSWORD),
+                "role": role,
+                # A warden's own account isn't in a hostel; a student's is.
+                "hostel": hostels[hostel] if role == "student" and hostel else None,
+                "roll": "24019999" if role == "student" else None,
+                "phone": "+919000000099" if role == "student" else None,
+                "ename": "Demo Parent" if role == "student" else None,
+                "ephone": "+919000000199" if role == "student" else None,
+            },
+        ).scalar_one()
+        if role == "warden" and hostel:
+            conn.execute(
+                text("INSERT INTO warden_hostels (user_id, hostel_id) VALUES (:u, :h)"),
+                {"u": user, "h": hostels[hostel]},
+            )
+    # Hostel 5's own student, out and not yet due, so warden2's register isn't empty.
+    student = conn.execute(
+        text(
+            "INSERT INTO users (name, email, password_hash, roll_no, hostel_id, email_verified_at) "
+            "VALUES ('Neha Rawat', 'demo7@geu.ac.in', :hash, '24011007', :h, now()) RETURNING id"
+        ),
+        {"hash": hash_password(E2E_PASSWORD), "h": hostel5},
+    ).scalar_one()
+    conn.execute(
+        text(
+            "INSERT INTO outings (student_id, destination, left_at, expected_return_at) "
+            "VALUES (:s, 'Paltan Bazaar', now() - interval '1 hour', now() + interval '2 hours')"
+        ),
+        {"s": student},
+    )
 
 
 # Sample students for screenshots and demos. Names and numbers are made up; this data only

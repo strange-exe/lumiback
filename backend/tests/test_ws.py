@@ -205,12 +205,14 @@ def test_expired_session_closes_on_the_next_event(connect, client, shared, db):
 
 def test_expired_access_token_closes_the_connection(connect, client, shared):
     user_id = client.get("/auth/me", headers=shared["arjun"]).json()["id"]
+    # 3 s of life: enough to connect and subscribe even on a busy machine (1 s made this flaky
+    # when the suite ran alongside other jobs), then it lapses mid-connection.
     almost_expired = create_access_token(
-        uuid.UUID(user_id), FAKE_SECRET, now=datetime.now(UTC) - ACCESS_TTL + timedelta(seconds=1)
+        uuid.UUID(user_id), FAKE_SECRET, now=datetime.now(UTC) - ACCESS_TTL + timedelta(seconds=3)
     )
     ws = connect(almost_expired)
     subscribe(ws, shared["id"])
-    time.sleep(1.2)
+    time.sleep(3.2)
     client.put(f"/sessions/{shared['id']}/location", json=fix(), headers=shared["riya"])
     assert ws.receive_json() == {"type": "reauth_required"}
     assert closed_with(ws) == 4401

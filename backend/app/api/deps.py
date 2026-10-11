@@ -189,6 +189,16 @@ async def get_staff(user: CurrentUser, session: SessionDep) -> Staff:
 
 StaffUser = Annotated[Staff, Depends(get_staff)]
 
+
+async def get_rules_editor(user: CurrentUser) -> User:
+    """Outing rules, holidays and which rules each hostel follows: admins and head wardens."""
+    if user.role not in (UserRole.ADMIN, UserRole.HEAD_WARDEN):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins and head wardens only")
+    return user
+
+
+RulesUser = Annotated[User, Depends(get_rules_editor)]
+
 GUEST_TOKEN_HEADER = "X-Guest-Token"  # noqa: S105 - header name, not a secret
 
 

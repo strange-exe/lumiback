@@ -1,8 +1,10 @@
-"""The hostel office: admins (every hostel) and wardens (only the hostels assigned to them).
+"""The hostel office: admins and head wardens (every hostel), and wardens (only the hostels
+assigned to them).
 
 Every staff read and action on students goes through `Staff.covers`, so a warden never sees,
 approves or resolves anything for a student outside their hostels. Students without a hostel
-are covered by admins only.
+are covered by admins and head wardens only. Outing rules are changed by admins and head
+wardens (`can_edit_rules`); gates, roles and settings by admins only.
 """
 
 import uuid
@@ -13,15 +15,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User, UserRole, WardenHostel
 
+# Roles that look after every hostel's students.
+EVERY_HOSTEL = (UserRole.ADMIN, UserRole.HEAD_WARDEN)
+
 
 @dataclass(frozen=True)
 class Staff:
     user: User
-    hostels: frozenset[uuid.UUID] | None  # None: every hostel (an admin)
+    hostels: frozenset[uuid.UUID] | None  # None: every hostel (an admin or head warden)
 
     @property
-    def is_admin(self) -> bool:
+    def every_hostel(self) -> bool:
         return self.hostels is None
+
+    @property
+    def can_edit_rules(self) -> bool:
+        return self.user.role in EVERY_HOSTEL
 
     def covers(self, hostel_id: ColumnElement[uuid.UUID | None]) -> ColumnElement[bool]:
         """A WHERE clause limiting rows to students this staff member looks after."""
@@ -44,15 +53,24 @@ async def warden_hostel_ids(session: AsyncSession, user_id: uuid.UUID) -> frozen
 
 async def staff_of(session: AsyncSession, user: User) -> Staff | None:
     """None for students."""
-    if user.role == UserRole.ADMIN:
+    if user.role in EVERY_HOSTEL:
         return Staff(user, None)
     if user.role == UserRole.WARDEN:
         return Staff(user, await warden_hostel_ids(session, user.id))
     return None
 
 
+async def _verified(session: AsyncSession, role: UserRole) -> list[User]:
+    return list(
+        await session.scalars(
+            select(User).where(User.role == role, User.email_verified_at.is_not(None))
+        )
+    )
+
+
 async def office_for(session: AsyncSession, hostel_id: uuid.UUID | None) -> list[User]:
-    """Who to tell about a student: their hostel's wardens, or the admins if it has none."""
+    """Who decides a student's request: their hostel's wardens; if it has none, the head
+    wardens; if there are none either, the admins."""
     if hostel_id is not None:
         wardens = list(
             await session.scalars(
@@ -67,8 +85,6 @@ async def office_for(session: AsyncSession, hostel_id: uuid.UUID | None) -> list
         )
         if wardens:
             return wardens
-    return list(
-        await session.scalars(
-            select(User).where(User.role == UserRole.ADMIN, User.email_verified_at.is_not(None))
-        )
+    return await _verified(session, UserRole.HEAD_WARDEN) or await _verified(
+        session, UserRole.ADMIN
     )

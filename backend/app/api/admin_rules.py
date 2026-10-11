@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminUser, PushDep, SessionDep, StaffUser
+from app.api.deps import PushDep, RulesUser, SessionDep, StaffUser
 from app.email_templates import request_decision_email
 from app.models import DayRule, DayType, Holiday, Hostel, OutingRequest, RuleSet, User
 from app.push import PushMessage
@@ -236,7 +236,7 @@ async def list_rule_sets(staff: StaffUser, session: SessionDep) -> list[RuleSetO
 
 
 @router.post("/rule-sets", status_code=status.HTTP_201_CREATED)
-async def create_rule_set(body: RuleSetIn, me: AdminUser, session: SessionDep) -> list[RuleSetOut]:
+async def create_rule_set(body: RuleSetIn, me: RulesUser, session: SessionDep) -> list[RuleSetOut]:
     rule_set = RuleSet(name=body.name)
     session.add(rule_set)
     try:
@@ -252,7 +252,7 @@ async def create_rule_set(body: RuleSetIn, me: AdminUser, session: SessionDep) -
 
 @router.put("/rule-sets/{rule_set_id}")
 async def update_rule_set(
-    rule_set_id: uuid.UUID, body: RuleSetIn, me: AdminUser, session: SessionDep
+    rule_set_id: uuid.UUID, body: RuleSetIn, me: RulesUser, session: SessionDep
 ) -> list[RuleSetOut]:
     rule_set = await session.get(RuleSet, rule_set_id)
     if rule_set is None:
@@ -272,7 +272,7 @@ async def update_rule_set(
 
 @router.post("/rule-sets/{rule_set_id}/default")
 async def make_default(
-    rule_set_id: uuid.UUID, me: AdminUser, session: SessionDep
+    rule_set_id: uuid.UUID, me: RulesUser, session: SessionDep
 ) -> list[RuleSetOut]:
     rule_set = await session.get(RuleSet, rule_set_id)
     if rule_set is None:
@@ -285,7 +285,7 @@ async def make_default(
 
 @router.delete("/rule-sets/{rule_set_id}")
 async def delete_rule_set(
-    rule_set_id: uuid.UUID, me: AdminUser, session: SessionDep
+    rule_set_id: uuid.UUID, me: RulesUser, session: SessionDep
 ) -> list[RuleSetOut]:
     rule_set = await session.get(RuleSet, rule_set_id)
     if rule_set is None:
@@ -331,12 +331,12 @@ async def _hostels_out(session) -> list[HostelOut]:
 
 
 @router.get("/hostels")
-async def list_hostels(_: AdminUser, session: SessionDep) -> list[HostelOut]:
+async def list_hostels(_: RulesUser, session: SessionDep) -> list[HostelOut]:
     return await _hostels_out(session)
 
 
 @router.post("/hostels", status_code=status.HTTP_201_CREATED)
-async def create_hostel(body: HostelIn, me: AdminUser, session: SessionDep) -> list[HostelOut]:
+async def create_hostel(body: HostelIn, me: RulesUser, session: SessionDep) -> list[HostelOut]:
     if await session.get(RuleSet, body.rule_set_id) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown rule set")
     session.add(Hostel(**body.model_dump()))
@@ -351,7 +351,7 @@ async def create_hostel(body: HostelIn, me: AdminUser, session: SessionDep) -> l
 
 @router.put("/hostels/{hostel_id}")
 async def update_hostel(
-    hostel_id: uuid.UUID, body: HostelIn, me: AdminUser, session: SessionDep
+    hostel_id: uuid.UUID, body: HostelIn, me: RulesUser, session: SessionDep
 ) -> list[HostelOut]:
     hostel = await session.get(Hostel, hostel_id)
     if hostel is None:
@@ -371,7 +371,7 @@ async def update_hostel(
 
 @router.delete("/hostels/{hostel_id}")
 async def delete_hostel(
-    hostel_id: uuid.UUID, me: AdminUser, session: SessionDep
+    hostel_id: uuid.UUID, me: RulesUser, session: SessionDep
 ) -> list[HostelOut]:
     """Its students go back to the default rules until they pick another hostel."""
     hostel = await session.get(Hostel, hostel_id)
@@ -398,7 +398,7 @@ async def list_holidays(
 
 
 @router.put("/holidays/{day}")
-async def put_holiday(day: date, body: HolidayIO, me: AdminUser, session: SessionDep) -> HolidayIO:
+async def put_holiday(day: date, body: HolidayIO, me: RulesUser, session: SessionDep) -> HolidayIO:
     if body.day != day:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Dates don't match")
     holiday = await session.get(Holiday, day)
@@ -412,7 +412,7 @@ async def put_holiday(day: date, body: HolidayIO, me: AdminUser, session: Sessio
 
 
 @router.delete("/holidays/{day}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_holiday(day: date, me: AdminUser, session: SessionDep) -> None:
+async def delete_holiday(day: date, me: RulesUser, session: SessionDep) -> None:
     holiday = await session.get(Holiday, day)
     if holiday is None:
         raise NOT_FOUND

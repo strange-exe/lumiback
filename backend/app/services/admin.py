@@ -345,7 +345,7 @@ async def students(
                 func.lower(func.coalesce(User.roll_no, "")).like(pattern),
             )
         )
-    elif hostel_id is None and staff.is_admin:
+    elif hostel_id is None and staff.every_hostel:
         query = query.where(User.hostel_id.is_not(None))  # no filter: everyone in a hostel
     rows = (await session.execute(query)).all()
     now = datetime.now(UTC)

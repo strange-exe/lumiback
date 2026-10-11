@@ -152,16 +152,16 @@ def test_the_last_admin_cant_become_a_warden(client, admin, hostels):
     ("method", "path", "body"),
     [
         ("post", "/admin/gates", {"name": "X", "lat": 30.0, "lng": 78.0, "radius_m": 75}),
-        ("put", "/admin/rule-sets/00000000-0000-0000-0000-000000000000", {"name": "X"}),
-        ("get", "/admin/hostels", None),
-        ("put", "/admin/holidays/2026-12-25", {"day": "2026-12-25", "name": "Christmas"}),
         ("get", "/admin/users?q=anna", None),
         ("get", "/admin/settings", None),
+        ("get", "/admin/hostels", None),  # rules setup: admins and head wardens
+        ("put", "/admin/holidays/2026-12-25", {"day": "2026-12-25", "name": "Christmas"}),
     ],
 )
-def test_setup_stays_admin_only(client, warden, method, path, body):
+def test_setup_isnt_for_wardens(client, warden, method, path, body):
     r = client.request(method, path, json=body, headers=warden)
-    assert r.status_code == 403 and r.json()["detail"] == "Admins only"
+    assert r.status_code == 403
+    assert r.json()["detail"] in ("Admins only", "Admins and head wardens only")
 
 
 def test_a_warden_can_list_gates_to_filter_scans(client, warden, admin):
@@ -335,3 +335,90 @@ def test_a_warden_edits_only_their_hostels_contact(client, warden, hostels):
         f"/admin/hostels/{hostels['B']}/contact", json={"warden_name": "X"}, headers=warden
     )
     assert r.status_code == 404
+
+
+# ---------- head wardens: every hostel, and the outing rules ----------
+
+
+@pytest.fixture
+def head(client, admin):
+    headers = signup(client, "head@geu.ac.in", "Head Warden")[1]
+    r = set_role(client, admin, "head@geu.ac.in", "head_warden")
+    assert r.status_code == 200 and r.json()["role"] == "head_warden", r.text
+    return headers
+
+
+def test_a_head_warden_sees_every_hostel_and_edits_rules(
+    client, db, admin, head, anna, bina, hostels
+):
+    set_rules(db, "open")
+    go_out(client, anna)
+    go_out(client, bina)
+    assert sorted(o["name"] for o in client.get("/admin/outings", headers=head).json()) == [
+        "Anna",
+        "Bina",
+    ]
+    assert {h["name"] for h in client.get("/admin/my-hostels", headers=head).json()} == {
+        "Hostel A",
+        "Hostel B",
+    }
+    # Rules, holidays and which rules a hostel follows.
+    sets = client.get("/admin/rule-sets", headers=head).json()
+    default = next(s for s in sets if s["is_default"])
+    r = client.put(
+        f"/admin/rule-sets/{default['id']}",
+        json={"name": "Campus rules", "days": default["days"]},
+        headers=head,
+    )
+    assert r.status_code == 200, r.text
+    r = client.put(
+        "/admin/holidays/2026-12-25", json={"day": "2026-12-25", "name": "Christmas"}, headers=head
+    )
+    assert r.status_code == 200
+    assert client.get("/admin/hostels", headers=head).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/admin/gates", {"name": "X", "lat": 30.0, "lng": 78.0, "radius_m": 75}),
+        ("get", "/admin/users?q=anna", None),
+        ("get", "/admin/settings", None),
+    ],
+)
+def test_gates_people_and_settings_stay_with_admins(client, head, method, path, body):
+    r = client.request(method, path, json=body, headers=head)
+    assert r.status_code == 403 and r.json()["detail"] == "Admins only"
+
+
+def test_wardens_cant_edit_rules(client, warden):
+    r = client.put(
+        "/admin/holidays/2026-12-25", json={"day": "2026-12-25", "name": "X"}, headers=warden
+    )
+    assert r.status_code == 403 and r.json()["detail"] == "Admins and head wardens only"
+
+
+def test_a_request_without_a_hostel_warden_goes_to_head_wardens(
+    client, db, push, admin, head, bina
+):
+    set_rules(db, "open", max_minutes=180, needs_form=True)
+    register_token(client, head, "ExponentPushToken[headWarden0001]")
+    register_token(client, admin, ADMIN_PHONE)
+    client.post("/outings/request", json=FORM, headers=bina)  # Hostel B has no warden
+    assert [t for t, _ in push.outbox] == [["ExponentPushToken[headWarden0001]"]]
+
+
+def test_escalations_also_reach_head_wardens(client, db, push, admin, head, anna):
+    set_rules(db, "open")
+    register_token(client, head, "ExponentPushToken[headWarden0001]")
+    go_out(client, anna)
+    db.execute(
+        text(
+            "UPDATE outings SET left_at = now() - interval '3 hours', "
+            "expected_return_at = now() - interval '45 minutes', "
+            "overdue_notified_at = now() - interval '11 minutes'"
+        )
+    )
+    db.commit()
+    run_sweep(client, push)
+    assert ["ExponentPushToken[headWarden0001]"] in [t for t, _ in push.outbox]

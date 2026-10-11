@@ -44,7 +44,7 @@ from app.models import (
     WardenHostel,
 )
 from app.schemas import EscalationOut, LastSeenOut
-from app.services.staff import Staff
+from app.services.staff import EVERY_HOSTEL, Staff
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
@@ -110,7 +110,8 @@ class Recipient:
 
 
 async def recipients(session: AsyncSession, hostels: list[uuid.UUID | None]) -> list[Recipient]:
-    """Every admin (all of them), plus the wardens of each escalated student's hostel (theirs)."""
+    """Every admin and head warden (all of them), plus the wardens of each escalated student's
+    hostel (theirs)."""
     if not hostels:
         return []
     rows = (
@@ -120,7 +121,7 @@ async def recipients(session: AsyncSession, hostels: list[uuid.UUID | None]) -> 
             .where(
                 User.email_verified_at.is_not(None),
                 or_(
-                    User.role == UserRole.ADMIN,
+                    User.role.in_(EVERY_HOSTEL),
                     and_(User.role == UserRole.WARDEN, WardenHostel.hostel_id.in_(hostels)),
                 ),
             )
@@ -129,7 +130,7 @@ async def recipients(session: AsyncSession, hostels: list[uuid.UUID | None]) -> 
     counts: dict[tuple[uuid.UUID, str], int] = {}
     for user_id, email, role, hostel_id in rows:
         key = (user_id, email)
-        if role == UserRole.ADMIN:
+        if role in EVERY_HOSTEL:
             counts[key] = len(hostels)
         else:  # one row per assigned hostel
             counts[key] = counts.get(key, 0) + hostels.count(hostel_id)

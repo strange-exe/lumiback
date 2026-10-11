@@ -114,6 +114,9 @@ class UserRole(enum.StrEnum):
     # The hostel office for their assigned hostels only (WardenHostel): outing requests,
     # escalations, who's out and gate scans for those students, and the hostels' contact.
     WARDEN = "warden"
+    # Every hostel's students, like an admin, and the outing rules (rule sets, holidays,
+    # which rules each hostel follows). Not gates, roles or settings.
+    HEAD_WARDEN = "head_warden"
     ADMIN = "admin"  # everything, campus-wide: rules, gates, people, settings
 
 
