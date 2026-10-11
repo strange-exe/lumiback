@@ -152,7 +152,7 @@ def test_the_last_admin_cant_become_a_warden(client, admin, hostels):
     ("method", "path", "body"),
     [
         ("post", "/admin/gates", {"name": "X", "lat": 30.0, "lng": 78.0, "radius_m": 75}),
-        ("get", "/admin/rule-sets", None),
+        ("put", "/admin/rule-sets/00000000-0000-0000-0000-000000000000", {"name": "X"}),
         ("get", "/admin/hostels", None),
         ("put", "/admin/holidays/2026-12-25", {"day": "2026-12-25", "name": "Christmas"}),
         ("get", "/admin/users?q=anna", None),
@@ -172,6 +172,42 @@ def test_a_warden_can_list_gates_to_filter_scans(client, warden, admin):
     )
     r = client.get("/admin/gates", headers=warden)
     assert r.status_code == 200 and [g["name"] for g in r.json()] == ["Main Gate"]
+
+
+def test_a_warden_reads_only_their_hostels_rules(client, admin, warden, hostels):
+    # Hostel B moves to a set of its own; the warden of A must not see it.
+    default = next(
+        r for r in client.get("/admin/rule-sets", headers=admin).json() if r["is_default"]
+    )
+    days = default["days"]
+    other = client.post(
+        "/admin/rule-sets", json={"name": "Hostel B rules", "days": days}, headers=admin
+    ).json()
+    b_set = next(s for s in other if s["name"] == "Hostel B rules")
+    client.put(
+        f"/admin/hostels/{hostels['B']}",
+        json={"name": "Hostel B", "rule_set_id": b_set["id"]},
+        headers=admin,
+    )
+    seen = client.get("/admin/rule-sets", headers=warden).json()
+    assert [(s["name"], s["hostels"]) for s in seen] == [(default["name"], ["Hostel A"])]
+    assert len(client.get("/admin/rule-sets", headers=admin).json()) >= 2
+    assert client.get("/admin/holidays", headers=warden).status_code == 200
+
+
+def test_a_warden_lists_only_their_hostels_students(client, db, admin, warden, anna, bina, hostels):
+    set_rules(db, "open")
+    go_out(client, anna)
+    people = client.get("/admin/students", headers=warden).json()
+    assert [(p["name"], p["hostel"], p["status"]) for p in people] == [("Anna", "Hostel A", "out")]
+    assert (
+        client.get(f"/admin/students?hostel_id={hostels['B']}", headers=warden).status_code == 404
+    )
+    assert [p["name"] for p in client.get("/admin/students?q=bina", headers=warden).json()] == []
+    everyone = client.get("/admin/students", headers=admin).json()
+    assert sorted(p["name"] for p in everyone) == ["Anna", "Bina"]
+    found = client.get("/admin/students?q=warden", headers=admin).json()
+    assert [(p["name"], p["role"]) for p in found] == [("Warden A", "warden")]
 
 
 def test_students_cant_use_the_office(client, anna):

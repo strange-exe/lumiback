@@ -30,7 +30,14 @@ from app.models import (
     UserRole,
     WardenHostel,
 )
-from app.schemas import AdminOuting, AdminOverview, AdminScan, AdminScanPage, AdminUser
+from app.schemas import (
+    AdminOuting,
+    AdminOverview,
+    AdminScan,
+    AdminScanPage,
+    AdminUser,
+    StudentOut,
+)
 from app.services.outings import status_of
 from app.services.rules import ist_date
 from app.services.staff import Staff, warden_hostel_ids
@@ -313,6 +320,60 @@ async def person(session: AsyncSession, u: User) -> AdminUser:
         hostel_ids=[i for i, _ in hostels],
         hostels=[n for _, n in hostels],
     )
+
+
+async def students(
+    session: AsyncSession, staff: Staff, hostel_id: uuid.UUID | None, q: str | None
+) -> list[StudentOut]:
+    """People the office looks after: a hostel's students, or a search. A warden sees their
+    own hostels' students only; an admin's search also finds staff (to change their role)."""
+    query = (
+        select(User, Hostel.name)
+        .outerjoin(Hostel, Hostel.id == User.hostel_id)
+        .where(User.email_verified_at.is_not(None), staff.covers(User.hostel_id))
+        .order_by(User.name)
+        .limit(300)
+    )
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    if q:
+        pattern = f"%{q.strip().lower()}%"
+        query = query.where(
+            or_(
+                func.lower(User.name).like(pattern),
+                User.email.like(pattern),
+                func.lower(func.coalesce(User.roll_no, "")).like(pattern),
+            )
+        )
+    elif hostel_id is None and staff.is_admin:
+        query = query.where(User.hostel_id.is_not(None))  # no filter: everyone in a hostel
+    rows = (await session.execute(query)).all()
+    now = datetime.now(UTC)
+    open_outings = {
+        o.student_id: o
+        for o in await session.scalars(
+            select(Outing).where(
+                Outing.returned_at.is_(None), Outing.student_id.in_([u.id for u, _ in rows])
+            )
+        )
+    }
+    return [
+        StudentOut(
+            id=u.id,
+            name=u.name,
+            email=u.email,
+            roll_no=u.roll_no,
+            role=u.role.value,
+            hostel_id=u.hostel_id,
+            hostel=hostel,
+            phone=u.phone,
+            emergency_name=u.emergency_name,
+            emergency_relation=u.emergency_relation,
+            emergency_phone=u.emergency_phone,
+            status=status_of(open_outings[u.id], now) if u.id in open_outings else "in",  # type: ignore[arg-type]
+        )
+        for u, hostel in rows
+    ]
 
 
 class NoHostels(Exception):

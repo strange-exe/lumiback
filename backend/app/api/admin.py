@@ -20,6 +20,7 @@ from app.schemas import (
     GateOut,
     GatePatch,
     RoleIn,
+    StudentOut,
 )
 from app.schemas import (
     AdminUser as AdminUserOut,
@@ -190,6 +191,19 @@ async def search_users(
     _: AdminUser, session: SessionDep, q: Annotated[str, Query(min_length=2, max_length=100)]
 ) -> list[AdminUserOut]:
     return await svc.search_users(session, q)
+
+
+@router.get("/students")
+async def list_students(
+    staff: StaffUser,
+    session: SessionDep,
+    hostel_id: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(min_length=2, max_length=100)] = None,
+) -> list[StudentOut]:
+    """A hostel's students (a warden: their own hostels only), with contacts and who's out."""
+    if hostel_id is not None and staff.hostels is not None and hostel_id not in staff.hostels:
+        raise NOT_FOUND
+    return await svc.students(session, staff, hostel_id, q)
 
 
 @router.post("/users/{user_id}/role")

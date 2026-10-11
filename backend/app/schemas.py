@@ -576,6 +576,23 @@ class AdminUser(BaseModel):
     hostels: list[str] = []
 
 
+class StudentOut(BaseModel):
+    """Someone the hostel office looks after, with the contacts it may need."""
+
+    id: uuid.UUID
+    name: str
+    email: str
+    roll_no: str | None
+    role: Literal["student", "warden", "admin"]
+    hostel_id: uuid.UUID | None
+    hostel: str | None
+    phone: str | None
+    emergency_name: str | None
+    emergency_relation: str | None
+    emergency_phone: str | None
+    status: Literal["in", "out", "overdue"]  # right now
+
+
 class RoleIn(Input):
     role: Literal["student", "warden", "admin"]
     # Required (at least one) for a warden; ignored for other roles.

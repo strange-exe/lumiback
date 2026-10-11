@@ -220,8 +220,19 @@ def _rules_conflict(e: IntegrityError) -> HTTPException:
 
 
 @router.get("/rule-sets")
-async def list_rule_sets(_: AdminUser, session: SessionDep) -> list[RuleSetOut]:
-    return await _rule_sets_out(session)
+async def list_rule_sets(staff: StaffUser, session: SessionDep) -> list[RuleSetOut]:
+    """Every rule set for an admin; for a warden, read-only, just the sets their hostels follow
+    (and only their hostels listed under them). Changing rules is admin-only."""
+    sets = await _rule_sets_out(session)
+    if staff.hostels is None:
+        return sets
+    mine = (
+        await session.execute(
+            select(Hostel.rule_set_id, Hostel.name).where(Hostel.id.in_(staff.hostels))
+        )
+    ).all()
+    names = {set_id: sorted(n for s, n in mine if s == set_id) for set_id, _ in mine}
+    return [s.model_copy(update={"hostels": names[s.id]}) for s in sets if s.id in names]
 
 
 @router.post("/rule-sets", status_code=status.HTTP_201_CREATED)
@@ -377,8 +388,9 @@ async def delete_hostel(
 
 @router.get("/holidays")
 async def list_holidays(
-    _: AdminUser, session: SessionDep, year: Annotated[int | None, Query(ge=2020, le=2100)] = None
+    _: StaffUser, session: SessionDep, year: Annotated[int | None, Query(ge=2020, le=2100)] = None
 ) -> list[HolidayIO]:
+    """Campus-wide dates; readable by wardens, changed by admins."""
     query = select(Holiday).order_by(Holiday.day)
     if year is not None:
         query = query.where(Holiday.day >= date(year, 1, 1), Holiday.day <= date(year, 12, 31))
