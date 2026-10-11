@@ -151,7 +151,6 @@ def test_the_last_admin_cant_become_a_warden(client, admin, hostels):
 @pytest.mark.parametrize(
     ("method", "path", "body"),
     [
-        ("get", "/admin/gates", None),
         ("post", "/admin/gates", {"name": "X", "lat": 30.0, "lng": 78.0, "radius_m": 75}),
         ("get", "/admin/rule-sets", None),
         ("get", "/admin/hostels", None),
@@ -163,6 +162,16 @@ def test_the_last_admin_cant_become_a_warden(client, admin, hostels):
 def test_setup_stays_admin_only(client, warden, method, path, body):
     r = client.request(method, path, json=body, headers=warden)
     assert r.status_code == 403 and r.json()["detail"] == "Admins only"
+
+
+def test_a_warden_can_list_gates_to_filter_scans(client, warden, admin):
+    client.post(
+        "/admin/gates",
+        json={"name": "Main Gate", "lat": 30.0, "lng": 78.0, "radius_m": 75},
+        headers=admin,
+    )
+    r = client.get("/admin/gates", headers=warden)
+    assert r.status_code == 200 and [g["name"] for g in r.json()] == ["Main Gate"]
 
 
 def test_students_cant_use_the_office(client, anna):

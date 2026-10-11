@@ -92,7 +92,8 @@ async def scans(
 
 
 @router.get("/gates")
-async def list_gates(_: AdminUser, session: SessionDep) -> list[GateOut]:
+async def list_gates(_: StaffUser, session: SessionDep) -> list[GateOut]:
+    """Readable by wardens too (the scan log filters by gate); changing gates is admin-only."""
     gates = await session.scalars(select(Gate).order_by(Gate.name))
     return [GateOut.model_validate(g) for g in gates]
 
