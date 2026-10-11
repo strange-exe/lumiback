@@ -7,8 +7,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, PushDep, SessionDep
 from app.models import LateReply
+from app.push import PushMessage
 from app.schemas import (
     LateReplyIn,
     OutingCreateIn,
@@ -18,7 +19,7 @@ from app.schemas import (
     OutingRequestOut,
     OutingSummary,
 )
-from app.services import escalations, requests, rules
+from app.services import escalations, requests, rules, staff
 from app.services import outings as svc
 
 router = APIRouter(prefix="/outings", tags=["outings"])
@@ -111,8 +112,9 @@ async def todays_request(me: CurrentUser, session: SessionDep) -> OutingRequestO
 
 @router.post("/request", status_code=status.HTTP_201_CREATED)
 async def send_request(
-    body: OutingRequestIn, me: CurrentUser, session: SessionDep
+    body: OutingRequestIn, me: CurrentUser, session: SessionDep, push: PushDep
 ) -> OutingRequestOut:
+    name, hostel_id = me.name, me.hostel_id  # readable even if create() rolls back
     try:
         r = await requests.create(session, me, body)
     except rules.Refused as e:
@@ -124,7 +126,19 @@ async def send_request(
             if e.used
             else "You already asked for today's outing. Cancel it first to change it.",
         ) from None
-    return await _request_out(session, r)
+    out = await _request_out(session, r)
+    # The hostel's wardens (or the admins, if it has none) decide it: tell them now.
+    for person in await staff.office_for(session, hostel_id):
+        push.to_user(
+            person.id,
+            PushMessage(
+                title="New outing request",
+                body=f"{name} asked for today's outing.",
+                url="/office/requests",
+                channel="share-status",  # the app's "Sharing and requests" switch
+            ),
+        )
+    return out
 
 
 @router.delete("/request/{request_id}", status_code=status.HTTP_204_NO_CONTENT)

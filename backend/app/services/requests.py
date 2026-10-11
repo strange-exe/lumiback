@@ -1,9 +1,10 @@
 """Weekend and holiday outing requests (the outing form).
 
-A student sends the form on the day itself; an admin approves or declines it; an approved request
-lets the student tap out once that day, for at most the day's limit (or less, if they asked for
-less). The contacts on a request are a snapshot of what the student gave for that outing, and
-also become the contacts saved on their profile (they're the student's own, and the latest).
+A student sends the form on the day itself; the hostel office (an admin, or a warden of the
+student's hostel) approves or declines it; an approved request lets the student tap out once
+that day, for at most the day's limit (or less, if they asked for less). The contacts on a
+request are a snapshot of what the student gave for that outing, and also become the contacts
+saved on their profile (they're the student's own, and the latest).
 """
 
 import uuid
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Outing, OutingRequest, RequestStatus, User
 from app.schemas import OutingRequestIn
 from app.services import rules
+from app.services.staff import Staff
 
 
 class AlreadyRequested(Exception):
@@ -151,39 +153,41 @@ async def cancel(session: AsyncSession, student_id: uuid.UUID, request_id: uuid.
 
 
 async def decide(
-    session: AsyncSession, admin: User, request_id: uuid.UUID, *, approve: bool, note: str | None
+    session: AsyncSession, staff: Staff, request_id: uuid.UUID, *, approve: bool, note: str | None
 ) -> OutingRequest:
     request = await session.get(OutingRequest, request_id, with_for_update=True)
     if request is None:
         raise NotFound
+    owner = await session.get(User, request.student_id)
+    if owner is None or not staff.covers_student(owner):
+        raise NotFound  # another hostel's request: as if it didn't exist
     if request.status is not RequestStatus.PENDING:
         raise NotPending
     now = datetime.now(UTC)
     if request.day != rules.ist_date(now):
         raise OtherDay
     if approve:
-        student = await session.get(User, request.student_id)
-        assert student is not None  # requests are deleted with their student
         try:
-            window = await rules.today_window(session, student, now)
+            window = await rules.today_window(session, owner, now)
         except rules.Refused:
             window = None  # no rules today: check_out refuses anyway
         if window is not None and now >= window.return_by:
             raise DayOver
     request.status = RequestStatus.APPROVED if approve else RequestStatus.DECLINED
-    request.decided_by = admin.id
+    request.decided_by = staff.user.id
     request.decided_at = now
     request.note = note
     return request  # the caller audits and commits
 
 
-async def queue(session: AsyncSession, day: date) -> list[tuple[OutingRequest, User]]:
-    """Today's requests for admins: pending first (oldest first), then decided (newest first)."""
+async def queue(session: AsyncSession, day: date, staff: Staff) -> list[tuple[OutingRequest, User]]:
+    """A day's requests for the hostel office (a warden: their hostels only): pending first
+    (oldest first), then decided (newest first)."""
     rows = (
         await session.execute(
             select(OutingRequest, User)
             .join(User, User.id == OutingRequest.student_id)
-            .where(OutingRequest.day == day)
+            .where(OutingRequest.day == day, staff.covers(User.hostel_id))
         )
     ).all()
     pending = sorted(

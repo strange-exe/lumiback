@@ -111,7 +111,10 @@ class AccessChannel(enum.StrEnum):
 
 class UserRole(enum.StrEnum):
     STUDENT = "student"
-    ADMIN = "admin"  # wardens / security: see gate scans and who is out, manage gates
+    # The hostel office for their assigned hostels only (WardenHostel): outing requests,
+    # escalations, who's out and gate scans for those students, and the hostels' contact.
+    WARDEN = "warden"
+    ADMIN = "admin"  # everything, campus-wide: rules, gates, people, settings
 
 
 class Via(enum.StrEnum):
@@ -435,6 +438,19 @@ class PushToken(Base):
     muted: Mapped[list[str]] = mapped_column(ARRAY(String(32)), server_default=text("'{}'"))
     created_at: Mapped[datetime] = created_at()
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class WardenHostel(Base):
+    """A hostel a warden looks after. Only users with the warden role have rows here."""
+
+    __tablename__ = "warden_hostels"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    hostel_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("hostels.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
 
 
 class AdminAudit(Base):

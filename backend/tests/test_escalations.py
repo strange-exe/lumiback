@@ -346,14 +346,14 @@ def test_muted_everyday_notices_are_not_emailed(client, db, push, riya, warden):
     assert push.outbox == [] and mailer.outbox[before:] == []
 
 
-def test_the_admin_push_points_to_the_website(client, db, push, riya, warden):
+def test_the_admin_push_opens_escalations_in_the_app(client, db, push, riya, warden):
     register_token(client, warden, ADMIN_PHONE)
     go_out(client, riya)
     late_by(db, 41, alerted_minutes_ago=11)
     run_sweep(client, push)
     message = push.outbox[-1][1]
-    assert message.body == "Open Escalations on the Lumiback website to follow up."
-    assert message.url is None  # the app opens its default screen
+    assert message.body == "Open Escalations in Lumiback to follow up."
+    assert message.url == "/office/escalations"
 
 
 def test_a_student_back_after_the_escalation_shows_when(client, db, push, riya, warden):

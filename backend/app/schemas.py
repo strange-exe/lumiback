@@ -254,7 +254,7 @@ class UserOut(BaseModel):
     hostel: str | None
     email_verified: bool
     created_at: datetime
-    role: Literal["student", "admin"] = "student"
+    role: Literal["student", "warden", "admin"] = "student"
 
 
 # ---------- outings ----------
@@ -571,11 +571,15 @@ class AdminUser(BaseModel):
     name: str
     email: str
     roll_no: str | None
-    role: Literal["student", "admin"]
+    role: Literal["student", "warden", "admin"]
+    hostel_ids: list[uuid.UUID] = []  # a warden's hostels
+    hostels: list[str] = []
 
 
 class RoleIn(Input):
-    role: Literal["student", "admin"]
+    role: Literal["student", "warden", "admin"]
+    # Required (at least one) for a warden; ignored for other roles.
+    hostel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 
 
 # ---------- push ----------
@@ -643,6 +647,13 @@ class RuleSetOut(BaseModel):
 class HostelIn(Input):
     name: ShortName
     rule_set_id: uuid.UUID
+    warden_name: PersonName | None = None
+    warden_phone: Phone | None = None
+
+
+class HostelContactIn(Input):
+    """What a warden may change about their own hostel: the contact shown on escalations."""
+
     warden_name: PersonName | None = None
     warden_phone: Phone | None = None
 

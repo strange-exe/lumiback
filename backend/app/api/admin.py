@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminUser, SessionDep
+from app.api.deps import AdminUser, SessionDep, StaffUser
 from app.models import Gate, ScanResult, User, UserRole
 from app.schemas import (
     AdminOuting,
@@ -35,28 +35,28 @@ NAME_TAKEN = HTTPException(status.HTTP_409_CONFLICT, detail="A gate with that na
 
 
 @router.get("/overview")
-async def overview(_: AdminUser, session: SessionDep) -> AdminOverview:
-    return await svc.overview(session)
+async def overview(staff: StaffUser, session: SessionDep) -> AdminOverview:
+    return await svc.overview(session, staff)
 
 
 @router.get("/outings")
 async def open_outings(
-    _: AdminUser,
+    staff: StaffUser,
     session: SessionDep,
     state: Literal["all", "out", "overdue"] = "all",
 ) -> list[AdminOuting]:
-    return await svc.open_outings(session, state)
+    return await svc.open_outings(session, staff, state)
 
 
 @router.get("/late-today")
-async def late_today(_: AdminUser, session: SessionDep) -> list[AdminOuting]:
+async def late_today(staff: StaffUser, session: SessionDep) -> list[AdminOuting]:
     """Tonight's latecomers: back after their return time, or still out past it."""
-    return await svc.late_today(session)
+    return await svc.late_today(session, staff)
 
 
 @router.get("/outings.csv")
 async def outings_csv(
-    _: AdminUser,
+    staff: StaffUser,
     session: SessionDep,
     start: Annotated[date, Query(alias="from")],
     end: Annotated[date, Query(alias="to")],
@@ -66,7 +66,7 @@ async def outings_csv(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Choose a range of at most {svc.MAX_EXPORT_DAYS} days",
         )
-    body = await svc.outings_csv(session, start, end)
+    body = await svc.outings_csv(session, staff, start, end)
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
@@ -76,14 +76,16 @@ async def outings_csv(
 
 @router.get("/scans")
 async def scans(
-    _: AdminUser,
+    staff: StaffUser,
     session: SessionDep,
     before: int | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     gate_id: uuid.UUID | None = None,
     result: ScanResult | None = None,
 ) -> AdminScanPage:
-    return await svc.scans(session, before=before, limit=limit, gate_id=gate_id, result=result)
+    return await svc.scans(
+        session, staff, before=before, limit=limit, gate_id=gate_id, result=result
+    )
 
 
 # ---------- gates ----------
@@ -197,15 +199,13 @@ async def set_role(
     if target is None or target.email_verified_at is None:
         raise NOT_FOUND
     try:
-        await svc.set_role(session, me, target, UserRole(body.role))
+        await svc.set_role(session, me, target, UserRole(body.role), body.hostel_ids)
     except svc.LastAdmin:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="Make someone else an admin first"
         ) from None
-    return AdminUserOut(
-        id=target.id,
-        name=target.name,
-        email=target.email,
-        roll_no=target.roll_no,
-        role=target.role.value,
-    )
+    except svc.NoHostels:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose at least one hostel for a warden"
+        ) from None
+    return await svc.person(session, target)

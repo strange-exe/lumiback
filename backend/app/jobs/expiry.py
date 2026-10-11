@@ -130,8 +130,8 @@ async def sweep(
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
         resets = await password_reset.delete_expired(session, now)  # unused reset codes
         late = await escalations.send_alerts(session, now)
-        opened = await escalations.open_escalations(session, now)
-        admins = await escalations.admin_ids(session) if opened else []
+        opened = await escalations.open_escalations(session, now)  # each one's hostel
+        office = await escalations.recipients(session, opened)
         # One retention period (Admin > Settings) for the campus records: gate scans, who
         # viewed a share, outing requests, and handled late escalations. Open escalations
         # stay until an admin resolves them: deleting one would hide a late student.
@@ -184,24 +184,25 @@ async def sweep(
             ),
         )
     if push is not None:
-        for admin_id, _ in admins:
+        for person in office:
             await notify_user(
                 sessionmaker,
                 push,
-                admin_id,
+                person.user_id,
                 PushMessage(
                     title="A late student isn't answering",
-                    # Escalations live on the website; the app opens its default screen.
-                    body="Open Escalations on the Lumiback website to follow up.",
-                    url=None,
+                    body="Open Escalations in Lumiback to follow up.",
+                    url="/office/escalations",
                     channel="return-reminders",
                     urgent=True,
                 ),
             )
-    if mailer is not None and opened:
-        for _, email in admins:
+    if mailer is not None:
+        for person in office:
             try:
-                await mailer.send(escalation_email(to=email, count=len(opened), web_url=web_url))
+                await mailer.send(
+                    escalation_email(to=person.email, count=person.count, web_url=web_url)
+                )
             except Exception:
                 logger.exception("escalation email failed")
     return SweepResult(

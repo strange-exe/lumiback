@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminUser, PushDep, SessionDep
+from app.api.deps import AdminUser, PushDep, SessionDep, StaffUser
 from app.email_templates import request_decision_email
 from app.models import DayRule, DayType, Holiday, Hostel, OutingRequest, RuleSet, User
 from app.push import PushMessage
@@ -19,6 +19,7 @@ from app.schemas import (
     EscalationOut,
     EscalationResolveIn,
     HolidayIO,
+    HostelContactIn,
     HostelIn,
     HostelOut,
     RequestDecisionIn,
@@ -96,10 +97,10 @@ async def _request_out(
 
 @router.get("/requests")
 async def list_requests(
-    _: AdminUser, session: SessionDep, day: date | None = None
+    staff: StaffUser, session: SessionDep, day: date | None = None
 ) -> list[AdminRequestOut]:
     """A day's requests (today by default): pending first, oldest first."""
-    rows = await requests.queue(session, day or rules.ist_date(datetime.now(UTC)))
+    rows = await requests.queue(session, day or rules.ist_date(datetime.now(UTC)), staff)
     limits: Limits = {}
     return [await _request_out(session, r, u, limits) for r, u in rows]
 
@@ -108,12 +109,13 @@ async def list_requests(
 async def decide_request(
     request_id: uuid.UUID,
     body: RequestDecisionIn,
-    me: AdminUser,
+    staff: StaffUser,
     session: SessionDep,
     push: PushDep,
 ) -> AdminRequestOut:
+    me = staff.user
     try:
-        r = await requests.decide(session, me, request_id, approve=body.approve, note=body.note)
+        r = await requests.decide(session, staff, request_id, approve=body.approve, note=body.note)
     except requests.NotFound:
         raise NOT_FOUND from None
     except requests.NotPending:
@@ -412,19 +414,44 @@ async def delete_holiday(day: date, me: AdminUser, session: SessionDep) -> None:
 
 @router.get("/escalations")
 async def list_escalations(
-    me: AdminUser, session: SessionDep, state: Literal["open", "all"] = "open"
+    staff: StaffUser, session: SessionDep, state: Literal["open", "all"] = "open"
 ) -> list[EscalationOut]:
     """Reading a student's live position here is logged on their share's access log."""
-    return await escalations.listing(session, me, open_only=state == "open")
+    return await escalations.listing(session, staff, open_only=state == "open")
 
 
 @router.post("/escalations/{escalation_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
 async def resolve_escalation(
-    escalation_id: uuid.UUID, body: EscalationResolveIn, me: AdminUser, session: SessionDep
+    escalation_id: uuid.UUID, body: EscalationResolveIn, staff: StaffUser, session: SessionDep
 ) -> None:
     try:
-        await escalations.resolve(session, me, escalation_id, body.note)
+        await escalations.resolve(session, staff, escalation_id, body.note)
     except escalations.NotFound:
         raise NOT_FOUND from None
-    audit_svc.audit(session, me, "escalation:resolve", str(escalation_id))
+    audit_svc.audit(session, staff.user, "escalation:resolve", str(escalation_id))
     await session.commit()
+
+
+# ---------- the warden's own hostels ----------
+
+
+@router.get("/my-hostels")
+async def my_hostels(staff: StaffUser, session: SessionDep) -> list[HostelOut]:
+    """The hostels this person looks after (every hostel for an admin)."""
+    hostels = await _hostels_out(session)
+    return [h for h in hostels if staff.hostels is None or h.id in staff.hostels]
+
+
+@router.patch("/hostels/{hostel_id}/contact")
+async def update_hostel_contact(
+    hostel_id: uuid.UUID, body: HostelContactIn, staff: StaffUser, session: SessionDep
+) -> list[HostelOut]:
+    """The warden contact shown on escalations; a warden may change their own hostels' only."""
+    hostel = await session.get(Hostel, hostel_id)
+    if hostel is None or (staff.hostels is not None and hostel_id not in staff.hostels):
+        raise NOT_FOUND
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(hostel, field, value)
+    audit_svc.audit(session, staff.user, "hostel:contact", hostel.name)
+    await session.commit()
+    return await my_hostels(staff, session)

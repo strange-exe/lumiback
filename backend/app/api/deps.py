@@ -20,6 +20,7 @@ from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
 from app.services.authz import Principal
+from app.services.staff import Staff, staff_of
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -168,13 +169,25 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 async def get_admin_user(user: CurrentUser) -> User:
-    """Wardens / security. Students get 403 (the endpoint exists; they just may not use it)."""
+    """Campus-wide setup. Students and wardens get 403 (the endpoint exists; they just may not
+    use it)."""
     if user.role != UserRole.ADMIN:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
     return user
 
 
 AdminUser = Annotated[User, Depends(get_admin_user)]
+
+
+async def get_staff(user: CurrentUser, session: SessionDep) -> Staff:
+    """Admins and wardens; a warden's reads and actions cover only their own hostels."""
+    staff = await staff_of(session, user)
+    if staff is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Hostel office only")
+    return staff
+
+
+StaffUser = Annotated[Staff, Depends(get_staff)]
 
 GUEST_TOKEN_HEADER = "X-Guest-Token"  # noqa: S105 - header name, not a secret
 

@@ -1,12 +1,13 @@
-"""Late follow-up: an "are you OK?" alert, then an escalation to admins if nobody answers.
+"""Late follow-up: an "are you OK?" alert, then an escalation to the hostel office if nobody
+answers.
 
 - 30 min past the return time, the student gets an alert (sent even if they muted reminders,
   and emailed if it reached no phone).
 - They answer "on my way" or "I'm safe" in the app (or simply tap in). Answers are accepted
   only once they're past their return time.
-- No answer 10 minutes after the alert: an escalation is opened, and admins get a push and an
-  email pointing to Escalations on the website. The admin calls the student, their emergency contact
-  or the hostel's warden from there.
+- No answer 10 minutes after the alert: an escalation is opened, and the admins and the
+  student's hostel wardens get a push (opening Escalations in the app) and an email. They call
+  the student, their emergency contact or the hostel's warden from there.
 
 Location: nothing new is collected. The escalation shows the last known position only if it
 already exists: the student's active live share (that read is logged on the share's access
@@ -21,7 +22,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import exists, insert, or_, select, update
+from sqlalchemy import and_, exists, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -40,8 +41,10 @@ from app.models import (
     ShareSession,
     User,
     UserRole,
+    WardenHostel,
 )
 from app.schemas import EscalationOut, LastSeenOut
+from app.services.staff import Staff
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
@@ -76,8 +79,9 @@ async def send_alerts(session: AsyncSession, now: datetime) -> list[tuple[uuid.U
     return [(student_id, due) for student_id, due in rows.all()]
 
 
-async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UUID]:
-    """Opens an escalation for each unanswered alert (once per outing); returns their ids."""
+async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UUID | None]:
+    """Opens an escalation for each unanswered alert (once per outing); returns the student's
+    hostel for each one opened (None: no hostel chosen)."""
     unanswered = select(Outing.id).where(
         Outing.returned_at.is_(None),
         Outing.late_reply.is_(None),
@@ -85,18 +89,51 @@ async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UU
         ~select(Escalation.id).where(Escalation.outing_id == Outing.id).exists(),
     )
     rows = await session.execute(
-        insert(Escalation).from_select(["outing_id"], unanswered).returning(Escalation.id)
+        insert(Escalation).from_select(["outing_id"], unanswered).returning(Escalation.outing_id)
     )
-    return list(rows.scalars())
+    outing_ids = list(rows.scalars())
+    if not outing_ids:
+        return []
+    hostels = await session.scalars(
+        select(User.hostel_id)
+        .join(Outing, Outing.student_id == User.id)
+        .where(Outing.id.in_(outing_ids))
+    )
+    return list(hostels)
 
 
-async def admin_ids(session: AsyncSession) -> list[tuple[uuid.UUID, str]]:
-    rows = await session.execute(
-        select(User.id, User.email).where(
-            User.role == UserRole.ADMIN, User.email_verified_at.is_not(None)
+@dataclass(frozen=True)
+class Recipient:
+    user_id: uuid.UUID
+    email: str
+    count: int  # escalations just opened that this person looks after
+
+
+async def recipients(session: AsyncSession, hostels: list[uuid.UUID | None]) -> list[Recipient]:
+    """Every admin (all of them), plus the wardens of each escalated student's hostel (theirs)."""
+    if not hostels:
+        return []
+    rows = (
+        await session.execute(
+            select(User.id, User.email, User.role, WardenHostel.hostel_id)
+            .outerjoin(WardenHostel, WardenHostel.user_id == User.id)
+            .where(
+                User.email_verified_at.is_not(None),
+                or_(
+                    User.role == UserRole.ADMIN,
+                    and_(User.role == UserRole.WARDEN, WardenHostel.hostel_id.in_(hostels)),
+                ),
+            )
         )
-    )
-    return [(i, e) for i, e in rows]
+    ).all()
+    counts: dict[tuple[uuid.UUID, str], int] = {}
+    for user_id, email, role, hostel_id in rows:
+        key = (user_id, email)
+        if role == UserRole.ADMIN:
+            counts[key] = len(hostels)
+        else:  # one row per assigned hostel
+            counts[key] = counts.get(key, 0) + hostels.count(hostel_id)
+    return [Recipient(u, e, n) for (u, e), n in counts.items() if n]
 
 
 async def reply(session: AsyncSession, student_id: uuid.UUID, answer: LateReply) -> Outing:
@@ -248,29 +285,36 @@ async def _out(session: AsyncSession, row: _Row, admin: User | None) -> Escalati
     )
 
 
-async def listing(session: AsyncSession, admin: User, *, open_only: bool) -> list[EscalationOut]:
+async def listing(session: AsyncSession, staff: Staff, *, open_only: bool) -> list[EscalationOut]:
+    """Newest first; a warden sees their hostels' students only."""
     query = (
         select(Escalation, Outing, User)
         .join(Outing, Outing.id == Escalation.outing_id)
         .join(User, User.id == Outing.student_id)
+        .where(staff.covers(User.hostel_id))
         .order_by(Escalation.created_at.desc())
         .limit(100)
     )
     if open_only:
         query = query.where(Escalation.resolved_at.is_(None))
     rows = [_Row(*r) for r in (await session.execute(query)).all()]
-    out = [await _out(session, r, admin) for r in rows]
+    out = [await _out(session, r, staff.user) for r in rows]
     await session.commit()  # the access-log entries for live positions read just now
     return out
 
 
 async def resolve(
-    session: AsyncSession, admin: User, escalation_id: uuid.UUID, note: str | None
+    session: AsyncSession, staff: Staff, escalation_id: uuid.UUID, note: str | None
 ) -> None:
     e = await session.get(Escalation, escalation_id, with_for_update=True)
     if e is None:
         raise NotFound
+    student = await session.scalar(
+        select(User).join(Outing, Outing.student_id == User.id).where(Outing.id == e.outing_id)
+    )
+    if student is None or not staff.covers_student(student):
+        raise NotFound  # another hostel's student: as if it didn't exist
     if e.resolved_at is None:
         e.resolved_at = datetime.now(UTC)
-        e.resolved_by = admin.id
+        e.resolved_by = staff.user.id
         e.note = note

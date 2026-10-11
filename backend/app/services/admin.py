@@ -1,6 +1,7 @@
 """Admin reads and changes: who is out, gate scans, gates, campus settings, roles.
 
-Admins see the register (who left, when, through which gate, whether verified), not live
+Register reads take a Staff: admins see every student, wardens only their hostels' students.
+Staff see the register (who left, when, through which gate, whether verified), not live
 locations or share data. The one exception is an open late escalation, which shows the
 student's last known position (app/services/escalations.py; each read is logged on the share).
 Changes are written to admin_audit.
@@ -11,7 +12,7 @@ import io
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -27,10 +28,12 @@ from app.models import (
     ScanResult,
     User,
     UserRole,
+    WardenHostel,
 )
 from app.schemas import AdminOuting, AdminOverview, AdminScan, AdminScanPage, AdminUser
 from app.services.outings import status_of
 from app.services.rules import ist_date
+from app.services.staff import Staff, warden_hostel_ids
 
 IST = timedelta(hours=5, minutes=30)
 MAX_EXPORT_DAYS = 92
@@ -49,34 +52,38 @@ def audit(session: AsyncSession, actor: User, action: str, target: str) -> None:
     session.add(AdminAudit(actor_id=actor.id, action=action, target=target[:160]))
 
 
-async def overview(session: AsyncSession) -> AdminOverview:
+async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
     now = datetime.now(UTC)
     since = ist_midnight(now)
+    mine = staff.covers(User.hostel_id)
     open_ = Outing.returned_at.is_(None)
-    out_now = await session.scalar(
-        select(func.count()).where(open_, Outing.expected_return_at >= now)
-    )
-    overdue = await session.scalar(
-        select(func.count()).where(open_, Outing.expected_return_at < now)
-    )
+    outings = select(func.count()).select_from(Outing).join(User, User.id == Outing.student_id)
+    out_now = await session.scalar(outings.where(mine, open_, Outing.expected_return_at >= now))
+    overdue = await session.scalar(outings.where(mine, open_, Outing.expected_return_at < now))
+    scans = select(func.count()).select_from(GateScan).join(User, User.id == GateScan.user_id)
     accepted = await session.scalar(
-        select(func.count()).where(
-            GateScan.scanned_at >= since, GateScan.result == ScanResult.ACCEPTED
-        )
+        scans.where(mine, GateScan.scanned_at >= since, GateScan.result == ScanResult.ACCEPTED)
     )
     rejected = await session.scalar(
-        select(func.count()).where(
-            GateScan.scanned_at >= since, GateScan.result != ScanResult.ACCEPTED
-        )
+        scans.where(mine, GateScan.scanned_at >= since, GateScan.result != ScanResult.ACCEPTED)
     )
     gates = await session.scalar(select(func.count()).select_from(Gate).where(Gate.active))
     pending = await session.scalar(
-        select(func.count()).where(
-            OutingRequest.status == RequestStatus.PENDING, OutingRequest.day == ist_date(now)
+        select(func.count())
+        .select_from(OutingRequest)
+        .join(User, User.id == OutingRequest.student_id)
+        .where(
+            mine,
+            OutingRequest.status == RequestStatus.PENDING,
+            OutingRequest.day == ist_date(now),
         )
     )
     escalated = await session.scalar(
-        select(func.count()).select_from(Escalation).where(Escalation.resolved_at.is_(None))
+        select(func.count())
+        .select_from(Escalation)
+        .join(Outing, Outing.id == Escalation.outing_id)
+        .join(User, User.id == Outing.student_id)
+        .where(mine, Escalation.resolved_at.is_(None))
     )
     return AdminOverview(
         out_now=out_now or 0,
@@ -89,7 +96,7 @@ async def overview(session: AsyncSession) -> AdminOverview:
     )
 
 
-async def open_outings(session: AsyncSession, state: str) -> list[AdminOuting]:
+async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[AdminOuting]:
     """Students currently out: `overdue`, `out` (not yet due) or `all`. Most urgent first."""
     now = datetime.now(UTC)
     query = (
@@ -97,7 +104,7 @@ async def open_outings(session: AsyncSession, state: str) -> list[AdminOuting]:
         .join(User, User.id == Outing.student_id)
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
-        .where(Outing.returned_at.is_(None))
+        .where(staff.covers(User.hostel_id), Outing.returned_at.is_(None))
         .order_by(Outing.expected_return_at)
         .limit(500)
     )
@@ -133,7 +140,7 @@ def _register_row(
     )
 
 
-async def late_today(session: AsyncSession) -> list[AdminOuting]:
+async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
     """Everyone late today: back after their return time, or still out past it. Most late first.
     "Today" is the IST day the return time fell on, so 8 PM latecomers are tonight's list."""
     now = datetime.now(UTC)
@@ -143,6 +150,7 @@ async def late_today(session: AsyncSession) -> list[AdminOuting]:
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
         .where(
+            staff.covers(User.hostel_id),
             Outing.expected_return_at >= ist_midnight(now),
             Outing.expected_return_at < now,
             or_(Outing.returned_at.is_(None), Outing.returned_at > Outing.expected_return_at),
@@ -155,6 +163,7 @@ async def late_today(session: AsyncSession) -> list[AdminOuting]:
 
 async def scans(
     session: AsyncSession,
+    staff: Staff,
     *,
     before: int | None,
     limit: int,
@@ -165,6 +174,7 @@ async def scans(
         select(GateScan, User, Gate.name)
         .join(User, User.id == GateScan.user_id)
         .outerjoin(Gate, Gate.id == GateScan.gate_id)
+        .where(staff.covers(User.hostel_id))
         .order_by(GateScan.id.desc())
         .limit(limit + 1)
     )
@@ -199,7 +209,7 @@ def _ist(value: datetime | None) -> str:
     return (value.astimezone(UTC) + IST).strftime("%Y-%m-%d %H:%M") if value else ""
 
 
-async def outings_csv(session: AsyncSession, start: date, end: date) -> str:
+async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: date) -> str:
     """The register for [start, end] (IST dates, inclusive), oldest first."""
     since = (datetime.combine(start, time()) - IST).replace(tzinfo=UTC)
     until = (datetime.combine(end + timedelta(days=1), time()) - IST).replace(tzinfo=UTC)
@@ -209,7 +219,7 @@ async def outings_csv(session: AsyncSession, start: date, end: date) -> str:
         .join(User, User.id == Outing.student_id)
         .outerjoin(out_gate, out_gate.id == Outing.out_gate_id)
         .outerjoin(in_gate, in_gate.id == Outing.in_gate_id)
-        .where(Outing.left_at >= since, Outing.left_at < until)
+        .where(staff.covers(User.hostel_id), Outing.left_at >= since, Outing.left_at < until)
         .order_by(Outing.left_at)
     )
     buffer = io.StringIO()
@@ -278,16 +288,54 @@ async def search_users(session: AsyncSession, q: str) -> list[AdminUser]:
         .order_by(User.role.desc(), User.name)
         .limit(20)
     )
-    return [
-        AdminUser(id=u.id, name=u.name, email=u.email, roll_no=u.roll_no, role=u.role.value)
-        for u in rows
-    ]
+    return [await person(session, u) for u in rows]
 
 
-async def set_role(session: AsyncSession, actor: User, target: User, role: UserRole) -> User:
-    if target.role == role:
+async def person(session: AsyncSession, u: User) -> AdminUser:
+    hostels = (
+        (
+            await session.execute(
+                select(Hostel.id, Hostel.name)
+                .join(WardenHostel, WardenHostel.hostel_id == Hostel.id)
+                .where(WardenHostel.user_id == u.id)
+                .order_by(Hostel.name)
+            )
+        ).all()
+        if u.role == UserRole.WARDEN
+        else []
+    )
+    return AdminUser(
+        id=u.id,
+        name=u.name,
+        email=u.email,
+        roll_no=u.roll_no,
+        role=u.role.value,
+        hostel_ids=[i for i, _ in hostels],
+        hostels=[n for _, n in hostels],
+    )
+
+
+class NoHostels(Exception):
+    """Refused: a warden needs at least one existing hostel."""
+
+
+async def set_role(
+    session: AsyncSession,
+    actor: User,
+    target: User,
+    role: UserRole,
+    hostel_ids: list[uuid.UUID] | None = None,
+) -> User:
+    """A warden gets exactly `hostel_ids`; any other role has no hostels of its own."""
+    wanted = set(hostel_ids or []) if role == UserRole.WARDEN else set()
+    if role == UserRole.WARDEN:
+        found = set(await session.scalars(select(Hostel.id).where(Hostel.id.in_(wanted))))
+        if not wanted or found != wanted:
+            raise NoHostels
+    current = await warden_hostel_ids(session, target.id)
+    if target.role == role and current == wanted:
         return target
-    if role == UserRole.STUDENT:
+    if target.role == UserRole.ADMIN and role != UserRole.ADMIN:
         # Lock the admin rows while counting: two admins demoting each other at the same moment
         # must not both see "2 admins" and leave none.
         admins = list(
@@ -298,6 +346,18 @@ async def set_role(session: AsyncSession, actor: User, target: User, role: UserR
         if len(admins) <= 1:
             raise LastAdmin
     target.role = role
-    audit(session, actor, f"role:{role.value}", target.email)
+    await session.execute(delete(WardenHostel).where(WardenHostel.user_id == target.id))
+    session.add_all(WardenHostel(user_id=target.id, hostel_id=h) for h in wanted)
+    names = (
+        sorted(await session.scalars(select(Hostel.name).where(Hostel.id.in_(wanted))))
+        if wanted
+        else []
+    )
+    audit(
+        session,
+        actor,
+        f"role:{role.value}",
+        f"{target.email} ({', '.join(names)})" if names else target.email,
+    )
     await session.commit()
     return target
