@@ -7,6 +7,11 @@
 // (src/updates/native-build.ts). Every APK keeps the same versionCode: they're sideloaded, not
 // uploaded to Play, so any of them installs over any older build.
 //
+// `include` lists every ABI, not just the two we publish: it also limits the ABIs the app's own
+// native code (libappmodules.so) is compiled for, and leaving x86/x86_64 out shipped a universal
+// APK whose x86_64 code crashed at launch (emulators, Chromebooks). The x86 APKs are made but not
+// published (eas.json picks the files to upload).
+//
 // Only `assemble…Release` turns splits on: debug builds and app bundles stay as they were.
 // https://developer.android.com/build/configure-apk-splits
 const { withAppBuildGradle } = require("expo/config-plugins");
@@ -19,7 +24,7 @@ const SPLITS = `
         abi {
             enable gradle.startParameter.taskNames.any { it.toLowerCase().contains("assemble") && it.toLowerCase().contains("release") }
             reset()
-            include "arm64-v8a", "armeabi-v7a"
+            include "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
             universalApk true
         }
     }
