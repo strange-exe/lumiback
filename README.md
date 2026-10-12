@@ -89,7 +89,11 @@ npx eas-cli build --profile preview --platform android
 **Updates without a new APK.** JavaScript-only changes ship over the air with `expo-updates`;
 installed apps download them on launch and use them from the next start. A new build is needed only
 when native code changes (new native modules, permissions, app config); `runtimeVersion` uses the
-`fingerprint` policy, so an update never reaches a build it isn't compatible with.
+`fingerprint` policy, so an update never reaches a build it isn't compatible with. Before publishing,
+check the runtime still matches an installed build: `npx expo-updates fingerprint:generate
+--platform android` must print a hash listed in `NATIVE_BUILDS` (`apps/mobile/src/updates/changelog.ts`).
+If it doesn't, something native changed (a package version, `app.json`, `eas.json`, assets) and
+the update would reach nobody.
 
 ```bash
 npx eas-cli update --branch production --environment production --message "What changed"
@@ -110,8 +114,11 @@ for features (1.4.0), major for big changes (2.0.0). Copy the file to
 updates for a different runtime, so they learn about the new build from
 `apps/web/public/app/android.json` and ask people to download it:
 
-1. Build it: `npx eas-cli build --profile production-apk --platform android` (an installable APK
-   on the `production` channel; the `production` profile makes the Play Store bundle).
+1. Build it as an installable APK on the `production` channel. First add this profile to
+   `apps/mobile/eas.json` (only now: `eas.json` is part of the runtime fingerprint, so editing it
+   between builds would stop over-the-air updates from reaching the installed app), then run
+   `npx eas-cli build --profile production-apk --platform android`:
+   `"production-apk": { "extends": "production", "distribution": "internal", "android": { "buildType": "apk" } }`
 2. Publish the APK as a GitHub release asset named `lumiback.apk`; the app links to
    `releases/latest/download/lumiback.apk`.
 3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
