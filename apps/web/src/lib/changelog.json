@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.5.1",
+    "date": "2026-10-12",
+    "title": "Smaller downloads",
+    "points": [
+      "New versions of the app download about 55 MB instead of 120 MB: Lumiback picks the file made for your phone.",
+      "On the website, Get the app offers the version for modern phones, with the others under Other versions."
+    ]
+  },
+  {
     "version": "1.5.0",
     "date": "2026-10-12",
     "title": "Updates itself",

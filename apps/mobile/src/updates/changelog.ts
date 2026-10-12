@@ -27,8 +27,9 @@ export const CURRENT: Release = CHANGELOG[0]!;
  */
 export const NATIVE_BUILDS: Readonly<Record<string, number>> = {
   c22cefa5baa82b88409c594c5d53df19ed6c2fe1: 1,
-  // Build 2: updates itself (downloads the new APK and opens Android's installer).
-  ba998202f7a5f956ce5dc8d9a9d5aabba5f7b13d: 2,
+  // Build 2: updates itself, downloading the APK for its processor (54 MB on modern phones).
+  // It replaced the first build 2 (ba998202), which was only on testers' phones.
+  "09a68a5f6ff29dabba07bfa02488c9206cda5818": 2,
 };
 
 /**
