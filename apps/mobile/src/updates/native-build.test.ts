@@ -65,6 +65,31 @@ test("falls back to the universal APK when no smaller one fits", () => {
   expect(nativeUpdateFor(proto, "production", 2, ["toString"])).toMatchObject(universal);
 });
 
+test("uses the listed universal APK, not the top-level link (the download page for build 1)", () => {
+  const PAGE = "https://lumiback.abhinesh.codes/download";
+  const UNIVERSAL =
+    "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback.apk";
+  const file = {
+    production: {
+      ...split.production,
+      url: PAGE,
+      apks: {
+        ...split.production.apks,
+        universal: { url: UNIVERSAL, size: 124_000_000, md5: "a".repeat(32) },
+      },
+    },
+  };
+  // Build 1 runs older code that reads only the top level, so it opens the page. This code,
+  // which downloads the APK itself, never gets the page, even without knowing its ABIs.
+  expect(nativeUpdateFor(file, "production", 1)?.url).toBe(UNIVERSAL);
+  expect(nativeUpdateFor(file, "production", 2, ["x86_64"])).toMatchObject({
+    url: UNIVERSAL,
+    abi: null,
+  });
+  expect(nativeUpdateFor(file, "production", 2, ["universal"])?.url).toBe(UNIVERSAL);
+  expect(nativeUpdateFor(file, "production", 2, ["arm64-v8a"])?.url).toBe(ARM64);
+});
+
 test("megabytes", () => {
   expect(megabytes(55_400_000)).toBe("55 MB");
   expect(megabytes(10)).toBe("1 MB");

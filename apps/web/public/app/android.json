@@ -2,7 +2,7 @@
   "preview": {
     "build": 2,
     "min_build": 1,
-    "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
+    "url": "https://lumiback.abhinesh.codes/download",
     "notes": "From now on, the app updates itself.",
     "size": 123997429,
     "md5": "78a9ed2676917a3034cfffcbfac9f755",
@@ -16,13 +16,18 @@
         "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-armeabi-v7a.apk",
         "size": 47015786,
         "md5": "84dfad4af8022ce00148948aabe317be"
+      },
+      "universal": {
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
+        "size": 123997429,
+        "md5": "78a9ed2676917a3034cfffcbfac9f755"
       }
     }
   },
   "production": {
     "build": 2,
     "min_build": 1,
-    "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
+    "url": "https://lumiback.abhinesh.codes/download",
     "notes": "From now on, the app updates itself.",
     "size": 123997429,
     "md5": "78a9ed2676917a3034cfffcbfac9f755",
@@ -36,6 +41,11 @@
         "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-armeabi-v7a.apk",
         "size": 47015786,
         "md5": "84dfad4af8022ce00148948aabe317be"
+      },
+      "universal": {
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
+        "size": 123997429,
+        "md5": "78a9ed2676917a3034cfffcbfac9f755"
       }
     }
   }

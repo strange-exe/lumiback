@@ -48,6 +48,22 @@ test("never defaults to a 32-bit APK, and skips links that aren't https", () => 
   );
 });
 
+test("the listed universal APK wins over the top-level link (the download page itself)", () => {
+  const { primary, others } = androidDownloads({
+    build: 3,
+    url: "https://lumiback.abhinesh.codes/download",
+    apks: {
+      "arm64-v8a": { url: ARM64, size: 55_000_000 },
+      universal: { url: UNIVERSAL, size: 124_000_000 },
+    },
+  });
+  assert.equal(primary.url, ARM64);
+  assert.deepEqual(
+    others.map((d) => [d.url, d.size]),
+    [[UNIVERSAL, 124_000_000]],
+  );
+});
+
 test("megabytes", () => {
   assert.equal(megabytes(55_400_000), "55 MB");
   assert.equal(megabytes(10), "1 MB");

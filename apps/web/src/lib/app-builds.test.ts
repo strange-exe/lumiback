@@ -28,10 +28,21 @@ test("each published channel names a build, a minimum and an https download", ()
     const { apks } = info as { apks?: Record<string, Record<string, unknown>> };
     for (const [abi, apk] of Object.entries(apks ?? {})) {
       const at = `${channel}.apks.${abi}`;
-      assert.ok(["arm64-v8a", "armeabi-v7a", "x86_64", "x86"].includes(abi), `${at}: unknown ABI`);
+      assert.ok(
+        ["arm64-v8a", "armeabi-v7a", "x86_64", "x86", "universal"].includes(abi),
+        `${at}: unknown ABI`,
+      );
       assert.match(String(apk.url), /^https:\/\//, `${at}.url`);
       assert.ok(Number.isInteger(apk.size) && Number(apk.size) > 0, `${at}.size`);
       assert.match(String(apk.md5), /^[0-9a-f]{32}$/, `${at}.md5`);
+    }
+    // With the universal APK listed, the top-level url may be the download page (for build 1).
+    // Builds that download it themselves check it against the top-level size and MD5, which
+    // must stay the universal APK's, so the page fails the check and is never installed.
+    const universal = apks?.universal;
+    if (universal) {
+      assert.equal(size, universal.size, `${channel}.size must match apks.universal.size`);
+      assert.equal(md5, universal.md5, `${channel}.md5 must match apks.universal.md5`);
     }
   }
   assert.ok("preview" in file, "the preview channel is listed");

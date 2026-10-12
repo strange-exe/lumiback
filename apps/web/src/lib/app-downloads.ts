@@ -58,7 +58,14 @@ function download(apk: Apk, label: string, hint: string): Download {
 
 /** The default download, then the alternatives (empty when there's only the universal APK). */
 export function androidDownloads(channel: Channel): { primary: Download; others: Download[] } {
-  const universal = download(channel, UNIVERSAL.label, UNIVERSAL.hint);
+  // The listed universal APK; files without one have it at the top level. (Once listed, the
+  // top-level url is this page itself, for build 1's "open in the browser".)
+  const listed = channel.apks?.universal;
+  const universal = download(
+    listed && https(listed.url) ? listed : channel,
+    UNIVERSAL.label,
+    UNIVERSAL.hint,
+  );
   const variants = VARIANTS.flatMap(({ abi, label, hint }) => {
     const apk = channel.apks?.[abi];
     return apk && https(apk.url) ? [{ abi, ...download(apk, label, hint) }] : [];

@@ -22,8 +22,11 @@ export interface BuildInfo extends Apk {
   /** One sentence on what the new build brings. */
   notes?: string;
   /**
-   * Smaller APKs for one processor type (ABI) each, e.g. "arm64-v8a". The top-level `url` is
-   * the universal APK, which installs everywhere: builds before 3 only read that one.
+   * The APKs this app downloads itself: one per processor type (ABI), e.g. "arm64-v8a", plus
+   * "universal", which installs everywhere. The top-level `url` is for apps that only open a
+   * link in the browser (build 1): the download page, which offers the small APK. Older builds
+   * that download the top-level `url` themselves check it against the top-level size and MD5
+   * (the universal APK's), so a page never gets installed: they fall back to the browser.
    */
   apks?: Partial<Record<string, Apk>>;
 }
@@ -48,15 +51,20 @@ const isHttps = (url: unknown): url is string => typeof url === "string" && /^ht
 
 /**
  * The APK for this phone: the first of its ABIs (Android lists the preferred one first) that
- * has its own APK, else the universal one.
+ * has its own APK, else the universal one (else the top-level link, from older files).
  */
 function pick(info: BuildInfo, abis: readonly string[] | null): { apk: Apk; abi: string | null } {
   const apks = typeof info.apks === "object" && info.apks !== null ? info.apks : {};
+  const listed = (key: string): Apk | null => {
+    const apk = Object.prototype.hasOwnProperty.call(apks, key) ? apks[key] : undefined;
+    return apk && isHttps(apk.url) ? apk : null;
+  };
   for (const abi of abis ?? []) {
-    const apk = Object.prototype.hasOwnProperty.call(apks, abi) ? apks[abi] : undefined;
-    if (apk && isHttps(apk.url)) return { apk, abi };
+    if (abi === "universal") continue;
+    const apk = listed(abi);
+    if (apk) return { apk, abi };
   }
-  return { apk: info, abi: null };
+  return { apk: listed("universal") ?? info, abi: null };
 }
 
 /**

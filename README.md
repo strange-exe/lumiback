@@ -125,9 +125,12 @@ updates for a different runtime, so they learn about the new build from
    (universal), `lumiback-arm64-v8a.apk` and `lumiback-armeabi-v7a.apk`.
 3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
    with the next number, and add a changelog entry.
-4. In `android.json`, for each channel set `build` to that number and `notes` to one sentence;
-   `url`, `size` and `md5` describe the universal APK (builds before 3 only read those), and
-   `apks` lists the other two by ABI with their own `url`, `size` and `md5`. Use the release's
+4. In `android.json`, for each channel set `build` to that number and `notes` to one sentence.
+   `apks` lists `arm64-v8a`, `armeabi-v7a` and `universal`, each with its `url`, `size` and
+   `md5`. The top-level `url` is the download page (build 1 can only open a link, and the page
+   offers the small APK), while the top-level `size` and `md5` stay the universal APK's: older
+   builds that download the top-level link themselves then reject the page instead of
+   installing it (a web test enforces this). Use the release's
    tag URLs (`releases/download/build-<n>/…`) so the checksums always match the file. Phones
    from build 3 on download the APK for their processor; the download page offers the 64-bit one
    by default and the others under "Other versions". Raise `min_build` only when older builds
