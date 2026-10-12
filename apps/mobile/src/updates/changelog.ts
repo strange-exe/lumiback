@@ -27,6 +27,8 @@ export const CURRENT: Release = CHANGELOG[0]!;
  */
 export const NATIVE_BUILDS: Readonly<Record<string, number>> = {
   c22cefa5baa82b88409c594c5d53df19ed6c2fe1: 1,
+  // Build 2: updates itself (downloads the new APK and opens Android's installer).
+  ba998202f7a5f956ce5dc8d9a9d5aabba5f7b13d: 2,
 };
 
 /**

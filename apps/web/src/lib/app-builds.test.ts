@@ -19,6 +19,11 @@ test("each published channel names a build, a minimum and an https download", ()
     );
     assert.match(String(url), /^https:\/\//, `${channel}.url`);
     assert.equal(typeof notes, "string", `${channel}.notes`);
+    // From build 2 the app downloads the APK itself and installs it only if both match.
+    const { size, md5 } = info as Record<string, unknown>;
+    if (size !== undefined)
+      assert.ok(Number.isInteger(size) && Number(size) > 0, `${channel}.size`);
+    if (md5 !== undefined) assert.match(String(md5), /^[0-9a-f]{32}$/, `${channel}.md5`);
   }
   assert.ok("preview" in file, "the preview channel is listed");
 });

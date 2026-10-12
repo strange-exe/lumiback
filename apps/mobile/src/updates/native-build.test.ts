@@ -1,4 +1,4 @@
-import { nativeUpdateFor } from "./native-build";
+import { apkMatches, nativeUpdateFor } from "./native-build";
 
 const URL = "https://github.com/strange-exe/lumiback/releases/latest/download/lumiback.apk";
 const file = (build: number, min_build = 1, url = URL) => ({
@@ -12,7 +12,30 @@ test("asks when a newer build is published for this channel", () => {
     url: URL,
     notes: "Faster gate scans.",
     required: false,
+    size: null,
+    md5: null,
   });
+});
+
+const MD5 = "0123456789abcdef0123456789ABCDEF";
+
+test("reads the APK's size and MD5 when published, ignoring malformed ones", () => {
+  const withCheck = { preview: { build: 2, min_build: 1, url: URL, size: 81_000_000, md5: MD5 } };
+  expect(nativeUpdateFor(withCheck, "preview", 1)).toMatchObject({
+    size: 81_000_000,
+    md5: MD5.toLowerCase(),
+  });
+  const bad = { preview: { build: 2, min_build: 1, url: URL, size: -1, md5: "not-a-hash" } };
+  expect(nativeUpdateFor(bad, "preview", 1)).toMatchObject({ size: null, md5: null });
+});
+
+test("a downloaded APK installs only if it's exactly the published file", () => {
+  const update = { size: 100, md5: MD5.toLowerCase() };
+  expect(apkMatches(update, { size: 100, md5: MD5 })).toBe(true);
+  expect(apkMatches(update, { size: 99, md5: MD5 })).toBe(false); // cut short
+  expect(apkMatches(update, { size: 100, md5: "f".repeat(32) })).toBe(false); // corrupted
+  expect(apkMatches({ size: null, md5: null }, { size: 0, md5: null })).toBe(false); // empty
+  expect(apkMatches({ size: null, md5: null }, { size: 5, md5: null })).toBe(true); // unchecked
 });
 
 test("quiet when this is already the latest build, or newer", () => {

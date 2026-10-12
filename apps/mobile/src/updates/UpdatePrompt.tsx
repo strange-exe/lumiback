@@ -16,6 +16,7 @@ import { Button, FormError, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
 import { radius, space, useColors } from "@/ui/theme";
 
+import { apkState, canSelfUpdate, downloadAndInstall, openInstaller, subscribeApk } from "./apk";
 import { NATIVE_BUILDS } from "./changelog";
 import { nativeUpdateFor, type NativeUpdate } from "./native-build";
 import { promptAllowed, shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
@@ -230,40 +231,102 @@ function DownloadSheet({
   onLater: () => void;
 }): ReactNode {
   const [error, setError] = useState<string | null>(null);
+  const apk = useSyncExternalStore(subscribeApk, apkState);
+  const mine = apk.kind !== "idle" && apk.build === update.build ? apk : null;
+  const selfUpdate = canSelfUpdate();
 
-  const download = (): void => {
+  // The browser route: older Android quirks, or the in-app download failed.
+  const openInBrowser = (): void => {
     haptic.tap();
     setError(null);
     Linking.openURL(update.url).catch(() =>
       setError("Couldn't open the download. Try again, or ask the hostel office for the link."),
     );
   };
+  const start = (): void => {
+    haptic.tap();
+    setError(null);
+    void downloadAndInstall(update);
+  };
+
+  const downloading = mine?.kind === "downloading";
+  const percent =
+    mine?.kind === "downloading" && mine.progress !== null ? Math.round(mine.progress * 100) : null;
 
   return (
     <Sheet
       open={open}
       // A required build can't be put off: the sheet stays until the new app is installed.
+      // Closing it while downloading is fine: the download carries on, the installer opens after.
       onClose={update.required ? () => undefined : onLater}
       title={update.required ? "Please update Lumiback" : "New app version"}
     >
       <Lead icon="download">
         {[
           update.required
-            ? "This version of the app has stopped working with Lumiback. Download the new one to carry on."
-            : "A new version of the Lumiback app is ready to download.",
+            ? "This version of the app has stopped working with Lumiback. Update to carry on."
+            : "A new version of the Lumiback app is ready.",
           update.notes,
-          "Install it over this one: you stay signed in and keep your history.",
+          selfUpdate
+            ? "Lumiback downloads it, then Android asks you to tap Install. You stay signed in and keep your history."
+            : "Install it over this one: you stay signed in and keep your history.",
         ]
           .filter(Boolean)
           .join(" ")}
       </Lead>
-      <FormError message={error} />
+      {downloading ? <Progress percent={percent} /> : null}
+      {mine?.kind === "ready" ? (
+        <T tone="muted">
+          Downloaded. If Android asks, allow Lumiback to install apps, then tap Install.
+        </T>
+      ) : null}
+      <FormError message={mine?.kind === "failed" ? mine.message : error} />
       <View style={{ gap: space(2) }}>
-        <Button label="Download" onPress={download} />
+        {!selfUpdate ? (
+          <Button label="Download" onPress={openInBrowser} />
+        ) : mine?.kind === "ready" ? (
+          <Button label="Install" onPress={() => void openInstaller(update)} />
+        ) : (
+          <Button
+            label={mine?.kind === "failed" ? "Try again" : "Update"}
+            busy={downloading}
+            busyLabel={percent === null ? "Downloading…" : `Downloading… ${percent}%`}
+            onPress={start}
+          />
+        )}
+        {selfUpdate && mine?.kind === "failed" ? (
+          <Button label="Download in the browser" variant="quiet" onPress={openInBrowser} />
+        ) : null}
         {update.required ? null : (
-          <Button label="Remind me later" variant="secondary" onPress={onLater} />
+          <Button
+            label={downloading ? "Keep using the app" : "Remind me later"}
+            variant="secondary"
+            onPress={onLater}
+          />
         )}
       </View>
     </Sheet>
+  );
+}
+
+/** A thin bar for the download, with the number for screen readers. */
+function Progress({ percent }: { percent: number | null }): ReactNode {
+  const c = useColors();
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Downloading the new version"
+      accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
+      style={{ height: 8, borderRadius: radius.pill, backgroundColor: c.line, overflow: "hidden" }}
+    >
+      <View
+        style={{
+          width: `${percent ?? 15}%`,
+          height: "100%",
+          borderRadius: radius.pill,
+          backgroundColor: c.accent,
+        }}
+      />
+    </View>
   );
 }

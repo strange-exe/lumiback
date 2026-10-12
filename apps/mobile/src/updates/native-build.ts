@@ -14,6 +14,9 @@ export interface BuildInfo {
   url: string;
   /** One sentence on what the new build brings. */
   notes?: string;
+  /** The APK's size in bytes and MD5, so a download is checked before it's installed. */
+  size?: number;
+  md5?: string;
 }
 
 /** The published file: one entry per update channel ("preview", "production"). */
@@ -25,6 +28,9 @@ export interface NativeUpdate {
   notes: string | null;
   /** This build is too old to keep using. */
   required: boolean;
+  /** Present when the file gives them: the app downloads and checks the APK itself. */
+  size: number | null;
+  md5: string | null;
 }
 
 /**
@@ -47,5 +53,20 @@ export function nativeUpdateFor(
     url: info.url,
     notes: typeof info.notes === "string" && info.notes ? info.notes : null,
     required: Number.isInteger(info.min_build) && installed < info.min_build,
+    size: Number.isInteger(info.size) && (info.size ?? 0) > 0 ? (info.size as number) : null,
+    md5:
+      typeof info.md5 === "string" && /^[0-9a-f]{32}$/i.test(info.md5)
+        ? info.md5.toLowerCase()
+        : null,
   };
+}
+
+/** A downloaded APK is installable only if it's exactly the published file. */
+export function apkMatches(
+  update: Pick<NativeUpdate, "size" | "md5">,
+  file: { size: number; md5: string | null },
+): boolean {
+  if (update.size !== null && file.size !== update.size) return false;
+  if (update.md5 !== null && file.md5?.toLowerCase() !== update.md5) return false;
+  return file.size > 0;
 }

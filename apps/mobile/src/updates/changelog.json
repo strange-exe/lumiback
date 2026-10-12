@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.5.0",
+    "date": "2026-10-12",
+    "title": "Updates itself",
+    "points": [
+      "When a new version of the app is out, Lumiback downloads it for you and opens Android's installer: tap Install and you're done. You stay signed in.",
+      "The first time, Android asks you to allow Lumiback to install apps. That permission is only used for Lumiback's own updates.",
+      "A download that doesn't arrive complete is thrown away and never installed."
+    ]
+  },
+  {
     "version": "1.4.0",
     "date": "2026-10-11",
     "title": "The hostel office in the app",
