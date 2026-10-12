@@ -5,5 +5,12 @@
     "url": "https://github.com/strange-exe/lumiback/releases/latest/download/lumiback.apk",
     "notes": ""
   },
-  "production": null
+  "production": {
+    "build": 3,
+    "min_build": 3,
+    "url": "https://expo.dev/artifacts/eas/OPSwjHZ7qLf4IfP5VbL_Elk4El2J1upF3S08N05drb0.apk",
+    "notes": "Test of the in-app update.",
+    "size": 123989277,
+    "md5": "93177eb5fb8a89e271e698f69f8fa80e"
+  }
 }
