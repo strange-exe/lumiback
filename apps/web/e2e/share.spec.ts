@@ -83,6 +83,12 @@ test.describe("live sharing", () => {
     await page.getByRole("button", { name: "Approve Arjun (guest)" }).click({ timeout: 10_000 });
     await expect(guest.getByText(/^Live · updated/)).toBeVisible();
 
+    // The dev server compiles a route on its first request, and only this test calls the stop
+    // route: compile it now (a refused request: no share ends), so the wait below measures the
+    // beacon, not a cold compile on a slow CI runner.
+    const warm = await page.request.post(`/api/share/${crypto.randomUUID()}/stop`);
+    expect(warm.status()).toBeLessThan(500);
+
     page.on("dialog", (dialog) => void dialog.accept()); // the "Leave site?" confirmation
     await page.close({ runBeforeUnload: true });
 

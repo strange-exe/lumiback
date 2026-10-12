@@ -73,6 +73,10 @@ export async function stopSharing(page: Page): Promise<void> {
   // Reloading a sharing tab would itself end the share (tab-close beacon) mid-click.
   if (!page.url().endsWith("/share")) await page.goto("/share");
   const stop = page.getByRole("button", { name: "Stop sharing" });
+  const start = page.getByRole("button", { name: "Start sharing" });
+  // isVisible() doesn't wait: right after loading, neither button may be there yet, and a running
+  // share would look like none. Wait for the page to show one of its two states first.
+  await expect(stop.or(start)).toBeVisible();
   if (await stop.isVisible()) {
     await stop.click();
     await expect(page.getByRole("heading", { name: "Share your way back" })).toBeVisible();
