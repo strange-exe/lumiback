@@ -69,7 +69,8 @@
           "cameraPermission": "Lumiback uses the camera to scan the QR code at the campus gate.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/with-abi-splits"
     ],
     "experiments": {
       "typedRoutes": true

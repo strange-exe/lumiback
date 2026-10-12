@@ -1,10 +1,11 @@
-import { AndroidLogo, AppleLogo, DownloadSimple } from "@phosphor-icons/react/dist/ssr";
+import { AndroidLogo, AppleLogo, CaretRight, DownloadSimple } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Gate } from "@/components/illustrations/Gate";
 import { SiteFooter } from "@/components/ui/SiteFooter";
+import { androidDownloads, megabytes, type Channel } from "@/lib/app-downloads";
 import { CURRENT } from "@/lib/changelog";
 
 // The same file the app reads to offer new builds, so the page and the app agree on the link.
@@ -15,12 +16,15 @@ export const metadata: Metadata = {
   description: "Download the Lumiback app for Android.",
 };
 
-const APK_URL = builds.preview.url;
+// New installs come from the production channel (preview until it has a build).
+const { primary, others } = androidDownloads((builds.production ?? builds.preview) as Channel);
 
 const STEPS: { title: string; body: ReactNode }[] = [
   {
     title: "Download",
-    body: "Tap the button on your Android phone. The file is about 120 MB, so Wi-Fi helps.",
+    body: `Tap the button on your Android phone.${
+      primary.size === null ? "" : ` The file is about ${megabytes(primary.size)}, so Wi-Fi helps.`
+    }`,
   },
   {
     title: "Install",
@@ -60,14 +64,15 @@ export default function DownloadPage(): ReactNode {
           </div>
           <div className="flex flex-col items-start gap-2">
             <a
-              href={APK_URL}
+              href={primary.url}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent transition hover:-translate-y-px hover:brightness-110 active:translate-y-0"
             >
               <DownloadSimple size={20} weight="bold" aria-hidden="true" />
               Download for Android
             </a>
             <p className="text-sm text-muted">
-              Version {CURRENT.version} ·{" "}
+              Version {CURRENT.version}
+              {primary.size === null ? "" : ` · ${megabytes(primary.size)}`} ·{" "}
               <Link
                 href="/whats-new"
                 className="font-bold text-accent underline-offset-4 hover:underline"
@@ -76,6 +81,38 @@ export default function DownloadPage(): ReactNode {
               </Link>
             </p>
           </div>
+          {others.length > 0 ? (
+            <details className="group max-w-[60ch] text-sm">
+              <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1 font-bold text-accent underline-offset-4 hover:underline">
+                <CaretRight
+                  size={16}
+                  weight="bold"
+                  aria-hidden="true"
+                  className="transition-transform group-open:rotate-90 motion-reduce:transition-none"
+                />
+                Other versions
+              </summary>
+              <p className="leading-relaxed text-muted">
+                The main download suits almost every phone. Use one of these only if it says the app
+                isn&apos;t compatible.
+              </p>
+              <ul className="mt-3 flex flex-col divide-y divide-line border-y border-line">
+                {others.map((d) => (
+                  <li key={d.url} className="flex flex-col pb-3 pt-1">
+                    <a
+                      href={d.url}
+                      className="inline-flex min-h-11 items-center gap-2 self-start font-bold text-accent underline-offset-4 hover:underline"
+                    >
+                      <DownloadSimple size={16} weight="bold" aria-hidden="true" />
+                      {d.label}
+                      {d.size === null ? "" : ` · ${megabytes(d.size)}`}
+                    </a>
+                    <span className="leading-relaxed text-muted">{d.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           <Gate className="w-full max-w-[14rem]" />
         </section>
 

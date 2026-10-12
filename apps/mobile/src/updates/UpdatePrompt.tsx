@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Device from "expo-device";
 import * as Updates from "expo-updates";
 import {
   useCallback,
@@ -18,7 +19,7 @@ import { radius, space, useColors } from "@/ui/theme";
 
 import { apkState, canSelfUpdate, downloadAndInstall, openInstaller, subscribeApk } from "./apk";
 import { NATIVE_BUILDS } from "./changelog";
-import { nativeUpdateFor, type NativeUpdate } from "./native-build";
+import { megabytes, nativeUpdateFor, type NativeUpdate } from "./native-build";
 import { promptAllowed, shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
 
 /**
@@ -80,7 +81,13 @@ async function latestBuild(): Promise<NativeUpdate | null> {
   if (!Updates.channel || installed === undefined) return null;
   const res = await fetch(BUILD_FILE, { cache: "no-store" });
   if (!res.ok) return null;
-  return nativeUpdateFor(await res.json(), Updates.channel, installed);
+  // The phone's processor types, preferred first, so it gets the smallest APK that runs on it.
+  return nativeUpdateFor(
+    await res.json(),
+    Updates.channel,
+    installed,
+    Device.supportedCpuArchitectures,
+  );
 }
 
 function Prompt({ signedIn, pathname }: Where): ReactNode {
@@ -268,7 +275,7 @@ function DownloadSheet({
             : "A new version of the Lumiback app is ready.",
           update.notes,
           selfUpdate
-            ? "Lumiback downloads it, then Android asks you to tap Install. You stay signed in and keep your history."
+            ? `Lumiback downloads it${update.size === null ? "" : ` (${megabytes(update.size)})`}, then Android asks you to tap Install. You stay signed in and keep your history.`
             : "Install it over this one: you stay signed in and keep your history.",
         ]
           .filter(Boolean)

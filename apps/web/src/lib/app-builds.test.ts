@@ -24,6 +24,15 @@ test("each published channel names a build, a minimum and an https download", ()
     if (size !== undefined)
       assert.ok(Number.isInteger(size) && Number(size) > 0, `${channel}.size`);
     if (md5 !== undefined) assert.match(String(md5), /^[0-9a-f]{32}$/, `${channel}.md5`);
+    // From build 3: one smaller APK per processor type, each checked the same way.
+    const { apks } = info as { apks?: Record<string, Record<string, unknown>> };
+    for (const [abi, apk] of Object.entries(apks ?? {})) {
+      const at = `${channel}.apks.${abi}`;
+      assert.ok(["arm64-v8a", "armeabi-v7a", "x86_64", "x86"].includes(abi), `${at}: unknown ABI`);
+      assert.match(String(apk.url), /^https:\/\//, `${at}.url`);
+      assert.ok(Number.isInteger(apk.size) && Number(apk.size) > 0, `${at}.size`);
+      assert.match(String(apk.md5), /^[0-9a-f]{32}$/, `${at}.md5`);
+    }
   }
   assert.ok("preview" in file, "the preview channel is listed");
 });

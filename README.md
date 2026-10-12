@@ -114,17 +114,24 @@ for features (1.4.0), major for big changes (2.0.0). Copy the file to
 updates for a different runtime, so they learn about the new build from
 `apps/web/public/app/android.json` and ask people to download it:
 
-1. Build it as an installable APK on the `production` channel. First add this profile to
-   `apps/mobile/eas.json` (only now: `eas.json` is part of the runtime fingerprint, so editing it
-   between builds would stop over-the-air updates from reaching the installed app), then run
-   `npx eas-cli build --profile production-apk --platform android`:
-   `"production-apk": { "extends": "production", "distribution": "internal", "android": { "buildType": "apk" } }`
-2. Publish the APK as a GitHub release asset named `lumiback.apk`; the app links to
-   `releases/latest/download/lumiback.apk`.
+1. Build it on the `production` channel:
+   `npx eas-cli build --profile production-apk --platform android`. One build makes three APKs
+   (`apps/mobile/plugins/with-abi-splits.js`): the universal one (the build's download link) and,
+   under the build's artifacts, `app-arm64-v8a-release.apk` (modern phones) and
+   `app-armeabi-v7a-release.apk` (older 32-bit phones). Don't edit `eas.json` between builds:
+   it's part of the runtime fingerprint, so a change would stop over-the-air updates from
+   reaching the installed app.
+2. Create GitHub release `build-<n>`, marked latest, with the three APKs named `lumiback.apk`
+   (universal), `lumiback-arm64-v8a.apk` and `lumiback-armeabi-v7a.apk`.
 3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
    with the next number, and add a changelog entry.
-4. In `android.json`, set `build` to that number and `notes` to one sentence. Raise `min_build`
-   only when older builds can no longer work with the server; they then can't dismiss the prompt.
+4. In `android.json`, for each channel set `build` to that number and `notes` to one sentence;
+   `url`, `size` and `md5` describe the universal APK (builds before 3 only read those), and
+   `apks` lists the other two by ABI with their own `url`, `size` and `md5`. Use the release's
+   tag URLs (`releases/download/build-<n>/…`) so the checksums always match the file. Phones
+   from build 3 on download the APK for their processor; the download page offers the 64-bit one
+   by default and the others under "Other versions". Raise `min_build` only when older builds
+   can no longer work with the server; they then can't dismiss the prompt.
 5. Push (the website serves the new file) and publish an over-the-air update, which brings the
    new build its own build number.
 
