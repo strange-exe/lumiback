@@ -1,9 +1,18 @@
 {
   "preview": {
-    "build": 1,
+    "build": 2,
     "min_build": 1,
     "url": "https://github.com/strange-exe/lumiback/releases/latest/download/lumiback.apk",
-    "notes": ""
+    "notes": "From now on, the app updates itself.",
+    "size": 123989277,
+    "md5": "93177eb5fb8a89e271e698f69f8fa80e"
   },
-  "production": null
+  "production": {
+    "build": 2,
+    "min_build": 1,
+    "url": "https://github.com/strange-exe/lumiback/releases/latest/download/lumiback.apk",
+    "notes": "From now on, the app updates itself.",
+    "size": 123989277,
+    "md5": "93177eb5fb8a89e271e698f69f8fa80e"
+  }
 }
