@@ -1,5 +1,5 @@
 import { API_URL } from "@/lib/config";
-import { accessToken, clearTokens, refresh } from "@/lib/session";
+import { accessToken, clearTokens, refresh, SessionUnavailable } from "@/lib/session";
 
 export class ApiError extends Error {
   constructor(
@@ -48,15 +48,25 @@ async function send(path: string, options: Options, token: string | null): Promi
   }
 }
 
+/** A token, null when signed out; can't-renew-right-now is a network failure (status 0). */
+async function renewing(get: () => Promise<string | null>): Promise<string | null> {
+  try {
+    return await get();
+  } catch (error) {
+    if (error instanceof SessionUnavailable) throw new ApiError(0, OFFLINE);
+    throw error;
+  }
+}
+
 /** Calls the API; on a 401 it refreshes once and retries, then signs out if still refused. */
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const auth = options.auth ?? true;
-  let token = auth ? await accessToken() : null;
+  let token = auth ? await renewing(accessToken) : null;
   if (auth && !token) throw new ApiError(401, "Please sign in again.");
 
   let response = await send(path, options, token);
   if (auth && response.status === 401) {
-    token = await refresh();
+    token = await renewing(refresh);
     if (!token) throw new ApiError(401, "Please sign in again.");
     response = await send(path, options, token);
     if (response.status === 401) {

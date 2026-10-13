@@ -1,4 +1,12 @@
-import { accessToken, clearTokens, onSignedOut, refresh, storedRefreshToken } from "@/lib/session";
+import { api, ApiError } from "@/lib/api";
+import {
+  accessToken,
+  clearTokens,
+  onSignedOut,
+  refresh,
+  SessionUnavailable,
+  storedRefreshToken,
+} from "@/lib/session";
 
 const mockStore = new Map<string, string>();
 
@@ -51,14 +59,18 @@ test("a refused refresh token signs out", async () => {
   off();
 });
 
-test("server errors and offline keep the refresh token for a later retry", async () => {
+test("server errors and offline are 'unavailable', not signed out: the token is kept", async () => {
+  const signedOut = jest.fn();
+  const off = onSignedOut(signedOut);
   fetchMock.mockResolvedValueOnce(reply(503));
-  expect(await refresh()).toBeNull();
+  await expect(refresh()).rejects.toBeInstanceOf(SessionUnavailable);
   expect(await storedRefreshToken()).toBe("r1");
 
   fetchMock.mockRejectedValueOnce(new TypeError("Network request failed"));
-  expect(await refresh()).toBeNull();
+  await expect(accessToken()).rejects.toBeInstanceOf(SessionUnavailable);
   expect(await storedRefreshToken()).toBe("r1");
+  expect(signedOut).not.toHaveBeenCalled();
+  off();
 });
 
 test("a new refresh can start once the previous one settled", async () => {
@@ -70,7 +82,15 @@ test("a new refresh can start once the previous one settled", async () => {
       refresh_token: "r3",
     }),
   );
-  expect(await refresh()).toBeNull();
+  await expect(refresh()).rejects.toBeInstanceOf(SessionUnavailable);
   expect(await refresh()).toBe("a3");
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+test("opening the app offline is a network error (status 0), never a sign-out (401)", async () => {
+  fetchMock.mockRejectedValue(new TypeError("Network request failed"));
+  const failure = await api("/auth/me").catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(ApiError);
+  expect((failure as ApiError).status).toBe(0);
+  expect(await storedRefreshToken()).toBe("r1");
 });

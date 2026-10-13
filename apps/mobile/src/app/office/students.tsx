@@ -75,7 +75,8 @@ export default function Students(): ReactNode {
         placeholder="Name, email or roll number"
         value={query}
         onChangeText={setQuery}
-        onSubmitEditing={() => setSearch(query)}
+        // The API ignores searches under 2 letters; don't show one as applied when it isn't.
+        onSubmitEditing={() => setSearch(query.trim().length >= 2 ? query.trim() : "")}
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}

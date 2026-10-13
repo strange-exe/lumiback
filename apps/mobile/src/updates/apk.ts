@@ -8,7 +8,8 @@
  *
  * The download lives outside any screen, so closing the prompt doesn't stop it. A file that
  * isn't exactly the published one (size and MD5 from /app/android.json) is deleted, never
- * installed.
+ * installed. expo-file-system hashes on the JS thread, so the file is hashed once per download,
+ * behind a "checking" state that is drawn first, rather than freezing the screen at 100%.
  */
 import { Directory, File, Paths } from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
@@ -25,7 +26,9 @@ const APK_TYPE = "application/vnd.android.package-archive";
 export type ApkState =
   | { kind: "idle" }
   | { kind: "downloading"; build: number; progress: number | null } // 0..1, null: size unknown
-  | { kind: "ready"; build: number } // downloaded and checked; the installer is (or was) open
+  | { kind: "checking"; build: number } // hashing the finished download
+  // Downloaded and checked; `error` when Android's installer couldn't be opened (the file stays).
+  | { kind: "ready"; build: number; error: string | null }
   | { kind: "failed"; build: number; message: string };
 
 let state: ApkState = { kind: "idle" };
@@ -45,8 +48,13 @@ export function subscribeApk(listener: () => void): () => void {
   return () => void listeners.delete(listener);
 }
 
-export function canSelfUpdate(): boolean {
-  return Platform.OS === "android";
+/**
+ * Only when the published file says exactly what to expect: without a size and MD5 the app
+ * can't tell an APK from, say, an error page, so it sends people to the browser instead.
+ */
+export function canSelfUpdate(update?: Pick<NativeUpdate, "size" | "md5">): boolean {
+  if (Platform.OS !== "android") return false;
+  return update === undefined || (update.size !== null && update.md5 !== null);
 }
 
 function folder(): Directory {
@@ -59,10 +67,23 @@ function apkFile(build: number): File {
   return new File(folder(), `lumiback-build-${build}.apk`);
 }
 
-function verified(update: NativeUpdate, file: File): boolean {
+/** The build whose file was hashed and matched, and its size then (a cleared cache changes it). */
+let checked: { build: number; size: number } | null = null;
+
+/** Hashes the file (slow: the JS thread is busy), after letting the "checking" state draw. */
+async function verify(update: NativeUpdate, file: File): Promise<boolean> {
   if (!file.exists) return false;
+  set({ kind: "checking", build: update.build });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   const info = file.info({ md5: update.md5 !== null });
-  return apkMatches(update, { size: info.size ?? 0, md5: info.md5 ?? null });
+  const ok = apkMatches(update, { size: info.size ?? 0, md5: info.md5 ?? null });
+  checked = ok ? { build: update.build, size: info.size ?? 0 } : null;
+  return ok;
+}
+
+/** Already hashed this run, and the file is still the same size: no need to hash again. */
+function stillChecked(update: NativeUpdate, file: File): boolean {
+  return checked?.build === update.build && file.exists && file.size === checked.size;
 }
 
 /** Older builds' APKs are no use once a newer one is on the way. */
@@ -72,38 +93,58 @@ function removeOthers(keep: number): void {
   }
 }
 
-/** Opens Android's installer for a checked APK. Resolves when the person comes back. */
+/**
+ * Opens Android's installer for a checked APK. Never throws: if the installer can't be opened,
+ * the checked file stays and the sheet says so, so Install can be tried again.
+ */
 export async function openInstaller(update: NativeUpdate): Promise<void> {
   const file = apkFile(update.build);
-  if (!verified(update, file)) {
+  if (!stillChecked(update, file) && !(await verify(update, file))) {
+    if (file.exists) file.delete();
     set({ kind: "failed", build: update.build, message: "The download didn't finish. Try again." });
     return;
   }
-  await IntentLauncher.startActivityAsync(ACTION_VIEW, {
-    data: file.contentUri,
-    type: APK_TYPE,
-    flags: FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK,
-  });
+  set({ kind: "ready", build: update.build, error: null });
+  try {
+    await IntentLauncher.startActivityAsync(ACTION_VIEW, {
+      data: file.contentUri,
+      type: APK_TYPE,
+      flags: FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK,
+    });
+  } catch {
+    set({
+      kind: "ready",
+      build: update.build,
+      error: "Couldn't open Android's installer. Tap Install to try again.",
+    });
+  }
 }
 
-let running: Promise<void> | null = null;
+let running: { build: number; done: Promise<void> } | null = null;
 
 /**
  * Downloads the build (or reuses a checked copy), then opens the installer, at once if the app
- * is on screen, otherwise the next time it is. Calling it again while it runs does nothing.
+ * is on screen, otherwise the next time it is. Calling it again for the same build while it runs
+ * does nothing; a newer build waits for the current run to finish, then starts.
  */
 export function downloadAndInstall(update: NativeUpdate): Promise<void> {
-  running ??= run(update).finally(() => {
-    running = null;
-  });
-  return running;
+  if (running?.build === update.build) return running.done;
+  const before = running?.done ?? Promise.resolve();
+  const done = before
+    .catch(() => undefined)
+    .then(() => run(update))
+    .finally(() => {
+      if (running?.done === done) running = null;
+    });
+  running = { build: update.build, done };
+  return done;
 }
 
 async function run(update: NativeUpdate): Promise<void> {
   const file = apkFile(update.build);
   try {
     removeOthers(update.build);
-    if (!verified(update, file)) {
+    if (!stillChecked(update, file) && !(await verify(update, file))) {
       if (file.exists) file.delete();
       set({ kind: "downloading", build: update.build, progress: 0 });
       const task = File.createDownloadTask(update.url, file, {
@@ -117,7 +158,7 @@ async function run(update: NativeUpdate): Promise<void> {
         },
       });
       const done = await task.downloadAsync();
-      if (!done || !verified(update, file)) {
+      if (!done || !(await verify(update, file))) {
         if (file.exists) file.delete();
         set({
           kind: "failed",
@@ -128,11 +169,12 @@ async function run(update: NativeUpdate): Promise<void> {
         return;
       }
     }
-    set({ kind: "ready", build: update.build });
+    set({ kind: "ready", build: update.build, error: null });
     await whenOnScreen();
     await openInstaller(update);
   } catch {
     if (file.exists) file.delete();
+    checked = null;
     set({
       kind: "failed",
       build: update.build,

@@ -76,11 +76,13 @@ export function UpdatePrompt(where: Where): ReactNode {
 
 const BUILD_FILE = `${WEB_URL}/app/android.json`;
 
-async function latestBuild(): Promise<NativeUpdate | null> {
+/** The build to offer; null: none; undefined: couldn't check (keep what we knew). */
+async function latestBuild(): Promise<NativeUpdate | null | undefined> {
   const installed = Updates.runtimeVersion ? NATIVE_BUILDS[Updates.runtimeVersion] : undefined;
   if (!Updates.channel || installed === undefined) return null;
   const res = await fetch(BUILD_FILE, { cache: "no-store" });
-  if (!res.ok) return null;
+  // A server hiccup mustn't close the sheet mid-download.
+  if (!res.ok) return undefined;
   // The phone's processor types, preferred first, so it gets the smallest APK that runs on it.
   return nativeUpdateFor(
     await res.json(),
@@ -107,7 +109,9 @@ function Prompt({ signedIn, pathname }: Where): ReactNode {
       // Sets isUpdateAvailable / availableUpdate in useUpdates().
       Updates.checkForUpdateAsync().catch(() => undefined),
       latestBuild()
-        .then(publishNative)
+        .then((next) => {
+          if (next !== undefined) publishNative(next);
+        })
         .catch(() => undefined),
     ]);
   }, []);
@@ -240,7 +244,7 @@ function DownloadSheet({
   const [error, setError] = useState<string | null>(null);
   const apk = useSyncExternalStore(subscribeApk, apkState);
   const mine = apk.kind !== "idle" && apk.build === update.build ? apk : null;
-  const selfUpdate = canSelfUpdate();
+  const selfUpdate = canSelfUpdate(update);
 
   // The browser route: older Android quirks, or the in-app download failed.
   const openInBrowser = (): void => {
@@ -256,9 +260,15 @@ function DownloadSheet({
     void downloadAndInstall(update);
   };
 
-  const downloading = mine?.kind === "downloading";
+  const checking = mine?.kind === "checking";
+  const downloading = mine?.kind === "downloading" || checking;
   const percent =
     mine?.kind === "downloading" && mine.progress !== null ? Math.round(mine.progress * 100) : null;
+  const busyLabel = checking
+    ? "Checking the download…"
+    : percent === null
+      ? "Downloading…"
+      : `Downloading… ${percent}%`;
 
   return (
     <Sheet
@@ -281,13 +291,21 @@ function DownloadSheet({
           .filter(Boolean)
           .join(" ")}
       </Lead>
-      {downloading ? <Progress percent={percent} /> : null}
+      {downloading ? <Progress percent={checking ? 100 : percent} /> : null}
       {mine?.kind === "ready" ? (
         <T tone="muted">
           Downloaded. If Android asks, allow Lumiback to install apps, then tap Install.
         </T>
       ) : null}
-      <FormError message={mine?.kind === "failed" ? mine.message : error} />
+      <FormError
+        message={
+          mine?.kind === "failed"
+            ? mine.message
+            : mine?.kind === "ready" && mine.error
+              ? mine.error
+              : error
+        }
+      />
       <View style={{ gap: space(2) }}>
         {!selfUpdate ? (
           <Button label="Download" onPress={openInBrowser} />
@@ -297,7 +315,7 @@ function DownloadSheet({
           <Button
             label={mine?.kind === "failed" ? "Try again" : "Update"}
             busy={downloading}
-            busyLabel={percent === null ? "Downloading…" : `Downloading… ${percent}%`}
+            busyLabel={busyLabel}
             onPress={start}
           />
         )}

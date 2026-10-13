@@ -24,17 +24,26 @@ export function useData<T>(load: () => Promise<T>): DataState<T> {
   useEffect(() => {
     loader.current = load;
   }, [load]);
+  // Only the newest call may write: switching sections or filters quickly must not let a slower,
+  // older reply overwrite the current one.
+  const latest = useRef(0);
 
   const run = useCallback(async (pull: boolean) => {
+    const call = ++latest.current;
     if (pull) setRefreshing(true);
     try {
-      setData(await loader.current());
+      const next = await loader.current();
+      if (call !== latest.current) return;
+      setData(next);
       setError(null);
     } catch (e) {
+      if (call !== latest.current) return;
       setError(e instanceof ApiError ? e.detail : "Something went wrong. Try again.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (call === latest.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
