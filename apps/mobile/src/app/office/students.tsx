@@ -29,6 +29,7 @@ export default function Students(): ReactNode {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [roleFor, setRoleFor] = useState<OfficeStudent | null>(null);
+  const [moveFor, setMoveFor] = useState<OfficeStudent | null>(null);
 
   const hostels = useData(useCallback(() => office.hostels(), []));
   const load = useCallback(
@@ -108,10 +109,26 @@ export default function Students(): ReactNode {
               student={s}
               first={i === 0}
               onChangeRole={admin ? () => setRoleFor(s) : undefined}
+              onMove={
+                s.role === "student" && (hostels.data ?? []).some((h) => h.id !== s.hostel_id)
+                  ? () => setMoveFor(s)
+                  : undefined
+              }
             />
           ))}
         </View>
       )}
+      {moveFor ? (
+        <MoveSheet
+          student={moveFor}
+          hostels={(hostels.data ?? []).filter((h) => h.id !== moveFor.hostel_id)}
+          onClose={() => setMoveFor(null)}
+          onSaved={() => {
+            setMoveFor(null);
+            void refetch();
+          }}
+        />
+      ) : null}
       {admin && roleFor ? (
         <RoleSheet
           person={roleFor}
@@ -132,10 +149,12 @@ function StudentRow({
   student: s,
   first,
   onChangeRole,
+  onMove,
 }: {
   student: OfficeStudent;
   first: boolean;
   onChangeRole?: () => void;
+  onMove?: () => void;
 }): ReactNode {
   const c = useColors();
   const [open, setOpen] = useState(false);
@@ -175,12 +194,73 @@ function StudentRow({
             name={s.emergency_name}
             phone={s.emergency_phone}
           />
+          {onMove ? (
+            <Button label="Move to another hostel" variant="secondary" onPress={onMove} />
+          ) : null}
           {onChangeRole ? (
             <Button label="Change role" variant="secondary" onPress={onChangeRole} />
           ) : null}
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** Students pick their hostel once; the office moves them after that (into its own hostels). */
+function MoveSheet({
+  student,
+  hostels,
+  onClose,
+  onSaved,
+}: {
+  student: OfficeStudent;
+  hostels: OfficeHostel[];
+  onClose: () => void;
+  onSaved: () => void;
+}): ReactNode {
+  const [to, setTo] = useState<string>(hostels[0]?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const target = hostels.find((h) => h.id === to);
+
+  const save = async (): Promise<void> => {
+    if (!target) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await office.moveStudent(student.id, target.id);
+      haptic.success();
+      onSaved();
+    } catch (e) {
+      haptic.warning();
+      setError(e instanceof ApiError ? e.detail : "Couldn't move them. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open onClose={onClose} title={`Move ${student.name}`}>
+      <View style={{ gap: space(4) }}>
+        <T tone="muted">
+          {`Now in ${student.hostel ?? "no hostel"}. They follow the new hostel's outing rules from their next outing, and its office looks after them. Their past outings stay with the hostel they took them from.`}
+        </T>
+        <Chips
+          label="Move to"
+          options={hostels.map((h) => ({ value: h.id, label: h.name }))}
+          value={to}
+          onChange={setTo}
+        />
+        <FormError message={error} />
+        <Button
+          label={target ? `Move to ${target.name}` : "Move"}
+          busy={busy}
+          busyLabel="Moving…"
+          onPress={() => void save()}
+        />
+        <Button label="Cancel" variant="secondary" onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 

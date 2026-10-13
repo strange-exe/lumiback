@@ -41,6 +41,12 @@ export const office = {
     const qs = query.toString();
     return api<OfficeStudent[]>(`/admin/students${qs ? `?${qs}` : ""}`);
   },
+  /** Students choose their hostel once; after that the office moves them (both hostels theirs). */
+  moveStudent: (userId: string, hostelId: string) =>
+    api<OfficeStudent>(`/admin/students/${encodeURIComponent(userId)}/hostel`, {
+      method: "POST",
+      body: { hostel_id: hostelId },
+    }),
   /** Admins only. */
   setRole: (userId: string, role: Role, hostelIds: string[]) =>
     api<Person>(`/admin/users/${encodeURIComponent(userId)}/role`, {

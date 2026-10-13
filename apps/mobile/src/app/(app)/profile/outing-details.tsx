@@ -47,6 +47,8 @@ export default function OutingDetails(): ReactNode {
 
   const hostels = data?.hostels ?? [];
   const chosen = hostels.find((h) => h.id === data?.profile.hostel_id) ?? null;
+  // Chosen once; after that only the hostel office moves a student.
+  const locked = data?.profile.hostel_locked === true;
   // Grouped by the rules they follow: "Boys' hostels", "Girls' hostels".
   const groups = [...new Set(hostels.map((h) => h.rule_set))]
     .sort((a, b) => a.localeCompare(b))
@@ -62,8 +64,12 @@ export default function OutingDetails(): ReactNode {
             haptic.tap();
             setPicking(true);
           }}
-          disabled={!data || hostels.length === 0}
-          accessibilityLabel={`Your hostel: ${chosen ? chosen.name : "not chosen"}. Opens the list of hostels.`}
+          disabled={!data || hostels.length === 0 || locked}
+          accessibilityLabel={
+            locked
+              ? `Your hostel: ${chosen?.name ?? data?.profile.hostel ?? ""}. Ask the hostel office to change it.`
+              : `Your hostel: ${chosen ? chosen.name : "not chosen"}. Opens the list of hostels.`
+          }
           style={{
             flexDirection: "row",
             alignItems: "center",
@@ -89,17 +95,24 @@ export default function OutingDetails(): ReactNode {
             </T>
             {chosen ? <T tone="caption">{chosen.rule_set}</T> : null}
           </View>
-          <Ionicons name="chevron-down" size={20} color={c.muted} />
+          <Ionicons
+            name={locked ? "lock-closed-outline" : "chevron-down"}
+            size={20}
+            color={c.muted}
+          />
         </Press>
       </View>
       <FormError message={hostelError} />
       <T tone="caption">
         {hostels.length === 0
           ? "The hostel office adds hostels. Check back later."
-          : "Your hostel decides your outing hours and how long outings can be on days that need approval (currently Sundays and holidays)."}
+          : locked
+            ? "Your hostel decides your outing hours and how long outings can be on days that need approval. Moved? Ask the hostel office to change it."
+            : "Your hostel decides your outing hours and how long outings can be on days that need approval (currently Sundays and holidays). You choose it once: after that, only the hostel office can change it."}
       </T>
 
       <Sheet open={picking} onClose={() => setPicking(false)} title="Choose your hostel">
+        <T tone="muted">You choose once. After that, only the hostel office can change it.</T>
         {groups.map((g) => (
           <Section key={g.name} title={g.name}>
             {g.hostels.map((h) => (

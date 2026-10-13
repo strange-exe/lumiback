@@ -91,6 +91,8 @@ export interface OutingRequest {
 export interface Profile {
   hostel_id: string | null;
   hostel: string | null;
+  /** Chosen once; after that only the hostel office can move the student. */
+  hostel_locked?: boolean;
   phone: string | null;
   emergency_name: string | null;
   emergency_relation: string | null;

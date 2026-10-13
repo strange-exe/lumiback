@@ -61,8 +61,8 @@ export function OfficeHome({
           title="Escalations"
           detail={
             escalations > 0
-              ? `${escalations} late ${escalations === 1 ? "student isn't" : "students aren't"} answering`
-              : "Late students who don't answer"
+              ? `${escalations} late ${escalations === 1 ? "student needs" : "students need"} follow-up`
+              : "Late students who don't answer or aren't back"
           }
           trailing={count(escalations, "danger")}
           onPress={() => open("escalations")}

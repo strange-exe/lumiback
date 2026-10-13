@@ -572,9 +572,9 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         ) : (
           <View style={{ gap: space(2) }}>
             <Text style={[type.body, { color: c.onHero }]}>
-              You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine. At 30
-              minutes late we ask if you&apos;re OK; with no answer 10 minutes later the hostel
-              office is told and may call you or your emergency contact.
+              You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine. With
+              no answer 10 minutes after the 30-minute alert, or still not back an hour after
+              answering, the hostel office is told and may call you or your emergency contact.
             </Text>
             <View style={{ flexDirection: "row", gap: space(2) }}>
               <View style={{ flex: 1 }}>

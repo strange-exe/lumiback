@@ -95,7 +95,7 @@ export default function OfficeScreen(): ReactNode {
         <Heading
           title="Escalations"
           tone="danger"
-          lede={`Late students who didn't answer the "are you OK?" alert within 10 minutes. Call them, their emergency contact or their warden. ${scope}`}
+          lede={`Late students who didn't answer the "are you OK?" alert within 10 minutes, or answered but still aren't back an hour later. Call them, their emergency contact or their warden. ${scope}`}
         />
       ) : (
         <Heading title="Who's out" lede={`Late first. ${scope}`} />
