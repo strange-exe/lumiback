@@ -99,7 +99,13 @@ export async function GET(
           JSON.stringify(guest ? { type: "auth", guest_token: guest } : { type: "auth", token }),
         );
       };
-      socket.onmessage = async (message) => {
+      // Handle messages strictly in order: "subscribed" waits for describe() (an HTTP call), and a
+      // "location" arriving meanwhile must not be sent first and then overwritten by the older one.
+      let queue = Promise.resolve();
+      socket.onmessage = (message) => {
+        queue = queue.then(() => handle(message)).catch(() => finish());
+      };
+      const handle = async (message: MessageEvent): Promise<void> => {
         let data: BackendMessage;
         try {
           data = JSON.parse(String(message.data));

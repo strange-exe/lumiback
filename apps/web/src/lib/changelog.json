@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.5.2",
+    "date": "2026-10-13",
+    "title": "Steadier updates and sign-in",
+    "points": [
+      "Updating the app no longer looks stuck at 100%: it says it's checking the download, then opens Android's installer. If the installer can't open, tap Install to try again; the download is kept.",
+      "Opening the app with no signal no longer signs you out, and a moment without signal no longer ends live sharing.",
+      "The hostel office lists show the section or hostel you picked, even when you switch quickly."
+    ]
+  },
+  {
     "version": "1.5.1",
     "date": "2026-10-12",
     "title": "Smaller downloads",

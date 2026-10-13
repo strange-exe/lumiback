@@ -20,16 +20,24 @@ import type { TokenPair } from "@/lib/types";
  * stragglers. Per server process; a multi-instance deploy needs sticky sessions or a shared store.
  */
 const REUSE_WINDOW_MS = 30_000;
-const recent = new Map<string, { result: Promise<TokenPair | null>; at: number }>();
 
-function refreshOnce(token: string, clientIp: string | null): Promise<TokenPair | null> {
+/**
+ * "rejected": the backend refused the token (spent, expired, revoked), so the login is over.
+ * "unavailable": the backend couldn't answer (asleep on the free tier, restarting, overloaded):
+ * the token may still be good, so it's kept and the next request tries again.
+ */
+type Refresh = { kind: "ok"; tokens: TokenPair } | { kind: "rejected" } | { kind: "unavailable" };
+
+const recent = new Map<string, { result: Promise<Refresh>; at: number }>();
+
+function refreshOnce(token: string, clientIp: string | null): Promise<Refresh> {
   const now = Date.now();
   for (const [key, entry] of recent) if (now - entry.at > REUSE_WINDOW_MS) recent.delete(key);
 
   const cached = recent.get(token);
   if (cached) return cached.result;
 
-  const result = fetch(`${BACKEND_URL}/auth/refresh`, {
+  const result: Promise<Refresh> = fetch(`${BACKEND_URL}/auth/refresh`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -38,9 +46,20 @@ function refreshOnce(token: string, clientIp: string | null): Promise<TokenPair 
     body: JSON.stringify({ refresh_token: token }),
     cache: "no-store",
   })
-    .then(async (r) => (r.ok ? ((await r.json()) as TokenPair) : null))
-    .catch(() => null);
+    .then(async (r): Promise<Refresh> => {
+      if (r.ok) return { kind: "ok", tokens: (await r.json()) as TokenPair };
+      // 4xx other than rate limiting means the backend looked at the token and said no.
+      return r.status >= 400 && r.status < 500 && r.status !== 429
+        ? { kind: "rejected" }
+        : { kind: "unavailable" };
+    })
+    .catch((): Refresh => ({ kind: "unavailable" }));
   recent.set(token, { result, at: now });
+  // Requests arriving together still share this attempt, but a failure isn't remembered: the
+  // next request after it tries again instead of reusing "unavailable" for 30 seconds.
+  void result.then((r) => {
+    if (r.kind === "unavailable" && recent.get(token)?.result === result) recent.delete(token);
+  });
   return result;
 }
 
@@ -59,7 +78,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (access || !refresh) return NextResponse.next();
 
   const clientIp = clientIpFrom(request.headers, IP_TRUST);
-  const tokens = await refreshOnce(refresh, clientIp);
+  const outcome = await refreshOnce(refresh, clientIp);
+  // The backend is down for a moment: keep the refresh cookie (this request goes on without an
+  // access token) instead of signing the person out.
+  if (outcome.kind === "unavailable") return NextResponse.next();
+  const tokens = outcome.kind === "ok" ? outcome.tokens : null;
 
   // Downstream pages and actions must see the updated cookies on THIS request...
   const headers = new Headers(request.headers);

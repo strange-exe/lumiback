@@ -216,7 +216,7 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
           <Field
             label="Name"
             name="name"
-            defaultValue={gate.name}
+            defaultValue={edit.fields?.name ?? gate.name}
             maxLength={60}
             id={`name-${gate.id}`}
           />
@@ -226,7 +226,7 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
             type="number"
             min={10}
             max={500}
-            defaultValue={String(gate.radius_m)}
+            defaultValue={edit.fields?.radius_m ?? String(gate.radius_m)}
             id={`radius-${gate.id}`}
             className="w-28"
           />

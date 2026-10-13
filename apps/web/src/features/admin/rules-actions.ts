@@ -44,7 +44,7 @@ export async function resolveEscalation(_: FormState, form: FormData): Promise<F
       body: { note },
     }),
   );
-  if ("error" in result) return result.error;
+  if ("error" in result) return { ...result.error, fields: { note } }; // keep what they typed
   revalidatePath("/admin/escalations");
   revalidatePath("/admin");
   return { error: null, notice: "Marked as handled." };
@@ -96,7 +96,7 @@ export async function saveRuleSet(_: FormState, form: FormData): Promise<FormSta
   const name = text(form, "name");
   if (!name) return { error: "Give the rules a name." };
   const parsed = daysFrom(form);
-  if ("error" in parsed) return { error: parsed.error };
+  if ("error" in parsed) return { error: parsed.error, fields: { name } };
   const result = await attempt(() =>
     callBackend(`/admin/rule-sets/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -104,7 +104,7 @@ export async function saveRuleSet(_: FormState, form: FormData): Promise<FormSta
       body: { name, days: parsed.days },
     }),
   );
-  if ("error" in result) return result.error;
+  if ("error" in result) return { ...result.error, fields: { name } }; // keep the edited name
   revalidatePath("/admin/rules");
   return { error: null, notice: "Saved. New outings follow these rules." };
 }

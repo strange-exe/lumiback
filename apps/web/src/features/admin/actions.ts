@@ -54,7 +54,10 @@ export async function updateGate(_: GateFormState, form: FormData): Promise<Gate
       body: { name: name || undefined, radius_m: radius === null ? undefined : Math.round(radius) },
     }),
   );
-  if ("error" in result) return result.error;
+  // Keep what they typed (e.g. a radius the server refused) instead of the saved values.
+  if ("error" in result) {
+    return { ...result.error, fields: { name, radius_m: text(form, "radius_m") } };
+  }
   revalidatePath("/admin/gates");
   return { error: null, notice: "Saved." };
 }

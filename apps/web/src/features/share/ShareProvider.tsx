@@ -117,6 +117,24 @@ export function ShareProvider({
   const sending = useRef(false);
 
   const sessionId = session?.id ?? null;
+  // The share this tab is running now, for replies that arrive after it changed.
+  const current = useRef(sessionId);
+  useEffect(() => {
+    current.current = sessionId;
+  }, [sessionId]);
+
+  // The layout passes the server's view of the share again after sign-out, sign-in or a server
+  // action's redirect; useState alone would keep the old one (tracking a signed-out share).
+  const [seenInitial, setSeenInitial] = useState(initial?.id ?? null);
+  if ((initial?.id ?? null) !== seenInitial) {
+    setSeenInitial(initial?.id ?? null);
+    setSession(initial);
+    if (!initial) {
+      setFix(null);
+      setSentAt(null);
+      setProblem(null);
+    }
+  }
 
   const end = useCallback((reason: string) => {
     setSession(null);
@@ -126,17 +144,26 @@ export function ShareProvider({
     setEndedReason(reason);
   }, []);
 
+  /** Ends the share `id` here, unless this tab has moved on to another one since. */
+  const endIfCurrent = useCallback(
+    (id: string, reason: string) => {
+      if (current.current === id) end(reason);
+    },
+    [end],
+  );
+
   const refresh = useCallback(
     async (id: string) => {
       const response = await fetch(`/api/share/${id}`, { cache: "no-store" }).catch(() => null);
       if (!response) return; // offline for a moment; the next poll tries again
-      if (response.status === 404) return end("ended");
+      if (response.status === 404) return endIfCurrent(id, "ended");
+      if (response.status === 401) return endIfCurrent(id, "ended"); // signed out
       if (!response.ok) return;
       const fresh = (await response.json()) as ShareSession;
-      if (fresh.status !== "active") end(fresh.ended_reason ?? "ended");
-      else setSession((current) => (current?.id === fresh.id ? fresh : current));
+      if (fresh.status !== "active") endIfCurrent(id, fresh.ended_reason ?? "ended");
+      else setSession((now) => (now?.id === fresh.id ? fresh : now));
     },
-    [end],
+    [endIfCurrent],
   );
 
   const send = useCallback(
@@ -152,8 +179,8 @@ export function ShareProvider({
         if (response.ok) {
           lastSent.current = Date.now();
           setSentAt(lastSent.current);
-        } else if (response.status === 409 || response.status === 404) {
-          await refresh(id); // ended elsewhere (time ran out, stopped on another tab)
+        } else if ([401, 404, 409].includes(response.status)) {
+          await refresh(id); // ended elsewhere (time ran out, another tab), or signed out
         }
       } catch {
         // Network blip: the next fix or heartbeat tries again.
@@ -240,8 +267,12 @@ export function ShareProvider({
     };
   }, [sessionId]);
 
+  // A double tap (or a second tap while the browser asks for location) must not start two shares.
+  const startingNow = useRef(false);
   const start = useCallback(
     async (minutes: number): Promise<string | null> => {
+      if (startingNow.current) return null;
+      startingNow.current = true;
       setStarting(true);
       setEndedReason(null);
       try {
@@ -265,18 +296,25 @@ export function ShareProvider({
         await send(result.data.id, first, true);
         return null;
       } finally {
+        startingNow.current = false;
         setStarting(false);
       }
     },
     [send],
   );
 
+  const stoppingNow = useRef(false);
   const stop = useCallback(async (): Promise<string | null> => {
-    if (!sessionId) return null;
-    const result = await stopShare(sessionId);
-    if (!result.ok) return result.error;
-    end(result.data.ended_reason ?? "stopped_by_sharer");
-    return null;
+    if (!sessionId || stoppingNow.current) return null;
+    stoppingNow.current = true;
+    try {
+      const result = await stopShare(sessionId);
+      if (!result.ok) return result.error;
+      end(result.data.ended_reason ?? "stopped_by_sharer");
+      return null;
+    } finally {
+      stoppingNow.current = false;
+    }
   }, [sessionId, end]);
 
   const update = useCallback(

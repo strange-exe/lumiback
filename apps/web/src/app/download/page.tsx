@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { Gate } from "@/components/illustrations/Gate";
 import { SiteFooter } from "@/components/ui/SiteFooter";
-import { androidDownloads, megabytes, type Channel } from "@/lib/app-downloads";
+import { androidDownloads, megabytes, type Channel, type Download } from "@/lib/app-downloads";
 import { CURRENT } from "@/lib/changelog";
 
 // The same file the app reads to offer new builds, so the page and the app agree on the link.
@@ -17,7 +17,13 @@ export const metadata: Metadata = {
 };
 
 // New installs come from the production channel (preview until it has a build).
-const { primary, others } = androidDownloads((builds.production ?? builds.preview) as Channel);
+const downloads = androidDownloads((builds.production ?? builds.preview) as Channel | null);
+// A file with nothing to download fails the build (and app-builds.test.ts) instead of shipping.
+const primary = ((): Download => {
+  if (!downloads.primary) throw new Error("public/app/android.json has no https APK to offer");
+  return downloads.primary;
+})();
+const { others } = downloads;
 
 const STEPS: { title: string; body: ReactNode }[] = [
   {

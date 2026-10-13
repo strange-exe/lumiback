@@ -55,7 +55,7 @@ export function RuleSetForm({ ruleSet }: { ruleSet: RuleSet }): ReactNode {
             <span id={`set-${id}`}>Rules name</span>
             <input
               name="name"
-              defaultValue={ruleSet.name}
+              defaultValue={state.fields?.name ?? ruleSet.name}
               required
               maxLength={60}
               className={input}

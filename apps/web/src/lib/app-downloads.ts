@@ -56,16 +56,22 @@ function download(apk: Apk, label: string, hint: string): Download {
   return { label, hint, url: apk.url, size };
 }
 
-/** The default download, then the alternatives (empty when there's only the universal APK). */
-export function androidDownloads(channel: Channel): { primary: Download; others: Download[] } {
-  // The listed universal APK; files without one have it at the top level. (Once listed, the
-  // top-level url is this page itself, for build 1's "open in the browser".)
+/**
+ * The default download, then the alternatives (empty when there's only the universal APK).
+ * primary is null when the file has nothing safe to link (no channel, or no https APK).
+ */
+export function androidDownloads(channel: Channel | null): {
+  primary: Download | null;
+  others: Download[];
+} {
+  if (!channel) return { primary: null, others: [] };
+  // The listed universal APK. Only files with no `apks` list at all (before build 3) keep it at
+  // the top level: once `apks` exists, the top-level url is this page itself (for build 1's
+  // "open in the browser"), and linking it would send people in a circle.
   const listed = channel.apks?.universal;
-  const universal = download(
-    listed && https(listed.url) ? listed : channel,
-    UNIVERSAL.label,
-    UNIVERSAL.hint,
-  );
+  const fallback = channel.apks === undefined && https(channel.url) ? channel : null;
+  const universalApk = listed && https(listed.url) ? listed : fallback;
+  const universal = universalApk ? download(universalApk, UNIVERSAL.label, UNIVERSAL.hint) : null;
   const variants = VARIANTS.flatMap(({ abi, label, hint }) => {
     const apk = channel.apks?.[abi];
     return apk && https(apk.url) ? [{ abi, ...download(apk, label, hint) }] : [];
@@ -73,10 +79,10 @@ export function androidDownloads(channel: Channel): { primary: Download; others:
   // Only the 64-bit APK is a safe default: newer phones can't run 32-bit-only apps.
   const modern = variants.find((v) => v.abi === "arm64-v8a");
   const strip = ({ abi: _abi, ...d }: Download & { abi: string }): Download => d;
-  if (!modern) return { primary: universal, others: variants.map(strip) };
+  if (!modern) return { primary: universal, others: universal ? variants.map(strip) : [] };
   return {
     primary: strip(modern),
-    others: [...variants.filter((v) => v !== modern).map(strip), universal],
+    others: [...variants.filter((v) => v !== modern).map(strip), ...(universal ? [universal] : [])],
   };
 }
 

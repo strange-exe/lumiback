@@ -96,6 +96,7 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
             What happened
             <input
               name="note"
+              defaultValue={state.fields?.note}
               maxLength={200}
               placeholder="Called her mother: the bus was late"
               className="min-h-12 rounded-control border border-line bg-page px-4 font-normal text-ink focus:border-accent focus:outline-none"

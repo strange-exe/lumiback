@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { androidDownloads, type Channel } from "./app-downloads.ts";
+
 /** public/app/android.json: the latest Android app build per channel, read by the app to ask
  * for a download when a new build exists (apps/mobile/src/updates/native-build.ts). */
 const file = JSON.parse(
@@ -46,4 +48,14 @@ test("each published channel names a build, a minimum and an https download", ()
     }
   }
   assert.ok("preview" in file, "the preview channel is listed");
+});
+
+test("the download page has an APK to offer, and never links back to itself", () => {
+  const channel = (file.production ?? file.preview) as Channel | null;
+  const { primary, others } = androidDownloads(channel);
+  assert.ok(primary, "nothing to download");
+  for (const d of [primary, ...others]) {
+    assert.match(d.url, /^https:\/\//, d.label);
+    assert.doesNotMatch(d.url, /\/download\/?$/, `${d.label} links to the download page`);
+  }
 });
