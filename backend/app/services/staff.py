@@ -41,7 +41,11 @@ class Staff:
         return hostel_id.in_(self.hostels)
 
     def covers_student(self, student: User) -> bool:
-        return self.hostels is None or student.hostel_id in self.hostels
+        return self.covers_hostel(student.hostel_id)
+
+    def covers_hostel(self, hostel_id: uuid.UUID | None) -> bool:
+        """For one record: an outing belongs to the hostel the student was in at the time."""
+        return self.hostels is None or hostel_id in self.hostels
 
 
 async def warden_hostel_ids(session: AsyncSession, user_id: uuid.UUID) -> frozenset[uuid.UUID]:

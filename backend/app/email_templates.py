@@ -396,17 +396,18 @@ def request_decision_email(
 
 def escalation_notice(*, to: str, count: int, web_url: str) -> Notice:
     """To admins. Names and numbers stay behind the sign-in: the email only points there."""
-    students = "1 late student isn't" if count == 1 else f"{count} late students aren't"
+    students = "1 late student needs" if count == 1 else f"{count} late students need"
     return Notice(
         kind="escalation",
         to=to,
-        subject=f"Lumiback: {count} late student(s) not answering",
+        subject=f"Lumiback: {count} late student(s) need follow-up",
         greeting="Hello,",
         label="Needs follow-up",
         tone="alert",
-        heading=f"{students} answering",
+        heading=f"{students} follow-up",
         paragraphs=(
-            "They're over 40 minutes late and didn't answer the app's alert.",
+            "They're over 40 minutes late and didn't answer the app's alert, or answered but "
+            "still aren't back an hour later.",
             "Their phone numbers, emergency contacts, hostel warden and last known position are "
             "on the Escalations page.",
         ),

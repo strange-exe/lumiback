@@ -20,6 +20,7 @@ from app.schemas import (
     GateOut,
     GatePatch,
     RoleIn,
+    StudentHostelIn,
     StudentOut,
 )
 from app.schemas import (
@@ -207,6 +208,17 @@ async def list_students(
     if hostel_id is not None and staff.hostels is not None and hostel_id not in staff.hostels:
         raise NOT_FOUND
     return await svc.students(session, staff, hostel_id, q)
+
+
+@router.post("/students/{user_id}/hostel")
+async def move_student(
+    user_id: uuid.UUID, body: StudentHostelIn, staff: StaffUser, session: SessionDep
+) -> StudentOut:
+    """Move a student to another hostel: they can't once they've chosen (see /profile)."""
+    try:
+        return await svc.move_student(session, staff, user_id, body.hostel_id)
+    except svc.MoveRefused as e:
+        raise HTTPException(e.status, detail=str(e)) from None
 
 
 @router.post("/users/{user_id}/role")

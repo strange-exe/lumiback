@@ -208,8 +208,8 @@ def test_a_hostel_brings_its_rules(client, db, riya, warden):
     assert (today["rule_set"], today["hostel"]) == ("Strict", "Hostel 3")
     assert default["is_default"] is True
 
-    # Leaving the hostel list falls back to the default rules.
-    client.patch("/profile", json={"hostel_id": None}, headers=riya)
+    # A student whose hostel is deleted falls back to the default rules.
+    assert client.delete(f"/admin/hostels/{choices[0]['id']}", headers=warden).status_code == 200
     assert client.get("/campus", headers=riya).json()["today"]["rule_set"] == default["name"]
 
 
@@ -441,61 +441,83 @@ def test_the_limit_shown_is_for_the_requests_own_day(client, db, riya, warden, f
 # ---------- hostel changes ----------
 
 
-def hostel_for(client, warden) -> str:
+def hostel_for(client, warden, name: str = "Hostel 3") -> str:
     default = client.get("/admin/rule-sets", headers=warden).json()[0]
     r = client.post(
-        "/admin/hostels", json={"name": "Hostel 3", "rule_set_id": default["id"]}, headers=warden
+        "/admin/hostels", json={"name": name, "rule_set_id": default["id"]}, headers=warden
     )
     assert r.status_code == 201, r.text
-    return r.json()[0]["id"]
+    return next(h["id"] for h in r.json() if h["name"] == name)
 
 
-HOSTEL_LOCKED = (
+HOSTEL_IN_USE = (
     "You can't change your hostel while you're out or have an outing request for today. "
     "Ask the hostel office."
 )
+HOSTEL_SET = "Your hostel is set. Ask the hostel office if you've moved."
 
 
-def test_no_hostel_change_while_out(client, db, riya, warden):
+def riya_id(client, warden) -> str:
+    return client.get("/admin/users", params={"q": "riya"}, headers=warden).json()[0]["id"]
+
+
+def move(client, warden, student: str, hostel: str):
+    return client.post(
+        f"/admin/students/{student}/hostel", json={"hostel_id": hostel}, headers=warden
+    )
+
+
+def test_a_student_picks_their_hostel_once(client, riya, warden):
+    first, other = hostel_for(client, warden), hostel_for(client, warden, "Hostel 4")
+    assert client.get("/profile", headers=riya).json()["hostel_locked"] is False
+    r = client.patch("/profile", json={"hostel_id": first}, headers=riya)
+    assert r.status_code == 200 and r.json()["hostel_locked"] is True
+    # No switching to a hostel with easier rules (or a different warden), nor leaving the list.
+    for change in (other, None):
+        r = client.patch("/profile", json={"hostel_id": change}, headers=riya)
+        assert r.status_code == 403 and r.json()["detail"] == HOSTEL_SET
+    # Resending the same hostel, or only the contacts, isn't a change.
+    assert client.patch("/profile", json={"hostel_id": first}, headers=riya).status_code == 200
+    assert client.get("/profile", headers=riya).json()["hostel"] == "Hostel 3"
+
+
+def test_the_first_pick_waits_until_back(client, db, riya, warden):
     hostel = hostel_for(client, warden)
     set_rules(db, "open")
     assert client.post("/outings", json={}, headers=riya).status_code == 201
-    r = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)  # first pick, too
-    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
-    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
-
+    r = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)
+    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_IN_USE
     client.post("/outings/current/return", headers=riya)
     r = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)
     assert r.status_code == 200 and r.json()["hostel"] == "Hostel 3"
 
 
-def test_no_hostel_change_with_a_request_for_today(client, riya, warden, form_day):
-    hostel = hostel_for(client, warden)
-    assert client.patch("/profile", json={"hostel_id": hostel}, headers=riya).status_code == 200
+def test_the_office_moves_a_student_but_not_mid_outing(client, riya, warden, form_day):
+    first, other = hostel_for(client, warden), hostel_for(client, warden, "Hostel 4")
+    assert client.patch("/profile", json={"hostel_id": first}, headers=riya).status_code == 200
+    student = riya_id(client, warden)
     request = send(client, riya).json()
-    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)
-    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
-    # Resending the same hostel isn't a change.
-    same = client.patch("/profile", json={"hostel_id": hostel}, headers=riya)
-    assert same.status_code == 200
-    assert client.delete(f"/outings/request/{request['id']}", headers=riya).status_code == 204
-    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
-
-
-def test_a_used_approval_no_longer_locks_the_hostel(client, riya, warden, form_day):
-    hostel = hostel_for(client, warden)
-    assert client.patch("/profile", json={"hostel_id": hostel}, headers=riya).status_code == 200
-    request = send(client, riya).json()
+    # A request for today: that hostel's rules and office already apply.
+    assert move(client, warden, student, other).status_code == 409
     assert decide(client, warden, request["id"]).status_code == 200
-    # Approved and unused: still locked.
-    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)
-    assert r.status_code == 409 and r.json()["detail"] == HOSTEL_LOCKED
+    assert move(client, warden, student, other).status_code == 409  # approved, not yet used
     assert client.post("/outings", json={}, headers=riya).status_code == 201
-    r = client.patch("/profile", json={"hostel_id": None}, headers=riya)  # out: locked
-    assert r.status_code == 409
+    assert move(client, warden, student, other).status_code == 409  # out
     assert client.post("/outings/current/return", headers=riya).status_code == 200
-    # Back, and the approval is spent: the hostel can change again.
-    assert client.patch("/profile", json={"hostel_id": None}, headers=riya).status_code == 200
+    # Back, and the approval is spent: the office can move them.
+    r = move(client, warden, student, other)
+    assert r.status_code == 200 and r.json()["hostel"] == "Hostel 4", r.text
+    assert client.get("/profile", headers=riya).json()["hostel"] == "Hostel 4"
+    # Moving to where they already are is fine; an unknown hostel isn't.
+    assert move(client, warden, student, other).status_code == 200
+    bad = move(client, warden, student, "00000000-0000-4000-8000-000000000000")
+    assert bad.status_code == 422
+
+
+def test_students_cant_use_the_move_endpoint(client, riya, warden):
+    hostel = hostel_for(client, warden)
+    r = move(client, riya, riya_id(client, warden), hostel)
+    assert r.status_code == 403
 
 
 # ---------- rule-set save errors ----------

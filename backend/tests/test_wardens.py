@@ -243,6 +243,45 @@ def test_the_register_shows_only_the_wardens_hostels(client, db, admin, warden, 
     assert [row[0] for row in rows] == ["Anna"]
 
 
+def test_a_warden_moves_only_their_own_students_into_their_own_hostels(
+    client, admin, warden, anna, bina, hostels
+):
+    move = lambda student, hostel: client.post(  # noqa: E731
+        f"/admin/students/{user_id(client, admin, student)}/hostel",
+        json={"hostel_id": hostels[hostel]},
+        headers=warden,
+    )
+    assert move("bina@geu.ac.in", "A").status_code == 404  # not theirs: as if she didn't exist
+    assert move("anna@geu.ac.in", "B").status_code == 403  # B isn't theirs to fill
+    assert move("anna@geu.ac.in", "A").status_code == 200  # already there: nothing to do
+    # An admin moves anyone anywhere, and it's audited.
+    r = client.post(
+        f"/admin/students/{user_id(client, admin, 'bina@geu.ac.in')}/hostel",
+        json={"hostel_id": hostels["A"]},
+        headers=admin,
+    )
+    assert r.status_code == 200 and r.json()["hostel"] == "Hostel A"
+
+
+def test_records_stay_with_the_hostel_the_outing_happened_in(
+    client, db, admin, warden, anna, hostels
+):
+    go_out(client, anna)
+    client.post("/outings/current/return", headers=anna)
+    r = client.post(
+        f"/admin/students/{user_id(client, admin, 'anna@geu.ac.in')}/hostel",
+        json={"hostel_id": hostels["B"]},
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+    # Anna lives in B now, but the outing she took from A stays in A's register.
+    today = datetime.now(UTC).date().isoformat()
+    r = client.get("/admin/outings.csv", params={"from": today, "to": today}, headers=warden)
+    assert [row[0] for row in list(csv.reader(io.StringIO(r.text)))[1:]] == ["Anna"]
+    # ...and she's no longer one of A's students.
+    assert client.get("/admin/students", headers=warden).json() == []
+
+
 def test_a_warden_decides_only_their_hostels_requests(client, db, admin, warden, anna, bina):
     set_rules(db, "open", max_minutes=180, needs_form=True)
     a = client.post("/outings/request", json=FORM, headers=anna).json()
@@ -299,7 +338,7 @@ def test_escalations_go_to_admins_and_the_hostels_wardens(
     assert run_sweep(client, push).escalated == 2
 
     escalation_pushes = sorted(
-        t[0] for t, m in push.outbox if m.title == "A late student isn't answering"
+        t[0] for t, m in push.outbox if m.title == "A late student needs follow-up"
     )
     assert escalation_pushes == sorted([ADMIN_PHONE, WARDEN_PHONE])
     emails = {e.to: e.body for e in mailer.outbox[before:]}

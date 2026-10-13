@@ -190,7 +190,7 @@ async def sweep(
                 push,
                 person.user_id,
                 PushMessage(
-                    title="A late student isn't answering",
+                    title="A late student needs follow-up",
                     body="Open Escalations in Lumiback to follow up.",
                     url="/office/escalations",
                     channel="return-reminders",

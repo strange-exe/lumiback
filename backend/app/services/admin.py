@@ -38,7 +38,7 @@ from app.schemas import (
     AdminUser,
     StudentOut,
 )
-from app.services.outings import status_of
+from app.services.outings import rules_in_use, status_of
 from app.services.rules import ist_date
 from app.services.staff import Staff, warden_hostel_ids
 
@@ -63,10 +63,12 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
     now = datetime.now(UTC)
     since = ist_midnight(now)
     mine = staff.covers(User.hostel_id)
+    # Outings count for the hostel the student was in when they went out.
+    mine_out = staff.covers(Outing.hostel_id)
     open_ = Outing.returned_at.is_(None)
-    outings = select(func.count()).select_from(Outing).join(User, User.id == Outing.student_id)
-    out_now = await session.scalar(outings.where(mine, open_, Outing.expected_return_at >= now))
-    overdue = await session.scalar(outings.where(mine, open_, Outing.expected_return_at < now))
+    outings = select(func.count()).select_from(Outing)
+    out_now = await session.scalar(outings.where(mine_out, open_, Outing.expected_return_at >= now))
+    overdue = await session.scalar(outings.where(mine_out, open_, Outing.expected_return_at < now))
     scans = select(func.count()).select_from(GateScan).join(User, User.id == GateScan.user_id)
     accepted = await session.scalar(
         scans.where(mine, GateScan.scanned_at >= since, GateScan.result == ScanResult.ACCEPTED)
@@ -110,8 +112,8 @@ async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[
         select(Outing, User, Gate.name, Hostel.name)
         .join(User, User.id == Outing.student_id)
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
-        .outerjoin(Hostel, Hostel.id == User.hostel_id)
-        .where(staff.covers(User.hostel_id), Outing.returned_at.is_(None))
+        .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
+        .where(staff.covers(Outing.hostel_id), Outing.returned_at.is_(None))
         .order_by(Outing.expected_return_at)
         .limit(500)
     )
@@ -155,9 +157,9 @@ async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
         select(Outing, User, Gate.name, Hostel.name)
         .join(User, User.id == Outing.student_id)
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
-        .outerjoin(Hostel, Hostel.id == User.hostel_id)
+        .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
         .where(
-            staff.covers(User.hostel_id),
+            staff.covers(Outing.hostel_id),
             Outing.expected_return_at >= ist_midnight(now),
             Outing.expected_return_at < now,
             or_(Outing.returned_at.is_(None), Outing.returned_at > Outing.expected_return_at),
@@ -226,7 +228,7 @@ async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: dat
         .join(User, User.id == Outing.student_id)
         .outerjoin(out_gate, out_gate.id == Outing.out_gate_id)
         .outerjoin(in_gate, in_gate.id == Outing.in_gate_id)
-        .where(staff.covers(User.hostel_id), Outing.left_at >= since, Outing.left_at < until)
+        .where(staff.covers(Outing.hostel_id), Outing.left_at >= since, Outing.left_at < until)
         .order_by(Outing.left_at)
     )
     buffer = io.StringIO()
@@ -311,6 +313,7 @@ async def person(session: AsyncSession, u: User) -> AdminUser:
         if u.role == UserRole.WARDEN
         else []
     )
+    home = await session.get(Hostel, u.hostel_id) if u.hostel_id else None
     return AdminUser(
         id=u.id,
         name=u.name,
@@ -319,6 +322,8 @@ async def person(session: AsyncSession, u: User) -> AdminUser:
         role=u.role.value,
         hostel_ids=[i for i, _ in hostels],
         hostels=[n for _, n in hostels],
+        home_hostel_id=u.hostel_id,
+        home_hostel=home.name if home else None,
     )
 
 
@@ -357,23 +362,67 @@ async def students(
             )
         )
     }
-    return [
-        StudentOut(
-            id=u.id,
-            name=u.name,
-            email=u.email,
-            roll_no=u.roll_no,
-            role=u.role.value,
-            hostel_id=u.hostel_id,
-            hostel=hostel,
-            phone=u.phone,
-            emergency_name=u.emergency_name,
-            emergency_relation=u.emergency_relation,
-            emergency_phone=u.emergency_phone,
-            status=status_of(open_outings[u.id], now) if u.id in open_outings else "in",  # type: ignore[arg-type]
-        )
-        for u, hostel in rows
-    ]
+    return [_student_out(u, hostel, open_outings.get(u.id), now) for u, hostel in rows]
+
+
+def _student_out(u: User, hostel: str | None, open_: Outing | None, now: datetime) -> StudentOut:
+    return StudentOut(
+        id=u.id,
+        name=u.name,
+        email=u.email,
+        roll_no=u.roll_no,
+        role=u.role.value,
+        hostel_id=u.hostel_id,
+        hostel=hostel,
+        phone=u.phone,
+        emergency_name=u.emergency_name,
+        emergency_relation=u.emergency_relation,
+        emergency_phone=u.emergency_phone,
+        status=status_of(open_, now) if open_ else "in",  # type: ignore[arg-type]
+    )
+
+
+class MoveRefused(Exception):
+    """A move the hostel office can't make; `status` and the message go back to them."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+async def move_student(
+    session: AsyncSession, staff: Staff, student_id: uuid.UUID, hostel_id: uuid.UUID
+) -> StudentOut:
+    """Moves a student to another hostel. Students choose their hostel only once, so this is how
+    a move happens: staff who look after both the old and the new hostel (a warden: their own
+    hostels; head wardens and admins: any). Records of earlier outings stay with the hostel
+    they happened in (outings.hostel_id)."""
+    student = await session.get(User, student_id, with_for_update=True)
+    if (
+        student is None
+        or student.role != UserRole.STUDENT
+        or not staff.covers_hostel(student.hostel_id)
+    ):
+        raise MoveRefused(404, "No such student")  # someone else's: as if they didn't exist
+    hostel = await session.get(Hostel, hostel_id)
+    if hostel is None:
+        raise MoveRefused(422, "Unknown hostel")
+    if not staff.covers_hostel(hostel_id):
+        raise MoveRefused(403, "You can only move students into hostels you look after")
+    if student.hostel_id != hostel_id:
+        if await rules_in_use(session, student):
+            raise MoveRefused(
+                409,
+                "They're out or have an outing request for today. Move them once they're back "
+                "and today's request is settled.",
+            )
+        student.hostel_id = hostel_id
+        audit(session, staff.user, "student:move", f"{student.email} -> {hostel.name}")
+        await session.commit()
+    open_ = await session.scalar(
+        select(Outing).where(Outing.student_id == student.id, Outing.returned_at.is_(None))
+    )
+    return _student_out(student, hostel.name, open_, datetime.now(UTC))
 
 
 class NoHostels(Exception):

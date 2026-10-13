@@ -359,6 +359,8 @@ class ProfileIn(Input):
 class ProfileOut(BaseModel):
     hostel_id: uuid.UUID | None
     hostel: str | None  # the hostel's name
+    # Chosen once: after that only the hostel office can move the student.
+    hostel_locked: bool = False
     phone: str | None
     emergency_name: str | None
     emergency_relation: str | None
@@ -574,6 +576,8 @@ class AdminUser(BaseModel):
     role: Literal["student", "warden", "head_warden", "admin"]
     hostel_ids: list[uuid.UUID] = []  # a warden's hostels
     hostels: list[str] = []
+    home_hostel_id: uuid.UUID | None = None  # the hostel they live in (students), to move them
+    home_hostel: str | None = None
 
 
 class StudentOut(BaseModel):
@@ -591,6 +595,12 @@ class StudentOut(BaseModel):
     emergency_relation: str | None
     emergency_phone: str | None
     status: Literal["in", "out", "overdue"]  # right now
+
+
+class StudentHostelIn(Input):
+    """The hostel office moving a student (students choose their hostel only once)."""
+
+    hostel_id: uuid.UUID
 
 
 class RoleIn(Input):

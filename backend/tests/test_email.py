@@ -277,8 +277,8 @@ def test_approval_and_decline_read_differently():
 
 def test_escalation_email_points_to_the_page_without_student_details():
     email = escalation_email(to="warden@geu.ac.in", count=2, web_url=WEB)
-    assert email.subject == "Lumiback: 2 late student(s) not answering"
-    assert "2 late students aren't answering" in email.body
+    assert email.subject == "Lumiback: 2 late student(s) need follow-up"
+    assert "2 late students need follow-up" in email.body
     assert "https://lumiback.test/admin/escalations" in email.body
     one = escalation_email(to="warden@geu.ac.in", count=1, web_url=WEB)
-    assert "1 late student isn't answering" in one.body
+    assert "1 late student needs follow-up" in one.body

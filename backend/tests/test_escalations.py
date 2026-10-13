@@ -191,6 +191,28 @@ def test_an_answer_stops_the_escalation(client, db, push, riya, warden):
     assert run_sweep(client, push).escalated == 0
 
 
+@pytest.mark.parametrize("reply", ["on_my_way", "safe"])
+def test_an_answer_holds_off_for_an_hour_then_still_out_is_escalated(
+    client, db, push, riya, warden, reply
+):
+    go_out(client, riya)
+    late_by(db, 31)
+    run_sweep(client, push)
+    r = client.post("/outings/current/late-reply", json={"reply": reply}, headers=riya)
+    assert r.status_code == 200, r.text
+    # 59 minutes after answering: still covered.
+    db.execute(text("UPDATE outings SET late_replied_at = now() - interval '59 minutes'"))
+    db.commit()
+    assert run_sweep(client, push).escalated == 0
+    # An hour after "on my way" and still not back: the office is told after all, once.
+    db.execute(text("UPDATE outings SET late_replied_at = now() - interval '61 minutes'"))
+    db.commit()
+    assert run_sweep(client, push).escalated == 1
+    assert run_sweep(client, push).escalated == 0
+    [escalation] = client.get("/admin/escalations", headers=warden).json()
+    assert escalation["late_reply"] == reply
+
+
 def test_tapping_in_stops_the_escalation(client, db, push, riya):
     go_out(client, riya)
     late_by(db, 41, alerted_minutes_ago=11)

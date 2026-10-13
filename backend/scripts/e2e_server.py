@@ -178,10 +178,11 @@ def seed_role_accounts(conn, rule_set, hostel3) -> None:
     ).scalar_one()
     conn.execute(
         text(
-            "INSERT INTO outings (student_id, destination, left_at, expected_return_at) "
-            "VALUES (:s, 'Paltan Bazaar', now() - interval '1 hour', now() + interval '2 hours')"
+            "INSERT INTO outings (student_id, hostel_id, destination, left_at, expected_return_at) "
+            "VALUES (:s, :h, 'Paltan Bazaar', now() - interval '1 hour', "
+            "now() + interval '2 hours')"
         ),
-        {"s": student},
+        {"s": student, "h": hostel5},
     )
 
 
@@ -227,16 +228,23 @@ def seed_demo(conn, hostel, warden) -> None:
             )
             outing = conn.execute(
                 text(
-                    "INSERT INTO outings (student_id, destination, left_at, expected_return_at, "
-                    "returned_at, out_via, out_gate_id, in_via, in_gate_id, overdue_notified_at) "
-                    "VALUES (:s, 'Rajpur Road', now() - interval '3 hours', "
+                    "INSERT INTO outings (student_id, hostel_id, destination, left_at, "
+                    "expected_return_at, returned_at, out_via, out_gate_id, in_via, in_gate_id, "
+                    "overdue_notified_at) "
+                    "VALUES (:s, :hostel, 'Rajpur Road', now() - interval '3 hours', "
                     "now() + CAST(:due AS interval), "
                     "CASE WHEN :back THEN now() - interval '2 hours 10 minutes' END, "
                     "'gate', :g, CASE WHEN :back THEN 'gate' END, CASE WHEN :back THEN "
                     "CAST(:g AS uuid) END, "
                     "CASE WHEN :alerted THEN now() - interval '22 minutes' END) RETURNING id"
                 ),
-                {**params, "due": due, "back": state == "back", "alerted": state == "escalated"},
+                {
+                    **params,
+                    "hostel": hostel,
+                    "due": due,
+                    "back": state == "back",
+                    "alerted": state == "escalated",
+                },
             ).scalar_one()
             conn.execute(
                 text(

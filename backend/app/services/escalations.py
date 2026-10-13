@@ -48,6 +48,10 @@ from app.services.staff import EVERY_HOSTEL, Staff
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
+# An answer ("on my way", "I'm safe") holds the escalation off for this long. A student who
+# answered and still isn't back after it is escalated all the same: one reply mustn't silence the
+# hostel office for the whole night.
+REPLY_COVERS = timedelta(minutes=60)
 # One access-log entry per admin and share in this time: reopening the page isn't a new look.
 ADMIN_VIEW_GAP = timedelta(minutes=10)
 
@@ -80,25 +84,29 @@ async def send_alerts(session: AsyncSession, now: datetime) -> list[tuple[uuid.U
 
 
 async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UUID | None]:
-    """Opens an escalation for each unanswered alert (once per outing); returns the student's
-    hostel for each one opened (None: no hostel chosen)."""
-    unanswered = select(Outing.id).where(
+    """Opens an escalation (once per outing) for each alert left unanswered, and for each
+    student who answered but still isn't back an hour later; returns the student's hostel for
+    each one opened (None: no hostel chosen)."""
+    unanswered = and_(
+        Outing.late_reply.is_(None), Outing.overdue_notified_at < now - ESCALATE_AFTER
+    )
+    answered_but_still_out = and_(
+        Outing.late_reply.is_not(None), Outing.late_replied_at < now - REPLY_COVERS
+    )
+    due = select(Outing.id).where(
         Outing.returned_at.is_(None),
-        Outing.late_reply.is_(None),
-        Outing.overdue_notified_at < now - ESCALATE_AFTER,
+        Outing.overdue_notified_at.is_not(None),
+        or_(unanswered, answered_but_still_out),
         ~select(Escalation.id).where(Escalation.outing_id == Outing.id).exists(),
     )
     rows = await session.execute(
-        insert(Escalation).from_select(["outing_id"], unanswered).returning(Escalation.outing_id)
+        insert(Escalation).from_select(["outing_id"], due).returning(Escalation.outing_id)
     )
     outing_ids = list(rows.scalars())
     if not outing_ids:
         return []
-    hostels = await session.scalars(
-        select(User.hostel_id)
-        .join(Outing, Outing.student_id == User.id)
-        .where(Outing.id.in_(outing_ids))
-    )
+    # The hostel the student was in when they went out: its wardens are the ones to tell.
+    hostels = await session.scalars(select(Outing.hostel_id).where(Outing.id.in_(outing_ids)))
     return list(hostels)
 
 
@@ -245,7 +253,8 @@ class _Row:
 
 async def _out(session: AsyncSession, row: _Row, admin: User | None) -> EscalationOut:
     e, o, s = row.escalation, row.outing, row.student
-    hostel = await session.get(Hostel, s.hostel_id) if s.hostel_id else None
+    # The hostel (and warden) responsible for this outing: the one the student was in then.
+    hostel = await session.get(Hostel, o.hostel_id) if o.hostel_id else None
     request = await session.get(OutingRequest, o.request_id) if o.request_id else None
     resolver = await session.get(User, e.resolved_by) if e.resolved_by else None
     now = datetime.now(UTC)
@@ -292,7 +301,7 @@ async def listing(session: AsyncSession, staff: Staff, *, open_only: bool) -> li
         select(Escalation, Outing, User)
         .join(Outing, Outing.id == Escalation.outing_id)
         .join(User, User.id == Outing.student_id)
-        .where(staff.covers(User.hostel_id))
+        .where(staff.covers(Outing.hostel_id))
         .order_by(Escalation.created_at.desc())
         .limit(100)
     )
@@ -310,11 +319,9 @@ async def resolve(
     e = await session.get(Escalation, escalation_id, with_for_update=True)
     if e is None:
         raise NotFound
-    student = await session.scalar(
-        select(User).join(Outing, Outing.student_id == User.id).where(Outing.id == e.outing_id)
-    )
-    if student is None or not staff.covers_student(student):
-        raise NotFound  # another hostel's student: as if it didn't exist
+    outing = await session.get(Outing, e.outing_id)
+    if outing is None or not staff.covers_hostel(outing.hostel_id):
+        raise NotFound  # another hostel's outing: as if it didn't exist
     if e.resolved_at is None:
         e.resolved_at = datetime.now(UTC)
         e.resolved_by = staff.user.id

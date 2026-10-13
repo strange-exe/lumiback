@@ -202,6 +202,10 @@ class Outing(Base):
             postgresql_where=text("returned_at IS NULL"),
         ),
         Index("ix_outings_student_left", "student_id", "left_at"),
+        # The hostel office's register, CSV and escalations, by the hostel at the time.
+        Index("ix_outings_hostel_left", "hostel_id", "left_at"),
+        # "Was this approval used?" (requests queue, profile checks, the sweep).
+        Index("ix_outings_request_id", "request_id"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -225,6 +229,11 @@ class Outing(Base):
     # The approved weekend/holiday request this outing was allowed by.
     request_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("outing_requests.id", ondelete="SET NULL")
+    )
+    # The student's hostel when they went out: records stay with that hostel's office (and its
+    # wardens) even if the student moves later. None: no hostel chosen, or the hostel was deleted.
+    hostel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("hostels.id", ondelete="SET NULL")
     )
     # Late follow-up: the "are you OK?" alert goes out at 30 min late (overdue_notified_at);
     # the student's answer, if any. No answer within minutes and it's escalated.
@@ -324,6 +333,7 @@ class OutingRequest(Base):
             postgresql_where=text("status IN ('pending', 'approved')"),
         ),
         Index("ix_outing_requests_status_created", "status", "created_at"),
+        Index("ix_outing_requests_day", "day"),  # the sweep clears past days' requests
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -678,6 +688,7 @@ class AccessLog(Base):
     __tablename__ = "access_log"
     __table_args__ = (
         Index("ix_access_log_session_viewed", "session_id", "viewed_at"),
+        Index("ix_access_log_viewed_at", "viewed_at"),  # the sweep deletes old rows by age
         CheckConstraint("viewer_id IS NOT NULL OR channel = 'admin'", name="who_viewed"),
     )
 

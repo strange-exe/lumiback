@@ -1,16 +1,20 @@
 """The student's own profile details that the outing rules need: hostel and contacts."""
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Hostel, Outing, OutingRequest, RequestStatus, RuleSet, User
+from app.models import Hostel, RuleSet, User, UserRole
 from app.schemas import HostelChoiceOut, ProfileIn, ProfileOut
-from app.services import outings, rules
+from app.services import outings
 
 router = APIRouter(tags=["profile"])
+
+
+def hostel_locked(user: User) -> bool:
+    """A student picks their hostel once; after that only the hostel office moves them, so
+    nobody can switch to a hostel with easier rules or a different warden on their own."""
+    return user.role == UserRole.STUDENT and user.hostel_id is not None
 
 
 async def _out(session, user: User) -> ProfileOut:
@@ -18,33 +22,11 @@ async def _out(session, user: User) -> ProfileOut:
     return ProfileOut(
         hostel_id=user.hostel_id,
         hostel=hostel.name if hostel else None,
+        hostel_locked=hostel_locked(user),
         phone=user.phone,
         emergency_name=user.emergency_name,
         emergency_relation=user.emergency_relation,
         emergency_phone=user.emergency_phone,
-    )
-
-
-async def _rules_in_use(session, user: User) -> bool:
-    """Out now, or a live request today (waiting, or approved and not yet used): the hostel's
-    rules (return time, maximum, the office that approved it) already apply, so switching
-    hostels would change them midway. A used approval is spent once its outing is over."""
-    if await outings.current(session, user.id) is not None:
-        return True
-    used = exists().where(Outing.request_id == OutingRequest.id)
-    return bool(
-        await session.scalar(
-            select(
-                exists().where(
-                    OutingRequest.student_id == user.id,
-                    OutingRequest.day == rules.ist_date(datetime.now(UTC)),
-                    or_(
-                        OutingRequest.status == RequestStatus.PENDING,
-                        and_(OutingRequest.status == RequestStatus.APPROVED, ~used),
-                    ),
-                )
-            )
-        )
     )
 
 
@@ -68,9 +50,14 @@ async def get_profile(me: CurrentUser, session: SessionDep) -> ProfileOut:
 @router.patch("/profile")
 async def update_profile(body: ProfileIn, me: CurrentUser, session: SessionDep) -> ProfileOut:
     if "hostel_id" in body.model_fields_set and body.hostel_id != me.hostel_id:
+        if hostel_locked(me):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail="Your hostel is set. Ask the hostel office if you've moved.",
+            )
         if body.hostel_id is not None and await session.get(Hostel, body.hostel_id) is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown hostel")
-        if await _rules_in_use(session, me):
+        if await outings.rules_in_use(session, me):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 detail="You can't change your hostel while you're out or have an outing request "

@@ -9,11 +9,11 @@ set, overdue if now is past expected_return_at, otherwise out.
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Outing, RequestStatus, User, Via
+from app.models import Outing, OutingRequest, RequestStatus, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
 from app.services import requests, rules
 
@@ -109,6 +109,7 @@ async def check_out(
         out_via=Via.GATE if gate_id else Via.SELF,
         out_gate_id=gate_id,
         request_id=request.id if request else None,
+        hostel_id=student.hostel_id,  # the hostel now: the record stays with it if they move
     )
     session.add(outing)
     try:
@@ -129,6 +130,29 @@ async def current(session: AsyncSession, student_id: uuid.UUID) -> Outing | None
             select(Outing).where(Outing.student_id == student_id, Outing.returned_at.is_(None))
         )
     ).scalar_one_or_none()
+
+
+async def rules_in_use(session: AsyncSession, user: User) -> bool:
+    """Out now, or a live request today (waiting, or approved and not yet used): the hostel's
+    rules (return time, maximum, the office that approved it) already apply, so moving hostels
+    would change them midway. A used approval is spent once its outing is over."""
+    if await current(session, user.id) is not None:
+        return True
+    used = exists().where(Outing.request_id == OutingRequest.id)
+    return bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    OutingRequest.student_id == user.id,
+                    OutingRequest.day == rules.ist_date(datetime.now(UTC)),
+                    or_(
+                        OutingRequest.status == RequestStatus.PENDING,
+                        and_(OutingRequest.status == RequestStatus.APPROVED, ~used),
+                    ),
+                )
+            )
+        )
+    )
 
 
 async def mark_return(
