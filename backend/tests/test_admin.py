@@ -181,7 +181,14 @@ def test_csv_export(client, db, admin, riya):
 
 
 @pytest.mark.parametrize(
-    ("start", "end"), [("2026-10-02", "2026-10-01"), ("2026-01-01", "2026-06-01")]
+    ("start", "end"),
+    [
+        ("2026-10-02", "2026-10-01"),
+        ("2026-01-01", "2026-06-01"),
+        # The ends of the calendar used to overflow into a 500.
+        ("0001-01-01", "0001-01-02"),
+        ("9999-12-30", "9999-12-31"),
+    ],
 )
 def test_csv_export_range_is_bounded(client, admin, start, end):
     assert client.get(f"/admin/outings.csv?from={start}&to={end}", headers=admin).status_code == 422

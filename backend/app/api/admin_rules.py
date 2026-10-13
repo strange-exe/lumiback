@@ -11,7 +11,17 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import PushDep, RulesUser, SessionDep, StaffUser
 from app.email_templates import request_decision_email
-from app.models import DayRule, DayType, Holiday, Hostel, OutingRequest, RuleSet, User
+from app.models import (
+    DayRule,
+    DayType,
+    Holiday,
+    Hostel,
+    OutingRequest,
+    RuleSet,
+    User,
+    UserRole,
+    WardenHostel,
+)
 from app.push import PushMessage
 from app.schemas import (
     AdminRequestOut,
@@ -377,6 +387,19 @@ async def delete_hostel(
     hostel = await session.get(Hostel, hostel_id)
     if hostel is None:
         raise NOT_FOUND
+    # Deleting a hostel also drops its wardens' assignments (the rows cascade), and assigning
+    # wardens is an admin's job: a head warden must ask an admin to move the wardens first.
+    if me.role != UserRole.ADMIN:
+        wardens = await session.scalar(
+            select(func.count())
+            .select_from(WardenHostel)
+            .where(WardenHostel.hostel_id == hostel_id)
+        )
+        if wardens:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail="Wardens look after this hostel. Ask an admin to move them first.",
+            )
     await session.delete(hostel)
     audit_svc.audit(session, me, "hostel:delete", hostel.name)
     await session.commit()

@@ -67,6 +67,9 @@ async def outings_csv(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Choose a range of at most {svc.MAX_EXPORT_DAYS} days",
         )
+    # Dates at the ends of the calendar overflow when converted to IST instants (a 500).
+    if start.year < 2000 or end.year > 2999:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose real dates")
     body = await svc.outings_csv(session, staff, start, end)
     return Response(
         content=body,

@@ -391,6 +391,21 @@ def test_gates_people_and_settings_stay_with_admins(client, head, method, path, 
     assert r.status_code == 403 and r.json()["detail"] == "Admins only"
 
 
+def test_a_head_warden_cant_drop_wardens_by_deleting_their_hostel(
+    client, admin, head, warden, hostels
+):
+    # Hostel A has a warden: deleting it would silently remove that assignment (admin-only).
+    r = client.delete(f"/admin/hostels/{hostels['A']}", headers=head)
+    assert r.status_code == 409, r.text
+    assert any(h["id"] == hostels["A"] for h in client.get("/admin/hostels", headers=head).json())
+    assert {h["name"] for h in client.get("/admin/my-hostels", headers=warden).json()} == {
+        "Hostel A"
+    }
+    # A hostel nobody looks after can go, and an admin can still delete either.
+    assert client.delete(f"/admin/hostels/{hostels['B']}", headers=head).status_code == 200
+    assert client.delete(f"/admin/hostels/{hostels['A']}", headers=admin).status_code == 200
+
+
 def test_wardens_cant_edit_rules(client, warden):
     r = client.put(
         "/admin/holidays/2026-12-25", json={"day": "2026-12-25", "name": "X"}, headers=warden
