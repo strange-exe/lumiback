@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
+import { MoveForm } from "@/features/admin/components/MoveForm";
 import { RoleForm } from "@/features/admin/components/RoleForm";
 import { requireAdmin } from "@/lib/session";
 import { ROLE_LABEL } from "@/lib/types";
@@ -85,7 +86,10 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                     <p className="text-sm text-muted">Warden of {person.hostels.join(", ")}</p>
                   )}
                 </div>
-                <RoleForm person={person} hostels={hostels} isMe={person.id === user.id} />
+                <div className="flex min-w-0 flex-col gap-4">
+                  {person.role === "student" && <MoveForm person={person} hostels={hostels} />}
+                  <RoleForm person={person} hostels={hostels} isMe={person.id === user.id} />
+                </div>
               </li>
             ))}
           </ul>

@@ -114,6 +114,24 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   return { error: null, notice: "Saved." };
 }
 
+/** Students choose their hostel once; the office moves them after that. */
+export async function moveStudent(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "user_id");
+  const hostelId = text(form, "hostel_id");
+  if (!hostelId) return { error: "Choose the hostel to move them to." };
+  const result = await attempt(() =>
+    callBackend(`/admin/students/${encodeURIComponent(id)}/hostel`, {
+      method: "POST",
+      token,
+      body: { hostel_id: hostelId },
+    }),
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  return { error: null, notice: "Moved." };
+}
+
 export async function setRole(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const id = text(form, "user_id");

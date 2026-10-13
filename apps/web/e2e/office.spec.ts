@@ -81,3 +81,28 @@ for (const { role, state, pages } of ROLES) {
     }
   });
 }
+
+test.describe("moving students between hostels", () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test("the office moves a student, but not while they're out", async ({ page }) => {
+    // Students pick their hostel once; after that the office moves them.
+    await page.goto("/admin/people?q=sara");
+    const sara = page.getByRole("listitem").filter({ hasText: "Sara Khan" });
+    await sara.getByRole("combobox", { name: "Hostel: Hostel 3" }).selectOption("Hostel 5");
+    await sara.getByRole("button", { name: "Move" }).click();
+    await expect(sara).toContainText("Moved.");
+    await expect(sara.getByRole("combobox", { name: "Hostel: Hostel 5" })).toBeVisible();
+    // Back where she was, so the screenshots above stay the same on the next run.
+    await sara.getByRole("combobox", { name: "Hostel: Hostel 5" }).selectOption("Hostel 3");
+    await sara.getByRole("button", { name: "Move" }).click();
+    await expect(sara.getByRole("combobox", { name: "Hostel: Hostel 3" })).toBeVisible();
+
+    // Neha is out: her hostel's rules apply to this outing, so she can't be moved yet.
+    await page.goto("/admin/people?q=neha");
+    const neha = page.getByRole("listitem").filter({ hasText: "Neha Rawat" });
+    await neha.getByRole("combobox", { name: "Hostel: Hostel 5" }).selectOption("Hostel 3");
+    await neha.getByRole("button", { name: "Move" }).click();
+    await expect(neha).toContainText("They're out or have an outing request for today.");
+  });
+});

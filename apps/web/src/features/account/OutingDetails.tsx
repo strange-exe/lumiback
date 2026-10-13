@@ -39,11 +39,12 @@ export function OutingDetails({
 }): ReactNode {
   const [hostelState, hostelAction] = useActionState(saveHostel, INITIAL);
   const [contactState, contactAction] = useActionState(saveContacts, INITIAL);
-  const saved = (name: keyof Profile): string => {
+  type Contact = "phone" | "emergency_name" | "emergency_relation" | "emergency_phone";
+  const saved = (name: Contact): string => {
     const v = profile[name] ?? "";
     return name.endsWith("phone") && v ? formatPhone(v) : v;
   };
-  const value = (name: keyof Profile): string => contactState.fields?.[name] ?? saved(name);
+  const value = (name: Contact): string => contactState.fields?.[name] ?? saved(name);
   return (
     <section aria-labelledby="outing-details-heading" className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
@@ -57,37 +58,48 @@ export function OutingDetails({
         </p>
       </div>
 
-      <form
-        action={hostelAction}
-        className="flex flex-col gap-3 rounded-sheet border border-line bg-surface p-5"
-      >
-        <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
-          Hostel
-          <select
-            name="hostel_id"
-            defaultValue={profile.hostel_id ?? ""}
-            className="min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink focus:border-accent focus:outline-none"
-          >
-            <option value="">Choose your hostel</option>
-            {/* Grouped by the rules they follow: "Boys' hostels", "Girls' hostels". */}
-            {groupBy(hostels).map(([group, list]) => (
-              <optgroup key={group} label={group}>
-                {list.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton variant="secondary" pendingLabel="Saving…">
-            Save hostel
-          </SubmitButton>
-          <Notice state={hostelState} />
+      {profile.hostel_locked ? (
+        <div className="flex flex-col gap-1 rounded-sheet border border-line bg-surface p-5">
+          <p className="text-sm font-bold text-ink">Hostel</p>
+          <p className="text-ink">{profile.hostel}</p>
+          <p className="text-sm text-muted">Moved? Ask the hostel office to change it.</p>
         </div>
-      </form>
+      ) : (
+        <form
+          action={hostelAction}
+          className="flex flex-col gap-3 rounded-sheet border border-line bg-surface p-5"
+        >
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            Hostel
+            <select
+              name="hostel_id"
+              defaultValue={profile.hostel_id ?? ""}
+              className="min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink focus:border-accent focus:outline-none"
+            >
+              <option value="">Choose your hostel</option>
+              {/* Grouped by the rules they follow: "Boys' hostels", "Girls' hostels". */}
+              {groupBy(hostels).map(([group, list]) => (
+                <optgroup key={group} label={group}>
+                  {list.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <p className="text-sm text-muted">
+            You choose once. After that, only the hostel office can change it.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <SubmitButton variant="secondary" pendingLabel="Saving…">
+              Save hostel
+            </SubmitButton>
+            <Notice state={hostelState} />
+          </div>
+        </form>
+      )}
 
       <form
         action={contactAction}

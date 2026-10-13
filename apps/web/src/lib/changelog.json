@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.6.0",
+    "date": "2026-10-13",
+    "title": "Hostel moves and late follow-up",
+    "points": [
+      "You choose your hostel once. If you move, the hostel office changes it for you.",
+      "Wardens, head wardens and admins can move a student to another of their hostels from Students. Earlier outings stay with the hostel they were taken from.",
+      "Answering \"On my way\" or \"I'm safe\" holds off the hostel office for an hour. If you're still not back after that, they're told so they can check on you."
+    ]
+  },
+  {
     "version": "1.5.2",
     "date": "2026-10-13",
     "title": "Steadier updates and sign-in",

@@ -90,6 +90,8 @@ export interface OutingRequest {
 export interface Profile {
   hostel_id: string | null;
   hostel: string | null;
+  /** Chosen once; after that only the hostel office can move the student. */
+  hostel_locked?: boolean;
   phone: string | null;
   emergency_name: string | null;
   emergency_relation: string | null;
@@ -383,6 +385,9 @@ export interface AdminUser {
   /** A warden's hostels. */
   hostel_ids: string[];
   hostels: string[];
+  /** The hostel they live in (students), so the office can move them. */
+  home_hostel_id?: string | null;
+  home_hostel?: string | null;
 }
 
 /** What a gate kiosk shows (GET /kiosk/qr). */

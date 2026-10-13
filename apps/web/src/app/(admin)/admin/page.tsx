@@ -240,7 +240,7 @@ function NeedsAction({
           href="/admin/escalations"
           className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-danger px-4 font-bold text-surface hover:brightness-110"
         >
-          {escalations} late {escalations === 1 ? "student isn't" : "students aren't"} answering
+          {escalations} late {escalations === 1 ? "student needs" : "students need"} follow-up
           <span aria-hidden="true">→</span>
         </Link>
       ) : null}

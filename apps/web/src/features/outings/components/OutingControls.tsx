@@ -27,8 +27,9 @@ export function LateReply(): ReactNode {
   return (
     <form action={action} className="flex flex-col gap-3">
       <p className="text-ink">
-        At 30 minutes late we ask if you&apos;re OK; answering now stops the hostel office being
-        told. If they are told, they may call you or your emergency contact.
+        At 30 minutes late we ask if you&apos;re OK. Answering holds off the hostel office for an
+        hour; if you&apos;re still not back then, they&apos;re told and may call you or your
+        emergency contact.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <SubmitButton name="reply" value="on_my_way" variant="secondary" pendingLabel="Sending…">
