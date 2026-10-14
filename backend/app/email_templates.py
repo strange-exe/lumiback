@@ -395,7 +395,8 @@ def request_decision_email(
 
 
 def escalation_notice(*, to: str, count: int, web_url: str) -> Notice:
-    """To admins. Names and numbers stay behind the sign-in: the email only points there."""
+    """To the hostel office (admins, head wardens, the hostel's wardens). Names and numbers stay
+    behind the sign-in: the email only points there."""
     students = "1 late student needs" if count == 1 else f"{count} late students need"
     return Notice(
         kind="escalation",
@@ -413,7 +414,8 @@ def escalation_notice(*, to: str, count: int, web_url: str) -> Notice:
         ),
         action=("Open Escalations", f"{web_url}/admin/escalations"),
         note=None,
-        reason="you're a Lumiback admin",
+        # Admins, head wardens and the student's hostel wardens all get it: say what's true of all.
+        reason="you're on the Lumiback hostel office for this student",
     )
 
 

@@ -282,3 +282,6 @@ def test_escalation_email_points_to_the_page_without_student_details():
     assert "https://lumiback.test/admin/escalations" in email.body
     one = escalation_email(to="warden@geu.ac.in", count=1, web_url=WEB)
     assert "1 late student needs follow-up" in one.body
+    # Wardens and head wardens get it too: it mustn't call everyone an admin.
+    assert "Lumiback admin" not in email.body
+    assert "hostel office" in email.body
