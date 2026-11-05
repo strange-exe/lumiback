@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import json
 
 import pytest
 from sqlalchemy import text
@@ -106,12 +107,17 @@ def test_guest_must_give_a_label(client, riya, live):
         "Mom" + chr(0x202E),  # a bidi override
         chr(0x3164),  # a Hangul filler: looks blank
         ".",
+        "Sunita (emergency contact)",  # the safe-return contact's own label
+        "Ravi (Hostel Office)",  # a warden's label in the access log
+        chr(0xD800) + "Mom",  # a lone surrogate (a cut emoji)
     ],
 )
 def test_guest_label_must_be_a_plain_visible_name(client, riya, live, label):
     """The label goes into the sharer's push title and viewer list, like a person's name."""
     code = new_code(client, riya, live["id"])
-    r = client.post("/codes/redeem", json={"code": code, "guest_label": label})
+    # ASCII-escaped JSON, as a client sends it: a lone surrogate can't be UTF-8 encoded.
+    body = json.dumps({"code": code, "guest_label": label})
+    r = client.post("/codes/redeem", content=body, headers={"Content-Type": "application/json"})
     assert r.status_code == 422, r.text
     assert (
         client.post("/codes/redeem", json={"code": code, "guest_label": "Mom"}).status_code == 200

@@ -33,7 +33,8 @@ def _no_control_characters(value: object) -> object:
     anywhere, even where stripping would hide them. ZWNJ and ZWJ are the exception: Indic
     scripts spell real names with them."""
     if isinstance(value, str) and any(
-        unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") and c not in _NAME_JOINERS
+        # Cs: a lone surrogate (half of a cut emoji), never valid text.
+        unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") and c not in _NAME_JOINERS
         for c in value
     ):
         raise ValueError("must not contain control or invisible formatting characters")
@@ -265,10 +266,22 @@ class CodeOut(BaseModel):
     expires_at: datetime
 
 
+# Labels the server gives other viewers (app/services/safe_return.py, locations.py).
+_RESERVED_LABEL_ENDINGS = ("(emergency contact)", "(hostel office)")
+
+
+def _not_a_reserved_label(value: str) -> str:
+    """A guest can't label themselves like the safe-return contact or a warden."""
+    if value.casefold().endswith(_RESERVED_LABEL_ENDINGS):
+        raise ValueError("can't end like a label Lumiback gives other viewers")
+    return value
+
+
 # Goes into the sharer's push title and viewer list: the same checks as Name.
 GuestLabel = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=40),
+    AfterValidator(_not_a_reserved_label),
     AfterValidator(_has_a_letter_or_digit),
     BeforeValidator(_no_control_characters),
 ]
