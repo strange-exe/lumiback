@@ -8,6 +8,7 @@ import {
   ACCESS_COOKIE,
   ACCESS_MAX_AGE,
   COOKIE_BASE,
+  isGuestCookie,
   REFRESH_COOKIE,
   REFRESH_MAX_AGE,
 } from "@/lib/cookies";
@@ -20,10 +21,15 @@ export async function storeTokens(tokens: TokenPair): Promise<void> {
   jar.set(REFRESH_COOKIE, tokens.refresh_token, { ...COOKIE_BASE, maxAge: REFRESH_MAX_AGE });
 }
 
+/**
+ * Sign-out and account deletion: the login, and every guest pass this browser holds, so a
+ * verified safe-return or code-joined pass doesn't linger on a shared computer.
+ */
 export async function clearTokens(): Promise<void> {
   const jar = await cookies();
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
+  for (const { name } of jar.getAll()) if (isGuestCookie(name)) jar.delete(name);
 }
 
 export async function accessToken(): Promise<string | null> {

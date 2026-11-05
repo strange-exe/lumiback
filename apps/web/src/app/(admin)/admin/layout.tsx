@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { signOut } from "@/features/auth/actions";
+import { SignOutButton } from "@/features/auth/components/SignOutButton";
 import { AdminNav } from "@/features/admin/components/AdminNav";
 import { requireStaff } from "@/lib/session";
 import { ROLE_LABEL } from "@/lib/types";
@@ -38,14 +38,7 @@ export default async function AdminLayout({
             >
               My app
             </Link>
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="min-h-11 rounded-control px-3 font-bold text-accent hover:bg-accent-soft"
-              >
-                Sign out
-              </button>
-            </form>
+            <SignOutButton className="min-h-11 rounded-control px-3 font-bold text-accent hover:bg-accent-soft" />
           </div>
         </div>
         <AdminNav role={user.role} />

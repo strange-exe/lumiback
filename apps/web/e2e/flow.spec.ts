@@ -78,6 +78,23 @@ test.describe("signed out", () => {
   });
 });
 
+test.describe("signed out, without JavaScript", () => {
+  test.use({ storageState: SIGNED_OUT, javaScriptEnabled: false });
+
+  test("sign out still works before (or without) the page's scripts", async ({ page, context }) => {
+    // signIn() waits for client-side state; without scripts, the forms post and redirect.
+    await page.goto("/sign-in");
+    await page.getByLabel("University email").fill(STUDENT.email);
+    await page.getByLabel("Password", { exact: true }).fill(STUDENT.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/home$/);
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL("http://localhost:3000/");
+    const names = (await context.cookies()).map((c) => c.name);
+    expect(names).not.toContain("outing_rt");
+  });
+});
+
 test("check out, see the return arc, come back, find it in history", async ({ page }) => {
   await checkOut(page, "Paltan Bazaar");
 

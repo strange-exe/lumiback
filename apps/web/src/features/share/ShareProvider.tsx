@@ -13,7 +13,12 @@ import {
 } from "react";
 
 import { startShare, stopShare } from "@/features/share/actions";
-import { createSendHere, startTracking } from "@/features/share/send-here";
+import {
+  createSendHere,
+  shareToStopOnSignOut,
+  startTracking,
+  syncChoice,
+} from "@/features/share/send-here";
 import type { ShareSession } from "@/lib/types";
 
 export interface Fix {
@@ -40,6 +45,13 @@ interface ShareContextValue {
   sendingHere: boolean;
   /** Start sending the running share's location from this tab. Only ever from a tap. */
   sendFromHere(): void;
+  /**
+   * This tab sends for `sessionId` once the layout shows it: for a share this tab's own action
+   * just created (a check-out with safe return), before the provider has received it.
+   */
+  sendFor(sessionId: string): void;
+  /** Stop sending from this tab, and stop the tab share it sends. Never throws. */
+  beforeSignOut(): Promise<void>;
   start(minutes: number): Promise<string | null>;
   stop(): Promise<string | null>;
   /** Replace the session after an approve/remove (the action returns the fresh view). */
@@ -105,7 +117,8 @@ function firstPosition(): Promise<GeolocationPosition> {
  * Runs a live tab share for as long as the student stays in the app, whichever page they're on.
  * Lives in the root layout, which stays mounted across in-app navigation.
  *
- * Sending: only from a tab that chose to. The tab that taps Start sends; any other tab that
+ * Sending: only from a tab that chose to. The tab that taps Start (or checks out with safe
+ * return) sends; any other tab that
  * loads a running share (the outing's safe return, or a share from another tab) only shows it
  * until the student taps "Share location from this browser" there. Until then nothing here
  * calls the Geolocation API.
@@ -152,6 +165,10 @@ export function ShareProvider({
       setProblem(null);
     }
   }
+
+  // No share shown any more (signed out, account deleted): forget this tab's choice, so a later
+  // sign-in here never resumes sending without a new tap.
+  useEffect(() => syncChoice(sendHere, seenInitial), [seenInitial]);
 
   const end = useCallback((reason: string) => {
     sendHere.set(null);
@@ -362,6 +379,23 @@ export function ShareProvider({
     sendHere.set(sessionId);
   }, [sessionId]);
 
+  const sendFor = useCallback((id: string) => {
+    setProblem(null);
+    sendHere.set(id);
+  }, []);
+
+  const beforeSignOut = useCallback(async (): Promise<void> => {
+    const id = shareToStopOnSignOut(session, sendingHere);
+    sendHere.set(null); // stop reading location now, whatever happens next
+    if (!id) return;
+    // Best effort: the server's sign-out stops a running tab share too, so a slow or failed
+    // stop here must never keep the student signed in.
+    await Promise.race([
+      stopShare(id).catch(() => null),
+      new Promise((resolve) => window.setTimeout(resolve, 4_000)),
+    ]);
+  }, [session, sendingHere]);
+
   const value = useMemo<ShareContextValue>(
     () => ({
       session,
@@ -373,12 +407,16 @@ export function ShareProvider({
       screenAwake,
       sendingHere,
       sendFromHere,
+      sendFor,
+      beforeSignOut,
       start,
       stop,
       update,
       retry,
     }),
     [
+      sendFor,
+      beforeSignOut,
       session,
       starting,
       fix,

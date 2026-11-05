@@ -2,7 +2,9 @@
  * Sending location from a browser is an explicit choice made in that browser tab. A signed-in
  * tab that merely loads a running share (an outing's safe return, or a share started in another
  * tab) shows it, but never reads or sends the location until someone taps "Share location from
- * this browser" there (or starts the share there). Pure (no React) so it runs under `node --test`.
+ * this browser" there (or starts the share there, or checks out with safe return there; see
+ * outings/safe-return.ts). The choice is dropped on sign-out. Pure (no React) so it runs under
+ * `node --test`.
  */
 
 export interface StorageLike {
@@ -64,6 +66,27 @@ export function createSendHere(storage: () => StorageLike | null): SendHere {
       return () => void listeners.delete(listener);
     },
   };
+}
+
+/**
+ * Keep the tab's choice in step with the share the layout shows. Once none is shown (signed out,
+ * account deleted) the choice is dropped, so signing in again in this tab, or as someone else on
+ * a shared browser, never resumes sending without a new tap. Notifies only on a real change.
+ */
+export function syncChoice(store: SendHere, shownShareId: string | null): void {
+  if (shownShareId === null && store.get() !== null) store.set(null);
+}
+
+/**
+ * Signing out of the tab that sends a tab share stops it first: nobody is left signed in here to
+ * stop it. A share another tab sends keeps running (that tab can stop it), and a safe-return share
+ * belongs to the outing and ends when the student is back. Returns the share to stop, or null.
+ */
+export function shareToStopOnSignOut(
+  session: { id: string; source: string } | null,
+  sendingHere: boolean,
+): string | null {
+  return session && sendingHere && session.source === "tab_live" ? session.id : null;
 }
 
 export interface GeoLike {

@@ -2,7 +2,21 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
-import { cookieBase } from "./cookies.ts";
+import {
+  ACCESS_COOKIE,
+  cookieBase,
+  guestCookie,
+  isGuestCookie,
+  REFRESH_COOKIE,
+} from "./cookies.ts";
+
+test("sign-out can find every guest pass this browser holds", () => {
+  assert.equal(isGuestCookie(guestCookie("5f0c2a1e-0000-4000-8000-000000000001")), true);
+  assert.equal(isGuestCookie(ACCESS_COOKIE), false);
+  assert.equal(isGuestCookie(REFRESH_COOKIE), false);
+  assert.equal(isGuestCookie("outing_guest_"), false); // no session id: not one of ours
+  assert.equal(isGuestCookie("other_outing_guest_x"), false);
+});
 
 /** COOKIE_BASE as a fresh Node process sees it with this NODE_ENV (it is read at import). */
 function secureUnder(nodeEnv: "production" | "development"): string {

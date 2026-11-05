@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { safeReturnShareToSend } from "@/features/outings/safe-return";
 import { ApiError, callBackend } from "@/lib/backend";
 import { accessToken } from "@/lib/session";
 import type { FormState, Outing } from "@/lib/types";
@@ -39,8 +40,14 @@ async function run(
   return { error: null, notice };
 }
 
+/** What a check-out hands back to its form. */
+export interface CheckOutState extends FormState {
+  /** The safe-return share the submitting tab now sends location for (see safe-return.ts). */
+  sendFor?: string | null;
+}
+
 /** The hostel's rules set the return time; the server refuses outside today's hours. */
-export async function checkOut(_: FormState, form: FormData): Promise<FormState> {
+export async function checkOut(_: CheckOutState, form: FormData): Promise<CheckOutState> {
   const token = await tokenOrSignIn();
   const destination = text(form, "destination");
   const safeReturn = form.get("safe_return") === "on";
@@ -60,7 +67,8 @@ export async function checkOut(_: FormState, form: FormData): Promise<FormState>
   if (!state.error && safeReturn && !(outing as Outing | null)?.safe_return_session_id) {
     redirect("/home?safe_return=off");
   }
-  return state;
+  if (state.error) return state;
+  return { ...state, sendFor: safeReturnShareToSend(safeReturn, outing as Outing | null) };
 }
 
 export async function markReturn(_: FormState): Promise<FormState> {

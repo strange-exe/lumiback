@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createSendHere, startTracking, type GeoLike, type StorageLike } from "./send-here.ts";
+import {
+  createSendHere,
+  shareToStopOnSignOut,
+  startTracking,
+  syncChoice,
+  type GeoLike,
+  type StorageLike,
+} from "./send-here.ts";
 
 const SHARE = "5f0c2a1e-0000-4000-8000-000000000001";
 
@@ -123,6 +130,40 @@ test("a blocked or throwing sessionStorage still works for this page, and never 
     throw new Error("SecurityError"); // window.sessionStorage itself can throw
   });
   assert.equal(getterThrows.get(), null);
+});
+
+test("the tab's choice is dropped once no share is shown (sign-out, account deleted)", () => {
+  const store = createSendHere(() => memoryStorage());
+  store.set(SHARE);
+  // Signed out (or the account is gone): the layout passes no share.
+  syncChoice(store, null);
+  assert.equal(store.get(), null);
+  // Signing back in to a still-running safe return must not resume sending without a new tap.
+  syncChoice(store, SHARE);
+  assert.equal(store.get(), null);
+});
+
+test("a choice for the share still shown is kept, and an unchanged one doesn't notify", () => {
+  const store = createSendHere(() => memoryStorage());
+  store.set(SHARE);
+  let heard = 0;
+  store.subscribe(() => (heard += 1));
+  syncChoice(store, SHARE);
+  assert.equal(store.get(), SHARE);
+  syncChoice(store, null);
+  syncChoice(store, null);
+  assert.equal(heard, 1);
+});
+
+test("signing out stops only a tab share that this tab sends", () => {
+  const tab = { id: SHARE, source: "tab_live" as const };
+  const outing = { id: SHARE, source: "outing" as const };
+  assert.equal(shareToStopOnSignOut(tab, true), SHARE);
+  // Another tab (or device) sends it: that one still has a way to stop it.
+  assert.equal(shareToStopOnSignOut(tab, false), null);
+  // Safe return belongs to the outing and ends when the student is back.
+  assert.equal(shareToStopOnSignOut(outing, true), null);
+  assert.equal(shareToStopOnSignOut(null, true), null);
 });
 
 test("subscribers hear every change, and can unsubscribe", () => {

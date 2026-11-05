@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { chooseCredential } from "@/features/watch/access";
 import type { WatchEvent } from "@/features/watch/events";
 import { probeWatchAccess } from "@/features/watch/probe";
-import { callBackend } from "@/lib/backend";
+import { callBackend, visitorIp } from "@/lib/backend";
 import { BACKEND_URL } from "@/lib/config";
 import { guestCookie } from "@/lib/cookies";
 import { isUuid } from "@/lib/route";
@@ -56,6 +56,8 @@ export async function GET(
     : null;
   const guest = credential?.kind === "guest" ? credential.token : null;
   const token = credential?.kind === "user" ? credential.token : null;
+  // Read while the request is in scope; describe() runs later, inside the stream.
+  const clientIp = await visitorIp();
 
   let finish = (): void => {};
   const stream = new ReadableStream<Uint8Array>({
@@ -99,7 +101,12 @@ export async function GET(
         if (described) return undefined;
         described = true;
         // The sharer opening their own share gets the owner's view, which has no `sharer`.
-        return callBackend<Partial<Watching>>(`/sessions/${id}`, { token, guestToken: guest })
+        // The visitor's IP, as probe.ts sends, so per-IP limits count this caller.
+        return callBackend<Partial<Watching>>(`/sessions/${id}`, {
+          token,
+          guestToken: guest,
+          clientIp,
+        })
           .then((s) => (s.sharer ? (s as Watching) : undefined))
           .catch(() => undefined);
       };

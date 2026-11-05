@@ -26,8 +26,15 @@ export const COOKIE_BASE = cookieBase(process.env.NODE_ENV);
  * a second share never replaces the first. httpOnly like the login cookies: page scripts never
  * see it. Outlives the longest share (8 h); the backend decides when access actually ends.
  */
+const GUEST_PREFIX = "outing_guest_";
+
 export function guestCookie(sessionId: string): string {
-  return `outing_guest_${sessionId}`;
+  return `${GUEST_PREFIX}${sessionId}`;
+}
+
+/** One of this browser's guest passes (so sign-out can remove them all on a shared computer). */
+export function isGuestCookie(name: string): boolean {
+  return name.startsWith(GUEST_PREFIX) && name.length > GUEST_PREFIX.length;
 }
 export const GUEST_MAX_AGE = 9 * 60 * 60;
 /**

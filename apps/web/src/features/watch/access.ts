@@ -97,6 +97,8 @@ export async function chooseCredential(input: {
   if (own === "granted") return user;
   if (pass === "granted") return guest;
   if (own === "restricted") return user;
-  if (pass === "restricted") return guest;
+  // "unknown" (a transient error) may hide working access of their own: only a pass the backend
+  // confirmed beats it, never a waiting or ended one.
+  if (pass === "restricted" && own === "none") return guest;
   return user;
 }

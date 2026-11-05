@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { signOut } from "@/features/auth/actions";
+import { SignOutButton } from "@/features/auth/components/SignOutButton";
 import { requireUser } from "@/lib/session";
 import { ROLE_LABEL } from "@/lib/types";
 
@@ -54,14 +54,7 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
                 {item.label}
               </Link>
             ))}
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="min-h-11 rounded-control px-3 font-bold text-accent hover:bg-accent-soft"
-              >
-                Sign out
-              </button>
-            </form>
+            <SignOutButton className="min-h-11 rounded-control px-3 font-bold text-accent hover:bg-accent-soft" />
           </div>
         </footer>
       </div>

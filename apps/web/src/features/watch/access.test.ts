@@ -130,3 +130,16 @@ test("signed in with a guest cookie too: the user's own access wins when it work
   assert.deepEqual(await pick("none", "none"), user);
   assert.deepEqual(await pick("unknown", "none"), user);
 });
+
+test("a transient error on the user's own probe never hands the stream to a weaker guest pass", async () => {
+  const user = { kind: "user", token: USER };
+  const guest = { kind: "guest", token: KEY };
+  const pick = (own: Access, key: Access) =>
+    chooseCredential({ userToken: USER, guestToken: KEY, probe: backend(own, key).probe });
+
+  // Their own access may be fine; a pass that is waiting or ended is no better.
+  assert.deepEqual(await pick("unknown", "restricted"), user);
+  assert.deepEqual(await pick("unknown", "unknown"), user);
+  // A pass the backend confirmed still works while the user's own check is down.
+  assert.deepEqual(await pick("unknown", "granted"), guest);
+});

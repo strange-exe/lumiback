@@ -5,17 +5,29 @@ import { useActionState, type ReactNode } from "react";
 
 import { Field, FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
-import { checkOut } from "@/features/outings/actions";
-import type { FormState, Profile } from "@/lib/types";
+import { checkOut, type CheckOutState } from "@/features/outings/actions";
+import { useShare } from "@/features/share/ShareProvider";
+import type { Profile } from "@/lib/types";
 
-const INITIAL: FormState = { error: null };
+const INITIAL: CheckOutState = { error: null };
 
 /**
  * Check out without the gate. The hostel's rules (shown above it) set the return time.
  * `profile` (null if it couldn't be loaded) decides whether safe return can be offered.
  */
 export function CheckOutForm({ profile }: { profile: Profile | null }): ReactNode {
-  const [state, action] = useActionState(checkOut, INITIAL);
+  const { sendFor } = useShare();
+  // Ticking safe return here is the student's own choice in this tab, so this tab sends the
+  // outing's location from the start (other tabs only show it; see send-here.ts). Done as the
+  // reply arrives: the form is replaced by the outing view right after.
+  const [state, action] = useActionState(
+    async (previous: CheckOutState, form: FormData): Promise<CheckOutState> => {
+      const next = await checkOut(previous, form);
+      if (next.sendFor) sendFor(next.sendFor);
+      return next;
+    },
+    INITIAL,
+  );
   const contact = profile?.emergency_name?.split(" ")[0] || "your emergency contact";
   return (
     <form action={action} className="flex flex-col gap-5">
