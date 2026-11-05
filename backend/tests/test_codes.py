@@ -114,6 +114,8 @@ def test_guest_must_give_a_label(client, riya, live):
         "Sunita " + chr(0xFF08) + "emergency contact" + chr(0xFF09),  # fullwidth brackets
         "Sunita (emergency" + chr(0xA0) + "contact)",  # a no-break space
         "Emergency contact for Riya",  # the phrase anywhere, not just at the end
+        "Sunita (Emergency" + chr(0x3164) + "contact)",  # a blank-looking Hangul filler
+        "Sunita (Emergency" + chr(0xFFA0) + "contact)",  # its halfwidth form
         chr(0xD800) + "Mom",  # a lone surrogate (a cut emoji)
     ],
 )
