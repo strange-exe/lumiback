@@ -127,8 +127,12 @@ async def check_out(
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You are already on an outing; mark your return first"
         ) from None
-    # Any other error keeps the slot: whether the share was saved is unknown, so it errs
-    # towards fewer emails.
+    except BaseException:
+        # Any other failure gives the slot back too, or a request that errors on purpose
+        # could use up another student's contact limit. The share and outing commit together,
+        # so a failed check-out almost always saved neither; at worst one start goes uncounted.
+        await release_unused(limiter, slot, None)
+        raise
     await release_unused(limiter, slot, outing)
     await safe_return_started(outing, me, mailer=mailer, settings=settings, tasks=tasks)
     return svc.to_out(outing, datetime.now(UTC))

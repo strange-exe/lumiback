@@ -327,6 +327,41 @@ def test_failed_check_outs_dont_use_up_the_contacts_limit(client, db, riya, gate
     assert len(to_contact(client)) == 1
 
 
+@pytest.mark.parametrize("field", ["destination", "purpose"])
+def test_check_out_text_refuses_control_characters(client, riya, field):
+    """A NUL can't be stored (the insert fails after the slot is counted), and line breaks
+    or bidi overrides would show on wardens' screens: refused before anything is counted."""
+    for bad in ("Rajpur" + chr(0) + "Road", "Rajpur" + chr(10) + "Road", "Rajpur" + chr(0x202E)):
+        body = {"destination": "Rajpur Road", field: bad, "safe_return": True}
+        r = client.post("/outings", json=body, headers=riya)
+        assert r.status_code == 422, r.text
+    if field == "destination":
+        r = client.post(
+            "/gates/scan",
+            json={"qr": "bogus", **AT_GATE, "destination": "a" + chr(0), "safe_return": True},
+            headers=riya,
+        )
+        assert r.status_code == 422 and "destination" in r.text, r.text
+
+
+def test_an_unexpected_check_out_error_gives_the_slot_back(client, riya, monkeypatch):
+    """Any failure that starts no share refunds it, not only the ones the API names: else
+    another student could burn the contact's limit with a request that errors on purpose."""
+    real = outings_svc.check_out
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(outings_svc, "check_out", broken)
+    for _ in range(PER_CONTACT.max_hits + 1):
+        with pytest.raises(RuntimeError):
+            client.post(
+                "/outings", json={"destination": "Rajpur Road", "safe_return": True}, headers=riya
+            )
+    monkeypatch.setattr(outings_svc, "check_out", real)
+    assert go_out(client, riya, safe_return=True)["safe_return_session_id"] is not None
+
+
 def test_a_student_over_their_limit_uses_none_of_the_contacts(client):
     limiter = client.app.state.limiter
     student = uuid.uuid4()

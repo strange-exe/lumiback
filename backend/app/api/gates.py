@@ -97,6 +97,9 @@ async def scan(
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You're already checked out."
         ) from None
+    except BaseException:  # any other failure too (see check_out in app/api/outings.py)
+        await release_unused(limiter, slot, None)
+        raise
     # A tap-in starts nothing (the outing it closes may have a share of its own).
     started = outcome.outing if outcome.direction is ScanDirection.OUT else None
     await release_unused(limiter, slot, started)

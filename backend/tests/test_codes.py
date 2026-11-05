@@ -99,6 +99,25 @@ def test_guest_must_give_a_label(client, riya, live):
     assert client.post("/codes/redeem", json={"code": code}).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Mom" + chr(10) + "Your account is locked",  # a second line on the sharer's lock screen
+        "Mom" + chr(0x202E),  # a bidi override
+        chr(0x3164),  # a Hangul filler: looks blank
+        ".",
+    ],
+)
+def test_guest_label_must_be_a_plain_visible_name(client, riya, live, label):
+    """The label goes into the sharer's push title and viewer list, like a person's name."""
+    code = new_code(client, riya, live["id"])
+    r = client.post("/codes/redeem", json={"code": code, "guest_label": label})
+    assert r.status_code == 422, r.text
+    assert (
+        client.post("/codes/redeem", json={"code": code, "guest_label": "Mom"}).status_code == 200
+    )
+
+
 # ---------- A6: brute force ----------
 
 

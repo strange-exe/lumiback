@@ -265,7 +265,13 @@ class CodeOut(BaseModel):
     expires_at: datetime
 
 
-GuestLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+# Goes into the sharer's push title and viewer list: the same checks as Name.
+GuestLabel = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=40),
+    AfterValidator(_has_a_letter_or_digit),
+    BeforeValidator(_no_control_characters),
+]
 
 
 class RedeemIn(Input):
@@ -297,8 +303,17 @@ class UserOut(BaseModel):
 
 # India Standard Time has no daylight saving, so a fixed offset is exact (and needs no tz database).
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
-Destination = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-Purpose = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+# One line each, shown to wardens: no control characters (a NUL can't even be stored).
+Destination = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    BeforeValidator(_no_control_characters),
+]
+Purpose = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    BeforeValidator(_no_control_characters),
+]
 
 
 class OutingCreateIn(Input):
@@ -474,10 +489,7 @@ class GateScanIn(Input):
     mocked: bool = False  # Android's "from a mock location provider" flag
     # Ignored: the outing rules set the return time. Accepted so older app versions still work.
     expected_return_at: AwareDatetime | None = None
-    destination: (
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-        | None
-    ) = None
+    destination: Destination | None = None
     # Tapping out only: safe return, as in OutingCreateIn. Ignored when tapping in.
     safe_return: bool = False
 
