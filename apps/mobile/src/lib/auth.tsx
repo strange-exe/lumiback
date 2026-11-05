@@ -14,7 +14,7 @@ import { api, ApiError } from "@/lib/api";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, ShareSession, TokenPair, User } from "@/lib/types";
 import { sendingShareId, stopSending } from "@/location/task";
-import { syncPush } from "@/notify/notify";
+import { syncPush, syncReturnReminders } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
 type Status = "loading" | "signedOut" | "signedIn";
@@ -142,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     // the student signs out. Best effort: a failure here never keeps them signed in.
     const sending = await sendingShareId().catch(() => null); // read before stopSending clears it
     await stopSending().catch(() => undefined);
+    await syncReturnReminders(null).catch(() => undefined); // no "you're due back" for them
     // End a share started from this app on the server too (while still signed in), or viewers
     // keep seeing the last position. After the service stops, so the loop never reports it as
     // "ended elsewhere". A safe-return share stays: ending it would also cancel the contact's

@@ -33,7 +33,10 @@ jest.mock("@/lib/session", () => ({
   storedRefreshToken: jest.fn(async () => (mockCalls.length > 0 ? "r1" : null)),
   storeTokens: jest.fn(),
 }));
-jest.mock("@/notify/notify", () => ({ syncPush: jest.fn() }));
+jest.mock("@/notify/notify", () => ({
+  syncPush: jest.fn(),
+  syncReturnReminders: jest.fn(async () => void mockCalls.push("syncReturnReminders")),
+}));
 jest.mock("@/notify/push", () => ({
   forgetPushToken: jest.fn(async () => void mockCalls.push("forgetPushToken")),
   unregisterPush: jest.fn(async () => void mockCalls.push("unregisterPush")),
@@ -75,6 +78,7 @@ describe("signing out ends the share on the server", () => {
     await auth.signOut();
     expect(mockCalls).toEqual([
       "stopSending",
+      "syncReturnReminders",
       "api /sessions/s1",
       "api /sessions/s1/stop",
       "unregisterPush",

@@ -16,8 +16,6 @@ import { saveMyData } from "@/lib/my-data";
 import { formatDate } from "@/lib/time";
 import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
-import { stopSending } from "@/location/task";
-import { syncReturnReminders } from "@/notify/notify";
 import { Press, Row, Screen, Section, T } from "@/ui/kit";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
@@ -200,10 +198,9 @@ export default function Profile(): ReactNode {
           onPress={() => {
             if (signingOut) return;
             setSigningOut(true);
-            void stopSending()
-              .then(() => syncReturnReminders(null))
-              .then(signOut)
-              .finally(() => setSigningOut(false));
+            // signOut owns the whole sequence: it reads which share is sending before it
+            // stops the service, so it can end an app share on the server too.
+            void signOut().finally(() => setSigningOut(false));
           }}
         />
         <Row
