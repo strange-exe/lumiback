@@ -9,7 +9,7 @@ never holds personal data in readable form.
 import hashlib
 import hmac
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -81,16 +81,26 @@ class RateLimiter:
 
     async def hit(self, scope: str, key: str, limit: Limit) -> None:
         """Atomically check, then record one hit."""
-        key_hash = self._key_hash(scope, key)
-        lock_id = int.from_bytes(key_hash[:8], "big", signed=True)
+        await self.hit_all([(scope, key, limit)])
+
+    async def hit_all(self, hits: Sequence[tuple[str, str, Limit]]) -> None:
+        """Atomically check every (scope, key, limit), then record one hit on each: either all
+        are under their limit and all are counted, or RateLimited is raised and none is."""
+        keyed = [(scope, self._key_hash(scope, key), limit) for scope, key, limit in hits]
         async with self._sessionmaker() as session:
-            await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": lock_id})
+            # Always in the same order, so two callers locking overlapping keys can't deadlock.
+            for lock_id in sorted({int.from_bytes(h[:8], "big", signed=True) for _, h, _ in keyed}):
+                await session.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": lock_id})
             now = self._clock()
-            retry = await self._over_limit(session, scope, key_hash, limit, now)
-            if retry is not None:
-                await session.rollback()  # releases the lock
-                raise RateLimited(retry)
-            session.add(RateLimitHit(scope=scope, key_hash=key_hash, hit_at=now))
+            for scope, key_hash, limit in keyed:
+                retry = await self._over_limit(session, scope, key_hash, limit, now)
+                if retry is not None:
+                    await session.rollback()  # releases the locks
+                    raise RateLimited(retry)
+            session.add_all(
+                RateLimitHit(scope=scope, key_hash=key_hash, hit_at=now)
+                for scope, key_hash, _ in keyed
+            )
             await session.commit()
 
     async def record(self, scope: str, key: str) -> None:

@@ -1,6 +1,7 @@
 """Request/response models. Inputs forbid unknown fields so typos fail loudly."""
 
 import re
+import unicodedata
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
@@ -9,6 +10,7 @@ from pydantic import (
     AfterValidator,
     AwareDatetime,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     EmailStr,
     Field,
@@ -19,7 +21,28 @@ from pydantic import (
 
 from app.security.passwords import MAX_LENGTH, password_problem
 
-Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+_NAME_JOINERS = frozenset((chr(0x200C), chr(0x200D)))  # ZWNJ, ZWJ
+
+
+def _no_control_characters(value: object) -> object:
+    """Names go into email subjects and greetings and onto other people's screens: refuse
+    control characters (Cc: CR, LF, tab, NUL, C1 such as NEL) and invisible format characters
+    (Cf: bidi overrides, zero-width spaces, BOM) anywhere, even where stripping would hide them.
+    ZWNJ and ZWJ are the exception: Indic scripts spell real names with them."""
+    if isinstance(value, str) and any(
+        unicodedata.category(c) in ("Cc", "Cf") and c not in _NAME_JOINERS for c in value
+    ):
+        raise ValueError("must not contain control or invisible formatting characters")
+    return value
+
+
+Name = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    # Last, so it runs first (before validators run outermost-first): it sees the raw input,
+    # before strip_whitespace could remove a trailing CR or LF.
+    BeforeValidator(_no_control_characters),
+]
 OptionalShort = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
 ]

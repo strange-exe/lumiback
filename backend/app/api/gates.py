@@ -90,9 +90,7 @@ async def scan(
             status.HTTP_409_CONFLICT, detail="You're already checked out."
         ) from None
     if outcome.direction is ScanDirection.OUT:
-        await safe_return_started(
-            outcome.outing, me, limiter=limiter, mailer=mailer, settings=settings, tasks=tasks
-        )
+        await safe_return_started(outcome.outing, me, mailer=mailer, settings=settings, tasks=tasks)
     else:
         await safe_return_ended(outcome.back, hub=hub, mailer=mailer, tasks=tasks)
     return GateScanOut(

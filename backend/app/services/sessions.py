@@ -23,6 +23,7 @@ from app.models import (
     ViewerStatus,
 )
 from app.schemas import SessionCreateIn, SessionOut, ViewerOut
+from app.services import safe_return
 from app.services.authz import is_live
 
 ENDS_WHEN = {
@@ -81,7 +82,8 @@ async def create(session: AsyncSession, sharer: User, body: SessionCreateIn) -> 
 async def end(
     session: AsyncSession, share_id: uuid.UUID, *, status: SessionStatus, reason: str
 ) -> bool:
-    """End an active session and delete its location in one transaction. Idempotent."""
+    """End an active session and delete its location in one transaction. Idempotent. An
+    outing's safe-return share also forgets the contact's address (nothing more is sent)."""
     ended = (
         await session.execute(
             update(ShareSession)
@@ -91,11 +93,16 @@ async def end(
         )
     ).scalar_one_or_none()
     await session.execute(delete(Location).where(Location.session_id == share_id))
+    await safe_return.forget_address(session, [share_id])
     await session.commit()
     return ended is not None
 
 
-async def revoke_viewer(session: AsyncSession, share_id: uuid.UUID, viewer_id: uuid.UUID) -> bool:
+async def revoke_viewer(
+    session: AsyncSession, share_id: uuid.UUID, viewer_id: uuid.UUID, *, pepper: str
+) -> bool:
+    """`pepper`: the code pepper. If the viewer is a safe-return contact, their address is
+    forgotten in the same transaction, so no overdue or "back" email reaches them."""
     revoked = (
         await session.execute(
             update(ShareViewer)
@@ -105,9 +112,13 @@ async def revoke_viewer(session: AsyncSession, share_id: uuid.UUID, viewer_id: u
                 ShareViewer.status != ViewerStatus.REVOKED,
             )
             .values(status=ViewerStatus.REVOKED, revoked_at=datetime.now(UTC))
-            .returning(ShareViewer.id)
+            .returning(ShareViewer.guest_token_hash)
         )
-    ).scalar_one_or_none()
+    ).one_or_none()
+    if revoked is not None and revoked.guest_token_hash == safe_return.contact_token_hash(
+        share_id, pepper
+    ):
+        await safe_return.forget_address(session, [share_id])
     await session.commit()
     return revoked is not None
 

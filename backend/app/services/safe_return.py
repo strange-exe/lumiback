@@ -16,12 +16,17 @@ share; every view the contact makes is in the share's access log, like any viewe
 Emails (plain text, see app/email_templates.py), at most three per outing and each once:
 the link at check-out, a note if the student is 30 min late (when the student's own late alert
 fires), and "back safely" on return. Overdue and back emails go only while the share is still
-live, so stopping the share also stops the emails. Check-outs with safe return are limited per
-student and per contact address (a student could otherwise use it to send mail to anyone).
+live and the contact's own viewer row is still granted, so stopping the share or revoking the
+contact also stops the emails. The contact's address (outings.safe_return_email) is forgotten
+as soon as the contact stops following: on return, stop, expiry, revocation, or when the
+student changes their emergency email while out. Check-outs with safe return are limited per
+student and per contact address (a student could otherwise use it to send mail to anyone);
+the address is counted in a canonical form, so plus-aliases and case share one limit.
 
-The watch token is derived (HMAC with the code pepper, over the share id) rather than random,
-so the overdue email can carry the same link again without storing it; only its SHA-256 is
-stored, like every guest token.
+The watch token is derived (HMAC over the share id, with a key of its own derived from the code
+pepper) rather than random, so the overdue email can carry the same link again without storing
+it; only its SHA-256 is stored, like every guest token. That hash is also how the contact's
+viewer row is told apart from guests who joined the share with a code.
 """
 
 import base64
@@ -29,6 +34,7 @@ import hashlib
 import hmac
 import logging
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -64,11 +70,14 @@ LIVE_AFTER_DUE = timedelta(hours=12)
 PER_STUDENT = Limit(max_hits=5, window_seconds=24 * 3600)
 PER_CONTACT = Limit(max_hits=5, window_seconds=24 * 3600)
 RETURNED = "returned"  # the share's ended_reason when the student is back
+# The code pepper also signs gate codes and hashes share codes: watch tokens get their own key.
+WATCH_KEY_LABEL = b"lumiback/watch-token/v1"
 
 
 def watch_token(session_id: uuid.UUID, pepper: str) -> str:
-    digest = hmac.new(pepper.encode(), f"safe-return:{session_id}".encode(), hashlib.sha256)
-    return base64.urlsafe_b64encode(digest.digest()).rstrip(b"=").decode()
+    key = hmac.digest(pepper.encode(), WATCH_KEY_LABEL, hashlib.sha256)
+    digest = hmac.digest(key, str(session_id).encode(), hashlib.sha256)
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
 def watch_link(web_url: str, session_id: uuid.UUID, pepper: str) -> str:
@@ -76,26 +85,99 @@ def watch_link(web_url: str, session_id: uuid.UUID, pepper: str) -> str:
     return f"{web_url}/watch/{session_id}#key={watch_token(session_id, pepper)}"
 
 
+def contact_token_hash(session_id: uuid.UUID, pepper: str) -> bytes:
+    """The stored hash of the contact's viewer row on this share (see start)."""
+    return hash_guest_token(watch_token(session_id, pepper))
+
+
 def guest_label(user: User) -> str:
     name = (user.emergency_name or "").strip()
     return (f"{name} (emergency contact)" if name else "Emergency contact")[:40]
 
 
-async def allowed(limiter: RateLimiter, user: User) -> bool:
-    """Whether a safe-return email may go out for this student now (nothing is recorded)."""
-    if not user.emergency_email:
-        return False
+def canonical_address(email: str) -> str:
+    """One key per inbox for the per-contact limit: lower case, without a "+tag" in the local
+    part (Gmail, Outlook and most providers deliver you+anything@ to you@)."""
+    local, _, domain = email.strip().lower().rpartition("@")
+    return f"{local.split('+', 1)[0]}@{domain}"
+
+
+async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> bool:
+    """Counts one safe-return start against both limits, atomically under the limiter's locks:
+    True if both were under their limit (both are now counted), False if either was full
+    (neither is counted). Called before the check-out, so a check-out that then fails still
+    used its slot: the limits only ever err towards fewer emails."""
     try:
-        await limiter.check("safe_return:student", str(user.id), PER_STUDENT)
-        await limiter.check("safe_return:contact", user.emergency_email, PER_CONTACT)
+        await limiter.hit_all(
+            [
+                ("safe_return:student", str(student_id), PER_STUDENT),
+                ("safe_return:contact", canonical_address(email), PER_CONTACT),
+            ]
+        )
     except RateLimited:
         return False
     return True
 
 
-async def record(limiter: RateLimiter, user_id: uuid.UUID, email: str) -> None:
-    await limiter.record("safe_return:student", str(user_id))
-    await limiter.record("safe_return:contact", email)
+def _contact_name(student: User, to: str) -> str | None:
+    """The profile's name for the contact, only while the profile's address is still the one
+    being emailed: after a change, that name belongs to someone else (the greeting is neutral)."""
+    same = (student.emergency_email or "").lower() == to.lower()
+    return student.emergency_name if same else None
+
+
+async def _still_following(session: AsyncSession, share_id: uuid.UUID, pepper: str) -> bool:
+    """Whether the contact's own viewer row on this share is still granted."""
+    status = await session.scalar(
+        select(ShareViewer.status).where(
+            ShareViewer.session_id == share_id,
+            ShareViewer.guest_token_hash == contact_token_hash(share_id, pepper),
+        )
+    )
+    return status is ViewerStatus.GRANTED
+
+
+async def forget_address(session: AsyncSession, share_ids: Iterable[uuid.UUID]) -> None:
+    """The contact stops following these shares: forget their address (the caller commits)."""
+    ids = list(share_ids)
+    if ids:
+        await session.execute(
+            update(Outing)
+            .where(Outing.safe_return_session_id.in_(ids), Outing.safe_return_email.is_not(None))
+            .values(safe_return_email=None)
+        )
+
+
+async def emergency_email_changed(
+    session: AsyncSession, student_id: uuid.UUID, new_email: str | None, pepper: str
+) -> uuid.UUID | None:
+    """The student changed or removed their emergency email: if they're out with safe return
+    to another address, cut that contact off (revoke their viewer row, forget their address).
+    The caller commits, then publishes AccessChanged for the returned share id."""
+    outing = await session.scalar(
+        select(Outing).where(
+            Outing.student_id == student_id,
+            Outing.returned_at.is_(None),
+            Outing.safe_return_session_id.is_not(None),
+            Outing.safe_return_email.is_not(None),
+        )
+    )
+    if outing is None or outing.safe_return_session_id is None or outing.safe_return_email is None:
+        return None
+    if new_email is not None and new_email.lower() == outing.safe_return_email.lower():
+        return None
+    share_id = outing.safe_return_session_id
+    await session.execute(
+        update(ShareViewer)
+        .where(
+            ShareViewer.session_id == share_id,
+            ShareViewer.guest_token_hash == contact_token_hash(share_id, pepper),
+            ShareViewer.status != ViewerStatus.REVOKED,
+        )
+        .values(status=ViewerStatus.REVOKED, revoked_at=datetime.now(UTC))
+    )
+    await forget_address(session, [share_id])
+    return share_id
 
 
 async def start(
@@ -121,7 +203,7 @@ async def start(
         ShareViewer(
             session_id=share.id,
             guest_label=guest_label(student),
-            guest_token_hash=hash_guest_token(watch_token(share.id, pepper)),
+            guest_token_hash=contact_token_hash(share.id, pepper),
             status=ViewerStatus.GRANTED,  # the tick at check-out is the student's approval
             granted_at=now,
         )
@@ -136,7 +218,7 @@ def start_email(outing: Outing, student: User, web_url: str, pepper: str) -> Ema
         return None
     return safe_return_start_email(
         to=outing.safe_return_email,
-        contact_name=student.emergency_name,
+        contact_name=_contact_name(student, outing.safe_return_email),
         student=student.name,
         due_at=outing.expected_return_at,
         link=watch_link(web_url, outing.safe_return_session_id, pepper),
@@ -151,7 +233,7 @@ class Back:
     email: Email | None  # None: the student had stopped sharing, so the contact isn't told
 
 
-async def finish(session: AsyncSession, outing: Outing) -> Back | None:
+async def finish(session: AsyncSession, outing: Outing, pepper: str) -> Back | None:
     """On return (the caller commits): ends the outing's share, deletes its location, and
     forgets the contact's address. Publish AccessChanged(session_id) after the commit."""
     if outing.safe_return_session_id is None:
@@ -167,16 +249,19 @@ async def finish(session: AsyncSession, outing: Outing) -> Back | None:
     ).scalar_one_or_none()
     await session.execute(delete(Location).where(Location.session_id == share_id))
     to = outing.safe_return_email
-    await session.execute(
-        update(Outing).where(Outing.id == outing.id).values(safe_return_email=None)
-    )
+    await forget_address(session, [share_id])
     email = None
-    if ended is not None and to and outing.returned_at is not None:
+    if (
+        ended is not None
+        and to
+        and outing.returned_at is not None
+        and await _still_following(session, share_id, pepper)
+    ):
         student = await session.get(User, outing.student_id)
         if student is not None:
             email = safe_return_back_email(
                 to=to,
-                contact_name=student.emergency_name,
+                contact_name=_contact_name(student, to),
                 student=student.name,
                 returned_at=outing.returned_at,
             )
@@ -189,28 +274,36 @@ async def overdue_emails(
     """For outings whose late alert was marked at `alerted_at` (this sweep): one email to each
     contact still following. The alert is marked once per outing, so this is sent once."""
     rows = await session.execute(
-        select(Outing, User)
+        select(Outing, User, ShareViewer.guest_token_hash)
         .join(User, User.id == Outing.student_id)
         .join(ShareSession, ShareSession.id == Outing.safe_return_session_id)
+        # Granted guests of the share; the contact's row is picked out by its token hash below.
+        .join(ShareViewer, ShareViewer.session_id == ShareSession.id)
         .where(
             Outing.overdue_notified_at == alerted_at,
             Outing.returned_at.is_(None),
             Outing.safe_return_email.is_not(None),
             ShareSession.status == SessionStatus.ACTIVE,
             ShareSession.ends_at > alerted_at,
+            ShareViewer.status == ViewerStatus.GRANTED,
+            ShareViewer.guest_token_hash.is_not(None),
         )
     )
     return [
         safe_return_overdue_email(
             to=outing.safe_return_email,
-            contact_name=student.emergency_name,
+            contact_name=_contact_name(student, outing.safe_return_email),
             student=student.name,
             due_at=outing.expected_return_at,
             phone=student.phone,
             link=watch_link(web_url, outing.safe_return_session_id, pepper),
         )
-        for outing, student in rows.all()
-        if outing.safe_return_email and outing.safe_return_session_id
+        for outing, student, token_hash in rows.all()
+        if outing.safe_return_email
+        and outing.safe_return_session_id
+        and hmac.compare_digest(
+            token_hash, contact_token_hash(outing.safe_return_session_id, pepper)
+        )
     ]
 
 

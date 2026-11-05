@@ -90,6 +90,59 @@ def test_a_stale_sweep_is_reported_but_health_stays_200(client):
     assert res.json() == {"status": "ok", "sweep": "stale"}
 
 
+class CountingSessions:
+    """Wraps the app's sessionmaker and counts the sessions opened through it."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.opened = 0
+
+    def __call__(self, *args, **kwargs):
+        self.opened += 1
+        return self.inner(*args, **kwargs)
+
+
+def test_a_burst_of_health_checks_touches_the_database_once(client):
+    """/health needs no sign-in: a flood of pings must not take every pooled connection."""
+    ticks = Ticks()
+    client.app.state.health_clock = ticks
+    counter = CountingSessions(client.app.state.sessionmaker)
+    client.app.state.sessionmaker = counter
+    for _ in range(20):
+        assert client.get("/health").json() == {"status": "ok", "sweep": "off"}
+    assert counter.opened == 1
+    ticks.now += 4.9
+    client.get("/health")
+    assert counter.opened == 1
+    ticks.now += 0.2  # past the 5 s the answer is kept
+    client.get("/health")
+    assert counter.opened == 2
+
+
+def test_a_cached_health_answer_still_reports_the_sweep_as_it_is_now(client):
+    client.app.state.health_clock = Ticks()  # stands still: the database answer stays cached
+    sweep_ticks = Ticks()
+    client.app.state.sweep_health = SweepHealth(interval=30, clock=sweep_ticks)
+    assert client.get("/health").json()["sweep"] == "ok"
+    sweep_ticks.now += 120  # the sweep has gone stale since
+    assert client.get("/health").json() == {"status": "ok", "sweep": "stale"}
+
+
+def test_a_database_outage_is_reported_and_kept_briefly_too(client):
+    ticks = Ticks()
+    client.app.state.health_clock = ticks
+
+    def broken():
+        raise ConnectionError("database down")
+
+    client.app.state.sessionmaker = CountingSessions(broken)
+    for _ in range(3):
+        res = client.get("/health")
+        assert res.status_code == 503
+        assert res.json() == {"status": "database unavailable"}
+    assert client.app.state.sessionmaker.opened == 1
+
+
 def test_the_running_app_reports_its_own_sweep(settings, clean_db):
     app = create_app(settings)
     with TestClient(app, backend_options={"loop_factory": asyncio.SelectorEventLoop}) as c:

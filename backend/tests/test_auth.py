@@ -42,6 +42,45 @@ def test_register_rejects_weak_passwords(client, password, reason):
     assert password not in r.text  # never echo the password back
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Riya" + chr(13) + chr(10) + "Bcc: x@example.com",  # CR LF: a header in an email subject
+        "Riya" + chr(10) + "Sharma",
+        "Riya" + chr(13),  # even at the end, where stripping would hide it
+        "Riya" + chr(0) + "Sharma",
+        "Riya" + chr(9) + "Sharma",  # a tab is a control character too
+        "Riya" + chr(0x7F),
+        "Riya" + chr(0x85) + "Sharma",  # NEL: a C1 line break
+        "Riya " + chr(0x202E) + "amrahS",  # right-to-left override (Cf)
+        "Riya" + chr(0x200B) + "Sharma",  # zero-width space (Cf)
+        chr(0xFEFF) + "Riya",  # byte-order mark (Cf)
+    ],
+)
+def test_register_refuses_control_and_format_characters_in_the_name(client, db, name):
+    r = client.post(
+        "/auth/register", json={"name": name, "email": "riya@example.com", "password": PASSWORD}
+    )
+    assert r.status_code == 422, r.text
+    assert db.execute(text("SELECT count(*) FROM pending_registrations")).scalar_one() == 0
+
+
+def test_register_keeps_names_in_any_script(client):
+    hindi = "".join(map(chr, (0x930, 0x93F, 0x92F, 0x93E)))  # a Devanagari name, with its marks
+    user = register(client, "riya@example.com", f"Riya {hindi} D'Souza-Verma")
+    assert user["name"] == f"Riya {hindi} D'Souza-Verma"
+
+
+def test_register_keeps_the_zero_width_joiners_indic_names_use(client):
+    # Malayalam and Devanagari spell some names with ZWJ (U+200D) or ZWNJ (U+200C); both are
+    # format characters, but they are part of the name, so they are allowed.
+    malayalam = "".join(map(chr, (0xD28, 0xD3F, 0xD24, 0xD4D, 0x200D, 0xD2F)))
+    hindi = "".join(map(chr, (0x915, 0x94D, 0x200C, 0x937)))
+    for i, name in enumerate((malayalam, hindi)):
+        user = register(client, f"joiner{i}@example.com", name)
+        assert user["name"] == name
+
+
 def test_register_rejects_duplicate_email_case_insensitively(client):
     register(client, "dup@example.com")
     r = client.post(

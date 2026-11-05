@@ -88,8 +88,50 @@ async def finish(
     pepper: str,
     breaches: BreachChecker,
 ) -> User:
-    """The right code sets the new password and signs every device out, in one transaction."""
+    """The right code sets the new password and signs every device out, in one transaction.
+
+    Three steps, so the reset row is never locked across the breached-password lookup (a
+    network call of up to 2 s): (1) under the row lock, check the code and count a wrong one;
+    (2) with no lock, check the new password; (3) under the lock again, re-check that the same
+    code is still live, then save. Step 3 deletes the row, so a code works only once."""
     email = email.lower()
+    code_hash = _hash(pepper, email, code)
+    user = await _check_code(session, email, code_hash)
+
+    # Checked only after the code: a weak password doesn't use up an attempt, and nobody
+    # without the code learns anything about the account.
+    problem = password_problem(new_password, email=email, name=user.name)
+    if problem is None and await breaches.is_breached(new_password):
+        problem = BREACHED
+    if problem:
+        raise WeakPassword(problem)
+    new_hash = hash_password(new_password)  # slow on purpose (argon2): outside the lock too
+
+    # A newer request may have replaced the code, or a parallel reset used it, meanwhile.
+    reset = await session.get(PasswordReset, user.id, with_for_update=True, populate_existing=True)
+    now = datetime.now(UTC)
+    if (
+        reset is None
+        or reset.expires_at <= now
+        or reset.attempts >= MAX_ATTEMPTS
+        or not hmac.compare_digest(reset.code_hash, code_hash)
+    ):
+        await session.rollback()
+        raise ResetFailed
+    user.password_hash = new_hash
+    await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+    await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await session.commit()
+    return user
+
+
+async def _check_code(session: AsyncSession, email: str, code_hash: bytes) -> User:
+    """Step 1 of finish: the user whose live code this is (raises ResetFailed otherwise). Ends
+    its transaction either way, so no lock is held after it returns."""
     user = await session.scalar(
         select(User).where(User.email == email, User.email_verified_at.is_not(None))
     )
@@ -98,29 +140,11 @@ async def finish(
     if user is None or reset is None or reset.expires_at <= now or reset.attempts >= MAX_ATTEMPTS:
         await session.rollback()
         raise ResetFailed
-
-    if not hmac.compare_digest(reset.code_hash, _hash(pepper, email, code)):
+    if not hmac.compare_digest(reset.code_hash, code_hash):
         reset.attempts += 1  # at MAX_ATTEMPTS the code is dead until a new one is requested
         await session.commit()
         raise ResetFailed
-
-    # Checked only after the code: a weak password doesn't use up an attempt, and nobody
-    # without the code learns anything about the account.
-    problem = password_problem(new_password, email=email, name=user.name)
-    if problem is None and await breaches.is_breached(new_password):
-        problem = BREACHED
-    if problem:
-        await session.rollback()
-        raise WeakPassword(problem)
-
-    user.password_hash = hash_password(new_password)
-    await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
-    await session.execute(
-        update(RefreshToken)
-        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
-        .values(revoked_at=now)
-    )
-    await session.commit()
+    await session.commit()  # releases the row lock; nothing changed
     return user
 
 

@@ -112,6 +112,46 @@ def test_export_never_holds_secrets_or_other_peoples_records(client, riya_with_h
     assert "9876543210" not in json.dumps(arjun)  # Riya's phone number
 
 
+def test_export_holds_the_emergency_email_and_the_safe_return_address(client):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    r = client.patch(
+        "/profile",
+        json={
+            "contacts": {
+                "phone": "9876543210",
+                "emergency_name": "Meena",
+                "emergency_relation": "Mother",
+                "emergency_phone": "9876500000",
+            },
+            "emergency_email": "meena@gmail.com",
+        },
+        headers=riya,
+    )
+    assert r.status_code == 200, r.text
+    out = client.post("/outings", json={"destination": "Market", "safe_return": True}, headers=riya)
+    assert out.json()["safe_return_session_id"] is not None
+
+    data = export(client, riya).json()
+    assert data["profile"]["emergency_email"] == "meena@gmail.com"
+    assert data["profile"]["emergency_name"] == "Meena"
+    assert [o["safe_return_email"] for o in data["outings"]] == ["meena@gmail.com"]
+
+
+def test_shares_watched_shows_when_a_share_started_only_to_granted_viewers(client):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    arjun_user, arjun = signup(client, "arjun@example.com", "Arjun")
+    befriend(client, riya, "arjun@example.com", arjun)
+    share = share_with(client, riya, [arjun_user["id"]])
+    [watched] = export(client, arjun).json()["shares_watched"]
+    assert (watched["status"], watched["share_started_at"] is not None) == ("granted", True)
+
+    [viewer] = share["viewers"]
+    r = client.post(f"/sessions/{share['id']}/viewers/{viewer['id']}/revoke", headers=riya)
+    assert r.status_code == 200, r.text
+    [watched] = export(client, arjun).json()["shares_watched"]
+    assert (watched["status"], watched["share_started_at"]) == ("revoked", None)
+
+
 def test_export_needs_sign_in_and_is_rate_limited(client):
     assert client.get("/profile/export").status_code == 401
     _, riya = signup(client, "riya@example.com", "Riya")

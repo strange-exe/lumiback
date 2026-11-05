@@ -4,6 +4,7 @@ Run (dev):  uv run uvicorn --factory app.main:create_app --reload --loop asyncio
 """
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -35,6 +36,8 @@ from app.push import make_push_sender
 from app.realtime import Hub
 from app.security.breached import make_breach_checker
 from app.security.rate_limit import RateLimiter
+
+HEALTH_CACHE_SECONDS = 5.0
 
 
 def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> FastAPI:
@@ -90,6 +93,9 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     set_logo(settings.web_url)  # the website serves the icon the emails show
     app.state.push = make_push_sender(settings)
     app.state.breaches = make_breach_checker(settings.breach_check)
+    app.state.health_clock = time.monotonic  # tests swap in a hand-moved clock
+    app.state.health_db = None  # (checked at, database answered) for GET /health
+    app.state.health_lock = asyncio.Lock()
 
     app.add_middleware(
         CORSMiddleware,
@@ -118,11 +124,25 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         fails, and a restart rarely fixes what stalls a sweep (a bad row, a slow query, an
         email or push outage); failing here would take sign-in and check-out down with it, in
         a loop. The keep-awake Worker reads this field and emails the owner instead.
+
+        Anyone can call this, so the database answer is kept for HEALTH_CACHE_SECONDS: a flood
+        of pings costs one query per interval, not one pooled connection each. The sweep field
+        is always current (it reads only memory).
         """
-        try:
-            async with request.app.state.sessionmaker() as db:
-                await db.execute(text("SELECT 1"))
-        except Exception:
+        state = request.app.state
+        # One check at a time: pings arriving while it runs wait for its answer instead of
+        # each taking a connection.
+        async with state.health_lock:
+            now = state.health_clock()
+            if state.health_db is None or now - state.health_db[0] >= HEALTH_CACHE_SECONDS:
+                try:
+                    async with state.sessionmaker() as db:
+                        await db.execute(text("SELECT 1"))
+                    db_ok = True
+                except Exception:
+                    db_ok = False
+                state.health_db = (now, db_ok)
+        if not state.health_db[1]:
             return JSONResponse(status_code=503, content={"status": "database unavailable"})
         health = getattr(request.app.state, "sweep_health", None)
         sweep = health.status() if health is not None else "off"

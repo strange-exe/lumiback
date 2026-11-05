@@ -306,6 +306,19 @@ def test_holidays_turn_a_weekday_into_a_holiday(client, db, riya, warden):
     assert db.execute(text("SELECT count(*) FROM holidays")).scalar_one() == 0
 
 
+def test_a_holiday_cant_be_set_for_a_day_already_past(client, db, warden):
+    """Past days are history: a holiday added now would rewrite the rules they ran under."""
+    yesterday = (ist_today() - timedelta(days=1)).isoformat()
+    r = client.put(
+        f"/admin/holidays/{yesterday}",
+        json={"day": yesterday, "name": "Founders' Day"},
+        headers=warden,
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "That day has already passed"
+    assert db.execute(text("SELECT count(*) FROM holidays")).scalar_one() == 0
+
+
 def test_admin_rules_pages_are_admin_only(client, riya):
     for path in ("/admin/rule-sets", "/admin/hostels", "/admin/holidays"):
         assert client.get(path, headers=riya).status_code == 403
@@ -422,8 +435,8 @@ def test_the_approval_push_matches_the_email(client, riya, warden, push, form_da
 
 def test_the_limit_shown_is_for_the_requests_own_day(client, db, riya, warden, form_day):
     other = ist_today() - timedelta(days=1)
-    holiday = {"day": other.isoformat(), "name": "Founders' Day"}
-    assert client.put(f"/admin/holidays/{other}", json=holiday, headers=warden).status_code == 200
+    # A past day can't be made a holiday through the API any more; it was one at the time.
+    db.execute(text("INSERT INTO holidays (day, name) VALUES (:d, 'Founders'' Day')"), {"d": other})
     db.execute(text("UPDATE day_rules SET max_minutes = 240 WHERE day_type = 'holiday'"))
     insert_request(db, other)
     insert_request(db, other - timedelta(days=7))  # same weekday a week before: not a holiday

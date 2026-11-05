@@ -7,11 +7,12 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, LimiterDep, SessionDep, enforce
+from app.api.deps import CurrentUser, HubDep, LimiterDep, SessionDep, SettingsDep, enforce
 from app.models import Hostel, RuleSet, User, UserRole
+from app.realtime import AccessChanged
 from app.schemas import HostelChoiceOut, ProfileIn, ProfileOut
 from app.security.rate_limit import Limit
-from app.services import outings
+from app.services import outings, safe_return
 from app.services.export import export_user
 
 router = APIRouter(tags=["profile"])
@@ -73,7 +74,9 @@ async def export_my_data(me: CurrentUser, session: SessionDep, limiter: LimiterD
 
 
 @router.patch("/profile")
-async def update_profile(body: ProfileIn, me: CurrentUser, session: SessionDep) -> ProfileOut:
+async def update_profile(
+    body: ProfileIn, me: CurrentUser, session: SessionDep, settings: SettingsDep, hub: HubDep
+) -> ProfileOut:
     if "hostel_id" in body.model_fields_set and body.hostel_id != me.hostel_id:
         if hostel_locked(me):
             raise HTTPException(
@@ -92,7 +95,15 @@ async def update_profile(body: ProfileIn, me: CurrentUser, session: SessionDep) 
     if body.contacts is not None:
         for field, value in body.contacts.model_dump().items():
             setattr(me, field, value)
+    cut_off = None
     if "emergency_email" in body.model_fields_set:
         me.emergency_email = body.emergency_email
+        # Out with safe return to the old address: that person never chose to follow under
+        # the new one, and the student no longer wants them told. Same transaction.
+        cut_off = await safe_return.emergency_email_changed(
+            session, me.id, body.emergency_email, settings.code_pepper.get_secret_value()
+        )
     await session.commit()
+    if cut_off is not None:
+        await hub.publish(AccessChanged(cut_off))  # after the commit, like every revocation
     return await _out(session, me)

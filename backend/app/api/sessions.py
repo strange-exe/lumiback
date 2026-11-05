@@ -164,9 +164,14 @@ async def stop_session(
 
 @router.post("/{session_id}/viewers/{viewer_id}/revoke")
 async def revoke_viewer(
-    viewer_id: uuid.UUID, share: OwnSession, session: SessionDep, hub: HubDep
+    viewer_id: uuid.UUID,
+    share: OwnSession,
+    session: SessionDep,
+    settings: SettingsDep,
+    hub: HubDep,
 ) -> SessionOut:
-    if not await svc.revoke_viewer(session, share.id, viewer_id):
+    pepper = settings.code_pepper.get_secret_value()
+    if not await svc.revoke_viewer(session, share.id, viewer_id, pepper=pepper):
         exists = await session.get(ShareViewer, viewer_id)
         if exists is None or exists.session_id != share.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Viewer not found")

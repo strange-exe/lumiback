@@ -28,6 +28,7 @@ from app.models import (
     ShareSession,
     ShareViewer,
     User,
+    ViewerStatus,
 )
 
 FORMAT_VERSION = 1
@@ -84,6 +85,8 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             "in_via": o.in_via.value if o.in_via else None,
             "in_gate": gate(o.in_gate_id),
             "request_id": o.request_id,
+            # Kept only while their emergency contact follows this outing (safe return).
+            "safe_return_email": o.safe_return_email,
             "late_alert_sent_at": o.overdue_notified_at,
             "late_reply": o.late_reply.value if o.late_reply else None,
             "late_replied_at": o.late_replied_at,
@@ -196,7 +199,9 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
         {
             "sharer_name": name,
             "status": v.status.value,
-            "share_started_at": started,
+            # Only a granted viewer was shown the share; a pending or revoked one wasn't (or
+            # isn't any more), so the sharer's activity isn't disclosed to them.
+            "share_started_at": started if v.status is ViewerStatus.GRANTED else None,
             "requested_at": v.requested_at,
             "granted_at": v.granted_at,
             "revoked_at": v.revoked_at,
@@ -267,6 +272,7 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             "emergency_name": user.emergency_name,
             "emergency_relation": user.emergency_relation,
             "emergency_phone": user.emergency_phone,
+            "emergency_email": user.emergency_email,
         },
         "contacts": contacts,
         "outings": outings,

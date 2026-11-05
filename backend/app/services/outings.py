@@ -171,11 +171,13 @@ async def mark_return(
     session: AsyncSession,
     student_id: uuid.UUID,
     *,
+    pepper: str,
     gate_id: uuid.UUID | None = None,
     commit: bool = True,
 ) -> Returned | None:
     """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once. Ends its
-    safe-return share in the same transaction."""
+    safe-return share in the same transaction (`pepper`: the code pepper, which identifies
+    the contact's viewer row)."""
     returned = (
         await session.execute(
             update(Outing)
@@ -188,7 +190,7 @@ async def mark_return(
             .returning(Outing)
         )
     ).scalar_one_or_none()
-    back = await safe_return.finish(session, returned) if returned is not None else None
+    back = await safe_return.finish(session, returned, pepper) if returned is not None else None
     if commit:
         await session.commit()
     return Returned(returned, back) if returned is not None else None

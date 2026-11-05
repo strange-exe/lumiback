@@ -7,7 +7,9 @@ import logging
 import httpx
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
+from app.main import create_app
 from app.security.breached import (
     HibpBreachChecker,
     MemoryBreachChecker,
@@ -118,8 +120,22 @@ def test_a_slow_api_is_cut_off_at_the_timeout_and_fails_open(caplog):
 def test_the_setting_picks_the_checker():
     assert isinstance(make_breach_checker("hibp"), HibpBreachChecker)
     off = make_breach_checker("off")
-    assert isinstance(off, MemoryBreachChecker)
+    assert not isinstance(off, MemoryBreachChecker)
     assert asyncio.run(off.is_breached(LEAKED)) is False
+
+
+def test_the_off_checker_keeps_no_password(settings):
+    """BREACH_CHECK=off (offline e2e runs) must not hold every new password in memory."""
+    off = make_breach_checker("off")
+    for password in (LEAKED, PASSWORD):
+        assert asyncio.run(off.is_breached(password)) is False
+    held = repr(off) + repr(getattr(off, "__dict__", {})) + repr(getattr(off, "__slots__", ()))
+    assert LEAKED not in held and PASSWORD not in held
+    assert getattr(off, "__dict__", {}) == {}
+
+    # And the app started with "off" gets that checker, not the recording one tests inject.
+    app = create_app(settings.model_copy(update={"breach_check": "off"}), start_jobs=False)
+    assert type(app.state.breaches) is type(off)
 
 
 # ---------- where it runs ----------
@@ -176,6 +192,41 @@ def test_reset_refuses_a_breached_password_without_using_up_the_code(client, bre
         assert r.status_code == 422
         assert r.json()["detail"] == "Password was found in a data breach. Choose a different one"
     assert reset(client, "riya@example.com", code).status_code == 204
+
+
+class LockProbe:
+    """A breach checker that notes, while it runs, whether the reset row is locked."""
+
+    def __init__(self, engine) -> None:
+        self.engine = engine
+        self.locked: list[bool] = []
+
+    async def is_breached(self, password: str) -> bool:
+        with self.engine.connect() as conn:
+            try:
+                conn.execute(text("SELECT 1 FROM password_resets FOR UPDATE NOWAIT"))
+                self.locked.append(False)
+            except OperationalError:  # lock_not_available: someone holds the row
+                self.locked.append(True)
+            conn.rollback()
+        return password == LEAKED
+
+
+def test_reset_looks_the_password_up_without_holding_the_reset_row(client, clean_db):
+    """The lookup is a network call of up to 2 s: no row lock may be held across it, and the
+    reset still saves atomically and only once."""
+    signup(client, "riya@example.com", "Riya Sharma")
+    forgot(client, "riya@example.com")
+    code = reset_code(client, "riya@example.com")
+    probe = LockProbe(clean_db)
+    client.app.state.breaches = probe
+
+    r = reset(client, "riya@example.com", code, LEAKED)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Password was found in a data breach. Choose a different one"
+    assert reset(client, "riya@example.com", code).status_code == 204  # the code still worked
+    assert probe.locked == [False, False]
+    assert reset(client, "riya@example.com", code).status_code == 400  # and only once
 
 
 def test_reset_with_a_wrong_code_never_looks_the_password_up(client, breaches):

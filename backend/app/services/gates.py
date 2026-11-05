@@ -150,7 +150,9 @@ async def scan(
 
     back = None
     if direction is ScanDirection.IN:
-        returned = await outings.mark_return(session, user_id, gate_id=gate.id, commit=False)
+        returned = await outings.mark_return(
+            session, user_id, pepper=pepper, gate_id=gate.id, commit=False
+        )
         if returned is None:  # closed by a simultaneous request; treat as a double scan
             raise AlreadyScanned
         outing, back = returned.outing, returned.back

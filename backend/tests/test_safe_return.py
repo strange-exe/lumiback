@@ -3,6 +3,9 @@
 The tick at check-out is the consent (no second approval); the link works only while the
 outing's share is live; the contact gets at most a start, an overdue and a "back" email."""
 
+import asyncio
+import base64
+import hmac
 import re
 import uuid
 from datetime import UTC, datetime
@@ -12,7 +15,9 @@ from sqlalchemy import text
 
 from app.jobs.expiry import sweep
 from app.push import MemoryPushSender
-from app.services.safe_return import PER_CONTACT, PER_STUDENT, record
+from app.security.rate_limit import RateLimiter
+from app.services import safe_return
+from app.services.safe_return import PER_CONTACT, PER_STUDENT, watch_token
 from tests.helpers import create_gate, kiosk_qr, make_admin, signup
 from tests.test_escalations import late_by
 from tests.test_gates import AT_GATE, age_scans
@@ -62,6 +67,11 @@ def link_in(email) -> tuple[str, str]:
     match = LINK.search(email.body)
     assert match, email.body
     return match.group(1), match.group(2)
+
+
+async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> bool:
+    """One safe-return start against both limits, as a check-out makes it."""
+    return await safe_return.reserve(limiter, student_id, email)
 
 
 def run_sweep(client):
@@ -261,9 +271,182 @@ def test_safe_return_emails_are_limited_per_day(client, riya):
 def test_one_contact_address_is_limited_across_students(client, riya):
     """Other accounts can't be used to keep mailing the same address."""
     for _ in range(PER_CONTACT.max_hits):  # other students' safe returns to the same address
-        client.portal.call(record, client.app.state.limiter, uuid.uuid4(), CONTACT)
+        assert client.portal.call(reserve, client.app.state.limiter, uuid.uuid4(), CONTACT)
     assert go_out(client, riya, safe_return=True)["safe_return_session_id"] is None
     assert to_contact(client) == []
+
+
+def test_plus_aliases_and_case_count_as_the_same_contact_address(client, riya):
+    """sunita.sharma+1@gmail.com reaches the same inbox, so it shares the address's limit."""
+    for i in range(PER_CONTACT.max_hits):
+        alias = f"Sunita.Sharma+{i}@GMAIL.com"
+        assert client.portal.call(reserve, client.app.state.limiter, uuid.uuid4(), alias)
+    assert go_out(client, riya, safe_return=True)["safe_return_session_id"] is None
+    assert to_contact(client) == []
+
+
+def test_parallel_check_outs_cant_pass_the_contact_limit(client):
+    """The check and the count happen under one lock, so a burst can't all see "under"."""
+    limiter = client.app.state.limiter
+
+    async def burst() -> list[bool]:
+        tries = (reserve(limiter, uuid.uuid4(), CONTACT) for _ in range(PER_CONTACT.max_hits + 4))
+        return await asyncio.gather(*tries)
+
+    assert client.portal.call(burst).count(True) == PER_CONTACT.max_hits
+
+
+def test_a_student_over_their_limit_uses_none_of_the_contacts(client):
+    limiter = client.app.state.limiter
+    student = uuid.uuid4()
+    for i in range(PER_STUDENT.max_hits):
+        assert client.portal.call(reserve, limiter, student, f"friend{i}@gmail.com")
+    assert not client.portal.call(reserve, limiter, student, CONTACT)
+    for _ in range(PER_CONTACT.max_hits):  # the refused try took nothing from the address
+        assert client.portal.call(reserve, limiter, uuid.uuid4(), CONTACT)
+
+
+# ---------- the student cuts the contact off ----------
+
+
+def contact_viewer(client, headers, session_id: str) -> dict:
+    [viewer] = client.get(f"/sessions/{session_id}", headers=headers).json()["viewers"]
+    return viewer
+
+
+def test_revoking_the_contact_stops_the_overdue_and_back_emails(client, db, riya):
+    go_out(client, riya, safe_return=True)
+    session_id, token = link_in(to_contact(client)[0])
+    viewer = contact_viewer(client, riya, session_id)
+    r = client.post(f"/sessions/{session_id}/viewers/{viewer['id']}/revoke", headers=riya)
+    assert r.status_code == 200, r.text
+    assert watch(client, session_id, token).status_code == 403
+    # The address is no longer needed once the contact can't follow.
+    assert db.execute(text("SELECT safe_return_email FROM outings")).scalar_one() is None
+
+    late_by(db, 31)
+    assert run_sweep(client).overdue_notified == 1  # the student's own alert still goes
+    assert client.post("/outings/current/return", headers=riya).status_code == 200
+    assert len(to_contact(client)) == 1  # only the start email: no overdue, no "back"
+
+
+def test_a_revoked_contact_viewer_gets_no_emails_however_it_was_revoked(client, db, riya):
+    """The emails check the contact's own viewer row, not only the stored address."""
+    go_out(client, riya, safe_return=True)
+    db.execute(text("UPDATE share_viewers SET status = 'revoked', revoked_at = now()"))
+    db.commit()
+
+    late_by(db, 31)
+    assert run_sweep(client).overdue_notified == 1
+    client.post("/outings/current/return", headers=riya)
+    assert len(to_contact(client)) == 1
+
+
+def test_stopping_the_share_forgets_the_contacts_address(client, db, riya):
+    session_id = go_out(client, riya, safe_return=True)["safe_return_session_id"]
+    assert client.post(f"/sessions/{session_id}/stop", headers=riya).status_code == 200
+    assert db.execute(text("SELECT safe_return_email FROM outings")).scalar_one() is None
+
+
+def test_an_expired_share_forgets_the_contacts_address(client, db, riya):
+    session_id = go_out(client, riya, safe_return=True)["safe_return_session_id"]
+    db.execute(
+        text(
+            "UPDATE share_sessions SET created_at = now() - interval '2 days', "
+            "ends_at = now() - interval '1 minute'"
+        )
+    )
+    db.commit()
+    assert run_sweep(client).expired_sessions == [uuid.UUID(session_id)]
+    assert db.execute(text("SELECT safe_return_email FROM outings")).scalar_one() is None
+    client.post("/outings/current/return", headers=riya)
+    assert len(to_contact(client)) == 1  # no "back" after the link had ended
+
+
+NEW_CONTACT = "papa.verma@gmail.com"
+
+
+@pytest.mark.parametrize("new_email", [NEW_CONTACT, None])
+def test_changing_the_emergency_email_while_out_cuts_the_old_contact_off(
+    client, db, riya, new_email
+):
+    go_out(client, riya, safe_return=True)
+    session_id, token = link_in(to_contact(client)[0])
+
+    r = client.patch("/profile", json={"emergency_email": new_email}, headers=riya)
+    assert r.status_code == 200, r.text
+    assert watch(client, session_id, token).status_code == 403
+    assert contact_viewer(client, riya, session_id)["status"] == "revoked"
+    assert db.execute(text("SELECT safe_return_email FROM outings")).scalar_one() is None
+
+    late_by(db, 31)
+    assert run_sweep(client).overdue_notified == 1
+    client.post("/outings/current/return", headers=riya)
+    assert len(to_contact(client)) == 1
+    # The new address never chose to follow this outing either.
+    assert [m for m in client.app.state.mailer.outbox if m.to == NEW_CONTACT] == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"contacts": CONTACTS}, {"emergency_email": "Sunita.Sharma@Gmail.com"}],
+    ids=["contacts only", "same address"],
+)
+def test_saving_the_profile_without_a_new_address_keeps_the_contact(client, db, riya, body):
+    go_out(client, riya, safe_return=True)
+    session_id, token = link_in(to_contact(client)[0])
+    assert client.patch("/profile", json=body, headers=riya).status_code == 200
+    assert watch(client, session_id, token).status_code == 200
+    assert db.execute(text("SELECT safe_return_email FROM outings")).scalar_one() == CONTACT
+
+
+def test_emails_greet_nobody_by_name_when_the_profile_names_someone_else(client, db, riya):
+    """The greeting comes from today's profile, the address from check-out: if the profile's
+    address is no longer the one being emailed, its name is not this person's."""
+    go_out(client, riya, safe_return=True)
+    db.execute(text("UPDATE users SET emergency_email = :e"), {"e": NEW_CONTACT})
+    db.commit()
+
+    late_by(db, 31)
+    run_sweep(client)
+    client.post("/outings/current/return", headers=riya)
+    _, overdue, back = to_contact(client)
+    for email in (overdue, back):
+        assert email.body.startswith("Hi there,"), email.body
+        assert "Sunita" not in email.body
+    assert "+919876543210" in overdue.body  # the student's phone stays
+
+
+def test_emails_greet_the_contact_by_name_while_the_address_matches(client, db, riya):
+    go_out(client, riya, safe_return=True)
+    late_by(db, 31)
+    run_sweep(client)
+    client.post("/outings/current/return", headers=riya)
+    assert [m.body.split("\n")[0] for m in to_contact(client)] == ["Hi Sunita,"] * 3
+
+
+# ---------- the watch token ----------
+
+
+def test_the_watch_token_has_its_own_key_derived_from_the_pepper(client, riya):
+    pepper = client.app.state.settings.code_pepper.get_secret_value()
+    session_id = uuid.uuid4()
+
+    def b64(digest: bytes) -> str:
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+    old = b64(hmac.digest(pepper.encode(), f"safe-return:{session_id}".encode(), "sha256"))
+    subkey = hmac.digest(pepper.encode(), b"lumiback/watch-token/v1", "sha256")
+    assert watch_token(session_id, pepper) != old
+    assert watch_token(session_id, pepper) == b64(
+        hmac.digest(subkey, str(session_id).encode(), "sha256")
+    )
+
+    # And the link built from it still opens the share.
+    shared = go_out(client, riya, safe_return=True)["safe_return_session_id"]
+    session, token = link_in(to_contact(client)[0])
+    assert token == watch_token(uuid.UUID(shared), pepper)
+    assert watch(client, session, token).status_code == 200
 
 
 # ---------- at the gate ----------

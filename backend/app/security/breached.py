@@ -77,13 +77,24 @@ class HibpBreachChecker:
         return suffix_listed(body, suffix)
 
 
+class OffBreachChecker:
+    """BREACH_CHECK=off (offline e2e runs): every password passes the lookup (the local rules
+    in passwords.py still apply). Keeps nothing: no state at all, so no password lingers."""
+
+    __slots__ = ()
+
+    async def is_breached(self, password: str) -> bool:
+        return False
+
+
 def make_breach_checker(breach_check: str) -> BreachChecker:
-    return HibpBreachChecker() if breach_check == "hibp" else MemoryBreachChecker()
+    return HibpBreachChecker() if breach_check == "hibp" else OffBreachChecker()
 
 
 @dataclass
 class MemoryBreachChecker:
-    """Tests and local runs: a fixed set of 'breached' passwords, no network."""
+    """Tests only, injected explicitly (tests/conftest.py `breaches`): a fixed set of
+    'breached' passwords, no network, and a record of every password checked."""
 
     breached: set[str] = field(default_factory=set)
     checked: list[str] = field(default_factory=list)

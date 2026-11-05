@@ -166,6 +166,8 @@ async def sweep(
         )
         if ended := expired + closed_tabs:
             await session.execute(delete(Location).where(Location.session_id.in_(ended)))
+            # An expired safe-return share: its contact gets nothing more, so forget them.
+            await safe_return.forget_address(session, ended)
         codes = await session.execute(
             delete(ShareCode).where(ShareCode.expires_at < now - KEEP_SPENT_CODES)
         )

@@ -424,6 +424,12 @@ async def list_holidays(
 async def put_holiday(day: date, body: HolidayIO, me: RulesUser, session: SessionDep) -> HolidayIO:
     if body.day != day:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Dates don't match")
+    # Past days already ran under their rules (outings, requests, escalations were judged by
+    # them): adding or renaming a holiday there would rewrite history. Today is still allowed.
+    if day < rules.ist_date(datetime.now(UTC)):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="That day has already passed"
+        )
     holiday = await session.get(Holiday, day)
     if holiday is None:
         session.add(Holiday(day=day, name=body.name))

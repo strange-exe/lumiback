@@ -411,7 +411,10 @@ def test_a_head_warden_sees_every_hostel_and_edits_rules(
     )
     assert r.status_code == 200, r.text
     r = client.put(
-        "/admin/holidays/2026-12-25", json={"day": "2026-12-25", "name": "Christmas"}, headers=head
+        # Far ahead: past days are refused, and this date must not expire with the calendar.
+        "/admin/holidays/2099-12-25",
+        json={"day": "2099-12-25", "name": "Christmas"},
+        headers=head,
     )
     assert r.status_code == 200
     assert client.get("/admin/hostels", headers=head).status_code == 200
