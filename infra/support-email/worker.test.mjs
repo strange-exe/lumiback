@@ -2,6 +2,7 @@
 // The worker imports "cloudflare:email", which only exists on Cloudflare; the test loads a
 // copy with that one import replaced, then checks the reply a mail client would receive.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -310,10 +311,15 @@ const limiters = (sender = limiter(), global = limiter()) => ({
   AUTO_REPLY_GLOBAL_LIMIT: global,
 });
 
-const incoming = (calls, { failReply = false, extraHeaders = {}, from = "riya@geu.ac.in", to } = {}) => ({
+// The Authentication-Results header Email Routing puts first on every inbound message.
+const CF_PASS = "mx.cloudflare.net; spf=pass smtp.mailfrom=geu.ac.in; dkim=pass header.d=geu.ac.in; dmarc=pass header.from=geu.ac.in";
+
+const incoming = (calls, { failReply = false, extraHeaders = {}, from = "riya@geu.ac.in", to, rawHeaders } = {}) => ({
   from,
   to: to || "support@lumiback.abhinesh.codes",
-  headers: headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>", ...extraHeaders }),
+  headers:
+    rawHeaders ||
+    headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>", "Authentication-Results": CF_PASS, ...extraHeaders }),
   forward: async (to) => calls.push(["forward", to]),
   reply: async (msg) => {
     calls.push(["reply", msg.to]);
@@ -352,7 +358,9 @@ test("with a Resend key, the reply goes through Resend, threaded and marked as a
   const [{ url, init, body }] = sent;
   assert.equal(url, "https://api.resend.com/emails");
   assert.equal(init.headers.Authorization, "Bearer re_test");
-  assert.equal(init.headers["Idempotency-Key"], "support-auto-reply-<m@geu.ac.in>");
+  // A digest of the Message-ID: the same email retried dedupes, and the key stays short.
+  const digest = createHash("sha256").update("<m@geu.ac.in>").digest("hex");
+  assert.equal(init.headers["Idempotency-Key"], `support-auto-reply-${digest}`);
   assert.equal(body.from, "Lumiback Support <support@lumiback.abhinesh.codes>");
   assert.deepEqual(body.to, ["riya@geu.ac.in"]);
   assert.equal(body.subject, "Re: Help");
@@ -532,4 +540,108 @@ test("every outbound fetch carries a timeout, and a timeout fails like any other
 test("the real timeouts leave a Render cold start room to answer", () => {
   assert.ok(worker.FETCH_TIMEOUT_MS.ping >= 25_000, "a cold start can take ~30 s; a ping must not cut it short");
   assert.ok(worker.FETCH_TIMEOUT_MS.resend <= 15_000);
+});
+
+// ---------- DMARC gate (no backscatter) and the sender's Message-ID ----------
+
+/** Headers with Authentication-Results repeated in order (Headers.get joins them with ", "). */
+const withResults = (...results) =>
+  new Headers([
+    ["Subject", "Help"],
+    ["Message-ID", "<m@geu.ac.in>"],
+    ...results.map((r) => ["Authentication-Results", r]),
+  ]);
+
+test("only Cloudflare's own first Authentication-Results with dmarc=pass allows an auto-reply", () => {
+  const ok = (...r) => worker.dmarcReason(withResults(...r)) === null;
+  assert.equal(ok(CF_PASS), true);
+  // Case-insensitive, with an optional version after the authserv-id, and comments ignored.
+  assert.equal(ok("MX.Cloudflare.NET 1; spf=pass (mx.cloudflare.net: a, b) smtp.mailfrom=x.in; dmarc=PASS header.from=x.in"), true);
+  // No result, or not Cloudflare's: no reply.
+  assert.equal(ok(), false);
+  assert.equal(ok("evil.example; dmarc=pass header.from=geu.ac.in"), false);
+  assert.equal(ok("mx.cloudflare.net.evil.example; dmarc=pass"), false);
+  assert.equal(ok("mx.cloudflare.net; spf=pass; dkim=pass"), false); // no dmarc result at all
+  // Cloudflare's result is not a pass.
+  for (const v of ["fail", "none", "temperror", "permerror", "bestguesspass"]) {
+    assert.equal(ok(`mx.cloudflare.net; dmarc=${v} header.from=x.in`), false, v);
+  }
+  // A pass hidden in a comment, or a second dmarc result, is not trusted.
+  assert.equal(ok("mx.cloudflare.net; dmarc=fail (spoof: dmarc=pass) header.from=x.in"), false);
+  assert.equal(ok("mx.cloudflare.net; dmarc=fail; dmarc=pass"), false);
+  // Cloudflare adds its header on top, so a sender's own copies come after it. They never
+  // upgrade Cloudflare's failure, even when they claim to be mx.cloudflare.net.
+  assert.equal(ok("mx.cloudflare.net; dmarc=fail header.from=x.in", "mx.cloudflare.net; dmarc=pass"), false);
+  assert.equal(ok("mx.cloudflare.net; dmarc=none header.from=x.in", "evil.example; dmarc=pass"), false);
+  assert.equal(ok(CF_PASS, "evil.example; dmarc=fail"), true);
+  assert.match(worker.dmarcReason(withResults()), /no Authentication-Results/);
+  assert.match(worker.dmarcReason(withResults("mx.cloudflare.net; dmarc=fail")), /dmarc=fail/);
+});
+
+test("without Cloudflare's dmarc=pass, nothing is sent (Resend or Cloudflare) but the email is forwarded", async () => {
+  for (const results of [[], ["evil.example; dmarc=pass"], ["mx.cloudflare.net; dmarc=fail", "mx.cloudflare.net; dmarc=pass"]]) {
+    const { sent, fetcher } = resendRecorder();
+    const calls = [];
+    const sender = limiter();
+    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters(sender) };
+    const logged = await emailLogged(incoming(calls, { rawHeaders: withResults(...results) }), env, fetcher);
+    assert.deepEqual(sent, [], String(results));
+    assert.deepEqual(calls, [["forward", "me@example.com"]]);
+    assert.match(logged.at(-1), /^forwarded to inbox; no auto-reply \(DMARC: /);
+    assert.deepEqual(sender.keys, [], "a spoofed sender doesn't use up the rate limit");
+    // The Cloudflare reply() fallback is gated the same way.
+    const cfCalls = [];
+    await emailLogged(incoming(cfCalls, { rawHeaders: withResults(...results) }), { FORWARD_TO: "me@example.com", ...limiters() });
+    assert.deepEqual(cfCalls, [["forward", "me@example.com"]]);
+  }
+});
+
+test("a Message-ID is used for threading only when it is short and shaped <left@right>", async () => {
+  const good = "<m@geu.ac.in>";
+  assert.equal(worker.safeMessageId(good), good);
+  assert.equal(worker.safeMessageId(`  ${good}  `), good);
+  const long = `<${"a".repeat(240)}@geu.ac.in>`;
+  assert.ok(long.length > 250);
+  for (const bad of [null, "", "m@geu.ac.in", "<m.geu.ac.in>", "<m@>", "<@x>", "<a b@x>", "<a@x>\r\nBcc: e@x", "<a@x><b@y>", "<a@b@c>", long]) {
+    assert.equal(worker.safeMessageId(bad), null, String(bad).slice(0, 40));
+  }
+  assert.equal(worker.safeMessageId(`<${"a".repeat(238)}@geu.ac.in>`).length, 250);
+  assert.equal(worker.safeMessageId(`<${"a".repeat(239)}@geu.ac.in>`), null, "251 is one too many");
+
+  for (const messageId of [long, "not-a-message-id", "<a b@x>"]) {
+    const { sent, fetcher } = resendRecorder();
+    const keys = [];
+    const recording = async (url, init) => {
+      keys.push(init.headers["Idempotency-Key"]);
+      return fetcher(url, init);
+    };
+    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
+    const message = () => incoming([], { extraHeaders: { "Message-ID": messageId } });
+    await emailLogged(message(), env, recording);
+    await emailLogged(message(), { ...env, ...limiters() }, recording);
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[0].headers, { "Auto-Submitted": "auto-replied", "X-Auto-Response-Suppress": "All" });
+    for (const key of keys) {
+      assert.match(key, /^support-auto-reply-[0-9a-f-]{36}$/, "a random key");
+      assert.ok(!key.includes("a".repeat(20)));
+    }
+    assert.notEqual(keys[0], keys[1]);
+    // The Cloudflare raw reply drops it too.
+    const raw = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "x", messageId });
+    assert.ok(!/In-Reply-To|References/.test(raw));
+  }
+  // A good one threads, and its key is a fixed-length digest well under Resend's 256 characters.
+  const { sent, fetcher } = resendRecorder();
+  const keys = [];
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
+  const at250 = `<${"a".repeat(238)}@geu.ac.in>`;
+  assert.equal(at250.length, 250);
+  await emailLogged(incoming([], { extraHeaders: { "Message-ID": at250 } }), env, async (url, init) => {
+    keys.push(init.headers["Idempotency-Key"]);
+    return fetcher(url, init);
+  });
+  assert.equal(sent[0].headers["In-Reply-To"], at250);
+  assert.equal(sent[0].headers.References, at250);
+  assert.equal(keys[0], `support-auto-reply-${createHash("sha256").update(at250).digest("hex")}`);
+  assert.ok(keys[0].length <= 256);
 });

@@ -4,8 +4,9 @@
 // variable on the Worker), and the sender gets one automatic "we've got it" reply, threaded
 // under their message. The reply goes through Resend when the RESEND_API_KEY secret is set
 // (recommended), otherwise through Cloudflare's reply(). Automated mail (bounces, mailing lists,
-// other auto-replies) is forwarded but never answered, so two auto-responders can't loop, and
-// auto-replies are rate-limited per sender and in total (see "limiting auto-replies" below).
+// other auto-replies) is forwarded but never answered, so two auto-responders can't loop; so is
+// mail without Cloudflare's dmarc=pass, so a forged sender gets no reply (no backscatter); and
+// auto-replies are rate-limited per sender and in total per minute (see "limiting auto-replies").
 // Its Cron Trigger also keeps the Render services awake and emails FORWARD_TO when one of them
 // is down or the API's sweep is stale (see "alerting the owner" below).
 // Docs: https://developers.cloudflare.com/email-routing/email-workers/reply-email-workers/
@@ -50,6 +51,62 @@ export function automatedReason(from, headers) {
 }
 
 export const isAutomated = (from, headers) => automatedReason(from, headers) !== null;
+
+// ---------- only answering senders Cloudflare authenticated ----------
+//
+// An auto-reply goes to message.from, which anyone can forge. Cloudflare's reply() refuses
+// mail without a valid DMARC result; the Resend path checks the same thing itself, so a forged
+// sender can't turn the Worker into a source of backscatter. Email Routing checks DMARC before
+// the Worker runs and adds its result as the FIRST Authentication-Results header, with the
+// authserv-id mx.cloudflare.net; any other copy may have come from the sender and is ignored.
+// Docs: https://developers.cloudflare.com/email-routing/email-workers/runtime-api/
+//       https://developers.cloudflare.com/email-routing/email-workers/reply-email-workers/
+
+const CLOUDFLARE_AUTHSERV_ID = "mx.cloudflare.net";
+
+/** Why Cloudflare's own result doesn't show dmarc=pass, or null when it does (RFC 8601). */
+export function dmarcReason(headers) {
+  const joined = headers.get("Authentication-Results");
+  if (!joined) return "no Authentication-Results header";
+  // Headers.get joins repeated headers with ", " in their order, so Cloudflare's is the text
+  // before the first comma once (nested) comments, which may hold commas, are removed. A
+  // comma inside Cloudflare's own result only loses the pass, so this fails closed.
+  let text = joined;
+  for (let prev = ""; prev !== text; ) [prev, text] = [text, text.replace(/\([^()]*\)/g, " ")];
+  const [id, ...results] = text.split(",")[0].split(";").map((s) => s.trim());
+  // The authserv-id may be followed by a version number ("mx.cloudflare.net 1").
+  if (id.split(/\s+/)[0].toLowerCase() !== CLOUDFLARE_AUTHSERV_ID) {
+    return `the first Authentication-Results is not ${CLOUDFLARE_AUTHSERV_ID}'s`;
+  }
+  const dmarc = results
+    .map((r) => /^dmarc\s*=\s*([a-z]+)/i.exec(r))
+    .filter(Boolean)
+    .map((m) => m[1].toLowerCase());
+  if (dmarc.length === 0) return "no dmarc result";
+  if (dmarc.length > 1) return "more than one dmarc result";
+  return dmarc[0] === "pass" ? null : `dmarc=${dmarc[0]}`;
+}
+
+// ---------- the sender's Message-ID ----------
+//
+// It is copied into In-Reply-To/References and keys Resend's idempotency, so only a short,
+// well-formed one is used: "<left@right>" in printable ASCII without spaces, angle brackets or
+// a second "@", at most 250 characters. Anything else means no threading and a random key.
+
+const MESSAGE_ID_MAX = 250;
+const MESSAGE_ID = /^<[\x21-\x3b\x3d\x3f\x41-\x7e]+@[\x21-\x3b\x3d\x3f\x41-\x7e]+>$/;
+
+/** The sender's Message-ID when it is safe to reflect, otherwise null. */
+export function safeMessageId(value) {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return id.length <= MESSAGE_ID_MAX && MESSAGE_ID.test(id) ? id : null;
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 const escapeHtml = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -125,13 +182,14 @@ function html() {
 export function buildReply({ from, to, subject, messageId, now = new Date(), id = crypto.randomUUID() }) {
   const domain = from.split("@")[1];
   const boundary = `lumiback-${id}`;
+  const threadId = safeMessageId(messageId);
   const headers = [
     `From: ${FROM_NAME} <${from}>`,
     `To: ${to}`,
     `Subject: ${headerText(replySubject(subject))}`,
     `Date: ${now.toUTCString()}`,
     `Message-ID: <${id}@${domain}>`,
-    ...(messageId ? [`In-Reply-To: ${messageId}`, `References: ${messageId}`] : []),
+    ...(threadId ? [`In-Reply-To: ${threadId}`, `References: ${threadId}`] : []),
     // RFC 3834: marks this as an auto-reply so other responders stay quiet.
     "Auto-Submitted: auto-replied",
     "X-Auto-Response-Suppress: All",
@@ -351,6 +409,8 @@ export async function monitor(now, env, fetcher = fetch) {
 // Cloudflare location, per 60-second window and eventually consistent, so this bounds the RATE
 // of replies, not a daily total. Over a limit, without the bindings, or when a check fails, the
 // sender gets no auto-reply; the email itself is still forwarded.
+// NOTE: the DAILY total of auto-replies is still uncapped (no Durable Object or KV counter);
+// whether to add one is the owner's decision. See the same note in wrangler.toml.
 // Docs: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 
 /** Why this sender must not get an auto-reply right now, or null when it may. */
@@ -388,8 +448,13 @@ export default {
     // always runs and a person always gets the message. One log line per email says what
     // happened, so the Worker's Logs tab answers "why no auto-reply?".
     let outcome;
+    // Unauthenticated mail is turned away before the rate limit, so a forged sender can't
+    // spend the allowance either.
+    const dmarc = dmarcReason(message.headers);
     const skip =
-      automatedReason(message.from, message.headers) ?? (await rateLimitReason(message.from, env));
+      automatedReason(message.from, message.headers) ??
+      (dmarc ? `DMARC: ${dmarc}` : null) ??
+      (await rateLimitReason(message.from, env));
     if (skip) {
       outcome = `no auto-reply (${skip})`;
     } else {
@@ -436,18 +501,21 @@ function describe(err) {
  * sending-only key) to use this; without it, the Worker falls back to Cloudflare's reply().
  */
 export async function sendWithResend({ from, to, subject, messageId }, apiKey, fetcher = fetch) {
-  const id = crypto.randomUUID();
+  const threadId = safeMessageId(messageId);
   const headers = {
     "Auto-Submitted": "auto-replied",
     "X-Auto-Response-Suppress": "All",
-    ...(messageId ? { "In-Reply-To": messageId, References: messageId } : {}),
+    ...(threadId ? { "In-Reply-To": threadId, References: threadId } : {}),
   };
+  // A digest keeps the key a fixed 83 characters (Resend allows 256) and lets a retried email
+  // dedupe; without a usable Message-ID, every send gets its own random key.
+  const key = threadId ? await sha256Hex(threadId) : crypto.randomUUID();
   const res = await fetcher("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "Idempotency-Key": `support-auto-reply-${messageId || id}`,
+      "Idempotency-Key": `support-auto-reply-${key}`,
     },
     body: JSON.stringify({
       from: `${FROM_NAME} <${from}>`,

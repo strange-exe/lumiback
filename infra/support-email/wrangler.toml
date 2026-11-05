@@ -29,6 +29,8 @@ crons = ["*/10 * * * *"]
 # forwarded. Counts are per Cloudflare location and per 60-second window (period must be 10 or
 # 60), so this caps the rate of replies, not a daily total. namespace_id is any positive integer
 # (as a string) that no other rate limiter in the account uses.
+# NOTE: the DAILY total of auto-replies is still uncapped: these limits bound only the per-minute
+# rate, and there is no Durable Object or KV daily counter (the owner's decision, not yet made).
 # Docs: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 [[ratelimits]]
 name = "AUTO_REPLY_SENDER_LIMIT"
