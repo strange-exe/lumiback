@@ -20,7 +20,13 @@ import { radius, space, useColors } from "@/ui/theme";
 import { apkState, canSelfUpdate, downloadAndInstall, openInstaller, subscribeApk } from "./apk";
 import { NATIVE_BUILDS } from "./changelog";
 import { megabytes, nativeUpdateFor, type NativeUpdate } from "./native-build";
-import { promptAllowed, shouldCheck, shouldPrompt, type Snooze } from "./prompt-rules";
+import {
+  overTheAirProgress,
+  promptAllowed,
+  shouldCheck,
+  shouldPrompt,
+  type Snooze,
+} from "./prompt-rules";
 
 /**
  * Two kinds of update, one prompt:
@@ -195,6 +201,14 @@ function OverTheAirSheet({
   const c = useColors();
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Progress of fetchUpdateAsync's download; once the update is on the phone, it restarts.
+  const { isDownloading, downloadProgress } = Updates.useUpdates();
+  const progress = overTheAirProgress({
+    updating,
+    pending,
+    downloading: isDownloading,
+    progress: downloadProgress,
+  });
 
   const update = async (): Promise<void> => {
     haptic.tap();
@@ -218,12 +232,13 @@ function OverTheAirSheet({
       <Lead icon="sparkles">
         A new version of Lumiback is ready. Updating takes a few seconds, and you stay signed in.
       </Lead>
+      {progress.bar ? <Progress percent={progress.percent} /> : null}
       <FormError message={error} />
       <View style={{ gap: space(2) }}>
         <Button
           label="Update now"
           busy={updating}
-          busyLabel="Updating…"
+          busyLabel={progress.label}
           onPress={() => void update()}
         />
         {updating ? null : <Button label="Remind me later" variant="secondary" onPress={onLater} />}
@@ -340,7 +355,7 @@ function Progress({ percent }: { percent: number | null }): ReactNode {
   return (
     <View
       accessibilityRole="progressbar"
-      accessibilityLabel="Downloading the new version"
+      accessibilityLabel="Downloading the update"
       accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
       style={{ height: 8, borderRadius: radius.pill, backgroundColor: c.line, overflow: "hidden" }}
     >

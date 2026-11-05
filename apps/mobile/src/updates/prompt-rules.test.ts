@@ -1,5 +1,6 @@
 import {
   CHECK_EVERY_MS,
+  overTheAirProgress,
   promptAllowed,
   shouldCheck,
   shouldPrompt,
@@ -36,4 +37,31 @@ test("never over the gate scanner, and only once signed in unless a build is req
   expect(promptAllowed({ signedIn: true, pathname: "/scan", required: true })).toBe(false);
   expect(promptAllowed({ signedIn: false, pathname: "/sign-in" })).toBe(false);
   expect(promptAllowed({ signedIn: false, pathname: "/sign-in", required: true })).toBe(true);
+});
+
+test("an over-the-air update shows its download progress, then restarting", () => {
+  const idle = { updating: false, pending: false, downloading: false, progress: 0 };
+  expect(overTheAirProgress(idle)).toEqual({ bar: false, percent: null, label: "Updating…" });
+  expect(overTheAirProgress({ ...idle, updating: true })).toEqual({
+    bar: true,
+    percent: null,
+    label: "Downloading…",
+  });
+  expect(
+    overTheAirProgress({ ...idle, updating: true, downloading: true, progress: 0.416 }),
+  ).toEqual({ bar: true, percent: 42, label: "Downloading… 42%" });
+  // Out-of-range or missing values never draw a broken bar.
+  expect(
+    overTheAirProgress({ ...idle, updating: true, downloading: true, progress: 7 }).percent,
+  ).toBe(100);
+  expect(
+    overTheAirProgress({ ...idle, updating: true, downloading: true, progress: Number.NaN })
+      .percent,
+  ).toBeNull();
+  // Already downloaded (or done downloading): only the restart is left.
+  expect(overTheAirProgress({ ...idle, updating: true, pending: true })).toEqual({
+    bar: false,
+    percent: null,
+    label: "Restarting…",
+  });
 });

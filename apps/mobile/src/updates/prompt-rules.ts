@@ -33,6 +33,33 @@ export function promptAllowed({
   return signedIn || required;
 }
 
+/**
+ * What the over-the-air sheet shows while it updates: a bar with the download's progress
+ * (useUpdates().downloadProgress, 0..1), then "Restarting…" once the update is on the phone.
+ * `percent` null: the bar shows an indeterminate sliver until the first progress arrives.
+ */
+export function overTheAirProgress({
+  updating,
+  pending,
+  downloading,
+  progress,
+}: {
+  updating: boolean;
+  pending: boolean;
+  downloading: boolean;
+  progress: number | undefined;
+}): { bar: boolean; percent: number | null; label: string } {
+  if (!updating) return { bar: false, percent: null, label: "Updating…" };
+  if (pending) return { bar: false, percent: null, label: "Restarting…" };
+  const known = downloading && typeof progress === "number" && Number.isFinite(progress);
+  const percent = known ? Math.round(Math.min(1, Math.max(0, progress)) * 100) : null;
+  return {
+    bar: true,
+    percent,
+    label: percent === null ? "Downloading…" : `Downloading… ${percent}%`,
+  };
+}
+
 export function shouldPrompt({
   available,
   id,
