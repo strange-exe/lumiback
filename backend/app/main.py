@@ -47,6 +47,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         app.state.limiter = RateLimiter(
             app.state.sessionmaker, settings.code_pepper.get_secret_value()
         )
+        app.state.sweep_health = expiry.SweepHealth() if start_jobs else None
         sweeper = (
             asyncio.create_task(
                 expiry.run_forever(
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                     app.state.push,
                     app.state.mailer,
                     settings.web_url,
+                    health=app.state.sweep_health,
                 )
             )
             if start_jobs
@@ -105,13 +107,23 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:
         """For the host's health check and an uptime pinger. Touches the database, so a ping
-        also counts as activity there (free Postgres tiers pause idle projects)."""
+        also counts as activity there (free Postgres tiers pause idle projects).
+
+        "sweep" says whether the background sweep (late alerts, escalations, expiry) has
+        finished recently: "ok", "stale", or "off" when this process doesn't run it. A stale
+        sweep still answers 200 on purpose. Render restarts a service whose health check
+        fails, and a restart rarely fixes what stalls a sweep (a bad row, a slow query, an
+        email or push outage); failing here would take sign-in and check-out down with it, in
+        a loop. The keep-awake Worker reads this field and emails the owner instead.
+        """
         try:
             async with request.app.state.sessionmaker() as db:
                 await db.execute(text("SELECT 1"))
         except Exception:
             return JSONResponse(status_code=503, content={"status": "database unavailable"})
-        return JSONResponse(content={"status": "ok"})
+        health = getattr(request.app.state, "sweep_health", None)
+        sweep = health.status() if health is not None else "off"
+        return JSONResponse(content={"status": "ok", "sweep": sweep})
 
     app.include_router(auth.router)
     app.include_router(contacts.router)

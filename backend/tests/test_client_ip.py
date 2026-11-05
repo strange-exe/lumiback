@@ -73,4 +73,4 @@ def test_a_weak_internal_secret_is_refused(settings):
 
 
 def test_health_checks_the_database(client):
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json() == {"status": "ok", "sweep": "off"}

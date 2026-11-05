@@ -8,7 +8,9 @@ Every statement is idempotent, so running several instances at once is safe.
 
 import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -68,6 +70,32 @@ class SweepResult:
     deleted_views: int = 0
     deleted_requests: int = 0
     deleted_escalations: int = 0
+
+
+class SweepHealth:
+    """When the sweep last finished, for GET /health.
+
+    The sweep sends late alerts and escalations, and a failing one only writes a log line.
+    This lets an outside pinger notice: the sweep is "stale" once `STALE_AFTER_SWEEPS`
+    intervals pass without a successful run. Counting starts at start-up, so a fresh process
+    gets the same grace before its first sweep. A hung sweep goes stale too, since it never
+    finishes. Monotonic clock: a wall-clock jump must not fake a stale or a fresh sweep.
+    """
+
+    STALE_AFTER_SWEEPS = 3
+
+    def __init__(
+        self, interval: float = INTERVAL_SECONDS, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._clock = clock
+        self._stale_after = interval * self.STALE_AFTER_SWEEPS
+        self._last_ok = clock()  # start-up counts as the baseline (the grace period)
+
+    def mark_ok(self) -> None:
+        self._last_ok = self._clock()
+
+    def status(self) -> str:
+        return "stale" if self._clock() - self._last_ok > self._stale_after else "ok"
 
 
 async def sweep(
@@ -229,10 +257,13 @@ async def run_forever(
     mailer: Mailer | None = None,
     web_url: str = "",
     interval: float = INTERVAL_SECONDS,
+    health: SweepHealth | None = None,
 ) -> None:
     while True:
         try:
             result = await sweep(sessionmaker, hub, push, mailer, web_url)
+            if health is not None:
+                health.mark_ok()
             if result.expired_sessions or result.closed_tabs:
                 logger.info(
                     "ended %d expired and %d idle tab-live share sessions",
