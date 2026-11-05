@@ -33,3 +33,4 @@ Thumbs.db
 
 # Local tooling / notes
 .claude/
+.wrangler/

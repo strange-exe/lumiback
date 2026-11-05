@@ -1,18 +1,22 @@
 # Email Worker behind support@lumiback.abhinesh.codes (see README "Hosting").
-# FORWARD_TO (a verified Email Routing destination) is set on the Worker in the dashboard,
-# not here, so no personal address lives in the repository.
+# This file is the source of truth for the Worker's plain variables: `wrangler deploy` replaces
+# whatever the dashboard holds with [vars] below. Anything private is a secret instead, which a
+# deploy never touches:
+#   npx wrangler secret put FORWARD_TO       (a verified Email Routing destination)
+#   npx wrangler secret put RESEND_API_KEY   (optional, a sending-only Resend key)
 name = "lumiback-support-email"
 main = "worker.js"
-compatibility_date = "2026-10-01"
-# FORWARD_TO and the KEEP_AWAKE_* variables live in the dashboard. Without this, every
-# `wrangler deploy` (or Git build) would replace them with this file's (none) and email
-# forwarding would stop.
-keep_vars = true
+compatibility_date = "2026-10-09"
+preview_urls = false
 
-# Keeps the Render services awake in their windows (see AWAKE_TARGETS in worker.js). Set on the
-# Worker: KEEP_AWAKE_URL (the API's https://...onrender.com/health) and KEEP_AWAKE_WEB_URL (the
-# website's https://...onrender.com/app/android.json). Optional HH:MM IST windows:
-# KEEP_AWAKE_FROM/UNTIL (default 09:30-22:00) and KEEP_AWAKE_WEB_FROM/UNTIL (17:00-22:00).
+# Keeps the Render services awake in their windows (see AWAKE_TARGETS in worker.js). Use the
+# onrender.com addresses: a ping answered from Cloudflare's cache never reaches Render. The
+# API's /health queries the database, so its pings also keep Supabase active. Optional HH:MM
+# IST windows: KEEP_AWAKE_FROM/UNTIL (default 09:30-22:00), KEEP_AWAKE_WEB_FROM/UNTIL (17:00-22:00).
+[vars]
+KEEP_AWAKE_URL = "https://lumiback-api-zjcl.onrender.com/health"
+KEEP_AWAKE_WEB_URL = "https://lumiback-web.onrender.com/app/android.json"
+
 [triggers]
 crons = ["*/10 * * * *"]
 
