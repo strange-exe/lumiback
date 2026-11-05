@@ -322,6 +322,28 @@ export interface Holiday {
   name: string;
 }
 
+/** Why a gate scan was accepted or refused (backend ScanResult). */
+export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";
+
+/** One gate scan in the office's log; only the distance from the gate, never a location. */
+export interface OfficeScan {
+  id: number;
+  name: string;
+  roll_no: string | null;
+  gate: string | null;
+  direction: "out" | "in";
+  result: ScanResult;
+  distance_m: number | null;
+  accuracy_m: number | null;
+  scanned_at: string;
+}
+
+export interface OfficeScanPage {
+  items: OfficeScan[];
+  /** Pass as `before` for the next, older page; null on the last page. */
+  next_before: number | null;
+}
+
 export interface Gate {
   id: string;
   name: string;

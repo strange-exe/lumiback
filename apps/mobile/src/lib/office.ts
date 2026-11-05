@@ -1,5 +1,69 @@
 /** Hostel office helpers with no app dependencies (unit-tested). API calls: office-api.ts. */
-import type { DayRule, Role } from "@/lib/types";
+import type { DayRule, OfficeScan, Role, ScanResult } from "@/lib/types";
+
+/** What each scan result means, in the website's words. */
+export const SCAN_RESULT_LABEL: Record<ScanResult, string> = {
+  accepted: "Accepted",
+  bad_code: "Invalid or old code",
+  gate_off: "Gate switched off",
+  too_far: "Too far from the gate",
+  weak_gps: "GPS too weak",
+  mock_gps: "Mock location",
+};
+
+const SCANS_PER_PAGE = 30;
+
+/** The query for one page of the scan log; filters left unset are left out. */
+export function scanQuery(filter: {
+  before?: number | null;
+  gateId?: string | null;
+  result?: ScanResult | null;
+}): string {
+  const query = new URLSearchParams({ limit: String(SCANS_PER_PAGE) });
+  if (filter.before != null) query.set("before", String(filter.before));
+  if (filter.gateId) query.set("gate_id", filter.gateId);
+  if (filter.result) query.set("result", filter.result);
+  return query.toString();
+}
+
+/** "12 m from the gate (GPS ±9 m)"; null when the scan had no position (a bad code). */
+export function scanDistance(scan: Pick<OfficeScan, "distance_m" | "accuracy_m">): string | null {
+  if (scan.distance_m === null) return null;
+  const accuracy = scan.accuracy_m === null ? "" : ` (GPS ±${Math.round(scan.accuracy_m)} m)`;
+  return `${Math.round(scan.distance_m)} m from the gate${accuracy}`;
+}
+
+/** Today's date on the campus clock (IST, UTC+5:30, no daylight saving), as YYYY-MM-DD. */
+export function campusToday(now: Date = new Date()): string {
+  return new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/** A typed holiday date: "25/12/2026" (day first, as written in India) or "2026-12-25".
+ * `today` is campusToday(); a holiday can't be added for a day that has passed. */
+export function parseHolidayDate(
+  input: string,
+  today: string,
+): { day: string } | { error: string } {
+  const text = input.trim();
+  const dmy = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(text);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const parts = dmy ? [dmy[3], dmy[2], dmy[1]] : iso ? [iso[1], iso[2], iso[3]] : null;
+  if (!parts) return { error: "Type the date as day/month/year, for example 25/12/2026." };
+  const [y, m, d] = parts.map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (
+    y < 2020 ||
+    y > 2100 ||
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== m - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return { error: "That date doesn't exist. Check the day and month." };
+  }
+  const day = date.toISOString().slice(0, 10);
+  if (day < today) return { error: "That date has passed. Pick today or a later date." };
+  return { day };
+}
 
 export const DAY_LABEL: Record<DayRule["day_type"], string> = {
   weekday: "Weekdays",
@@ -42,7 +106,8 @@ export function everyHostel(role: Role | undefined): boolean {
   return role === "head_warden" || role === "admin";
 }
 
-/** Who may change the outing rules (on the website): admins and head wardens. */
+/** Who may change the outing rules (on the website) and the holidays (here too): admins and
+ * head wardens. */
 export function canEditRules(role: Role | undefined): boolean {
   return everyHostel(role);
 }
