@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DeleteAccountForm } from "@/features/account/DeleteAccountForm";
+import { DownloadMyData } from "@/features/account/DownloadMyData";
 import { OutingDetails } from "@/features/account/OutingDetails";
 import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
@@ -38,6 +39,7 @@ export default async function AccountPage(): Promise<ReactNode> {
         ))}
       </dl>
       <OutingDetails profile={profile} hostels={hostels} />
+      <DownloadMyData />
       <div className="flex flex-col gap-2 text-muted">
         <p>
           Need help?{" "}
