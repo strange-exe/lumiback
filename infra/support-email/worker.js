@@ -64,27 +64,100 @@ export const isAutomated = (from, headers) => automatedReason(from, headers) !==
 
 const CLOUDFLARE_AUTHSERV_ID = "mx.cloudflare.net";
 
-/** Why Cloudflare's own result doesn't show dmarc=pass, or null when it does (RFC 8601). */
-export function dmarcReason(headers) {
+/**
+ * The first Authentication-Results header split into its ";"-separated parts, or null when
+ * it can't be read. Headers.get joins repeated headers with ", " in their order, so the first
+ * header ends at the first comma outside a quoted string or comment. Quoted strings (which
+ * may echo a sender's envelope local part, with ";" and "," in it) are kept whole, and
+ * (nested) comments are dropped, so no sender text is read as structure (RFC 8601, RFC 5322
+ * quoted-string and comment). An unclosed quote or comment makes it unreadable: no reply.
+ */
+function firstResultParts(joined) {
+  const parts = [];
+  let part = "";
+  let depth = 0; // comment nesting
+  let quoted = false;
+  for (let i = 0; i < joined.length; i++) {
+    const c = joined[i];
+    if ((quoted || depth > 0) && c === "\\") {
+      if (quoted) part += c + (joined[i + 1] ?? "");
+      i++; // a quoted-pair: the next character is literal
+    } else if (quoted) {
+      part += c;
+      if (c === '"') quoted = false;
+    } else if (depth > 0) {
+      if (c === "(") depth++;
+      else if (c === ")") depth--;
+      if (depth === 0) part += " ";
+    } else if (c === '"') {
+      quoted = true;
+      part += c;
+    } else if (c === "(") {
+      depth = 1;
+    } else if (c === ";" || c === ",") {
+      parts.push(part.trim());
+      part = "";
+      if (c === ",") return parts; // the end of the first header
+    } else {
+      part += c;
+    }
+  }
+  if (quoted || depth > 0) return null;
+  parts.push(part.trim());
+  return parts;
+}
+
+/**
+ * Cloudflare's own DMARC result: { reason } when it isn't a pass (or can't be trusted), else
+ * { reason: null, domain } with the header From domain it authenticated (lower case), or
+ * domain null when the result names none.
+ */
+function cloudflareDmarc(headers) {
   const joined = headers.get("Authentication-Results");
-  if (!joined) return "no Authentication-Results header";
-  // Headers.get joins repeated headers with ", " in their order, so Cloudflare's is the text
-  // before the first comma once (nested) comments, which may hold commas, are removed. A
-  // comma inside Cloudflare's own result only loses the pass, so this fails closed.
-  let text = joined;
-  for (let prev = ""; prev !== text; ) [prev, text] = [text, text.replace(/\([^()]*\)/g, " ")];
-  const [id, ...results] = text.split(",")[0].split(";").map((s) => s.trim());
+  if (!joined) return { reason: "no Authentication-Results header" };
+  const parts = firstResultParts(joined);
+  if (!parts) return { reason: "unreadable Authentication-Results (an unclosed quote or comment)" };
+  const [id, ...results] = parts;
   // The authserv-id may be followed by a version number ("mx.cloudflare.net 1").
   if (id.split(/\s+/)[0].toLowerCase() !== CLOUDFLARE_AUTHSERV_ID) {
-    return `the first Authentication-Results is not ${CLOUDFLARE_AUTHSERV_ID}'s`;
+    return { reason: `the first Authentication-Results is not ${CLOUDFLARE_AUTHSERV_ID}'s` };
   }
-  const dmarc = results
-    .map((r) => /^dmarc\s*=\s*([a-z]+)/i.exec(r))
-    .filter(Boolean)
-    .map((m) => m[1].toLowerCase());
-  if (dmarc.length === 0) return "no dmarc result";
-  if (dmarc.length > 1) return "more than one dmarc result";
-  return dmarc[0] === "pass" ? null : `dmarc=${dmarc[0]}`;
+  const dmarc = results.filter((r) => /^dmarc\s*=/i.test(r));
+  if (dmarc.length === 0) return { reason: "no dmarc result" };
+  if (dmarc.length > 1) return { reason: "more than one dmarc result" };
+  const verdict = /^dmarc\s*=\s*([a-z]*)/i.exec(dmarc[0])[1].toLowerCase();
+  if (verdict !== "pass") return { reason: `dmarc=${verdict}` };
+  const from = /(?:^|\s)header\.from\s*=\s*([A-Za-z0-9.-]+)(?=\s|$)/i.exec(dmarc[0]);
+  return { reason: null, domain: from ? from[1].toLowerCase().replace(/\.$/, "") : null };
+}
+
+/** Why Cloudflare's own result doesn't show dmarc=pass, or null when it does (RFC 8601). */
+export function dmarcReason(headers) {
+  return cloudflareDmarc(headers).reason;
+}
+
+// A plain envelope address: an unquoted local part and a dotted domain, nothing else. Quotes,
+// commas, spaces, angle brackets or a second "@" could make Resend's "to" mean another
+// mailbox (or several) than the one checked here.
+const PLAIN_ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)$/;
+
+/**
+ * Why the auto-reply must not go to `from` (the envelope sender), or null. DMARC
+ * authenticates the header From domain only, and the reply goes to the envelope sender, so
+ * the two must match: the same domain, or a subdomain of it (DMARC's relaxed alignment).
+ * Otherwise a sender who passes DMARC for their own domain could aim replies at anyone.
+ */
+export function senderReason(from, headers) {
+  const dmarc = cloudflareDmarc(headers);
+  if (dmarc.reason) return `DMARC: ${dmarc.reason}`;
+  if (!dmarc.domain) return "DMARC: the pass names no header.from domain";
+  const plain = PLAIN_ADDRESS.exec(from || "");
+  if (!plain) return "sender: not a plain address";
+  const domain = plain[1].toLowerCase();
+  if (domain !== dmarc.domain && !domain.endsWith(`.${dmarc.domain}`)) {
+    return `sender: ${domain} is not the DMARC-authenticated ${dmarc.domain}`;
+  }
+  return null;
 }
 
 // ---------- the sender's Message-ID ----------
@@ -450,10 +523,9 @@ export default {
     let outcome;
     // Unauthenticated mail is turned away before the rate limit, so a forged sender can't
     // spend the allowance either.
-    const dmarc = dmarcReason(message.headers);
     const skip =
       automatedReason(message.from, message.headers) ??
-      (dmarc ? `DMARC: ${dmarc}` : null) ??
+      senderReason(message.from, message.headers) ??
       (await rateLimitReason(message.from, env));
     if (skip) {
       outcome = `no auto-reply (${skip})`;
@@ -508,8 +580,9 @@ export async function sendWithResend({ from, to, subject, messageId }, apiKey, f
     ...(threadId ? { "In-Reply-To": threadId, References: threadId } : {}),
   };
   // A digest keeps the key a fixed 83 characters (Resend allows 256) and lets a retried email
-  // dedupe; without a usable Message-ID, every send gets its own random key.
-  const key = threadId ? await sha256Hex(threadId) : crypto.randomUUID();
+  // dedupe; without a usable Message-ID, every send gets its own random key. The recipient is
+  // part of it, so one sender's Message-ID can never suppress a reply to someone else.
+  const key = threadId ? await sha256Hex(`${to} ${threadId}`) : crypto.randomUUID();
   const res = await fetcher("https://api.resend.com/emails", {
     method: "POST",
     headers: {

@@ -358,8 +358,8 @@ test("with a Resend key, the reply goes through Resend, threaded and marked as a
   const [{ url, init, body }] = sent;
   assert.equal(url, "https://api.resend.com/emails");
   assert.equal(init.headers.Authorization, "Bearer re_test");
-  // A digest of the Message-ID: the same email retried dedupes, and the key stays short.
-  const digest = createHash("sha256").update("<m@geu.ac.in>").digest("hex");
+  // A digest of the recipient and Message-ID: the same email retried dedupes, the key stays short.
+  const digest = createHash("sha256").update("riya@geu.ac.in <m@geu.ac.in>").digest("hex");
   assert.equal(init.headers["Idempotency-Key"], `support-auto-reply-${digest}`);
   assert.equal(body.from, "Lumiback Support <support@lumiback.abhinesh.codes>");
   assert.deepEqual(body.to, ["riya@geu.ac.in"]);
@@ -441,10 +441,10 @@ test("the global limit stops auto-replies across senders, through Cloudflare too
   const global = limiter(2);
   const env = { FORWARD_TO: "me@example.com", ...limiters(limiter(), global) };
   const calls = [];
-  for (const from of ["a@x.in", "b@x.in", "c@x.in"]) await emailLogged(incoming(calls, { from }), env);
+  for (const from of ["a@geu.ac.in", "b@geu.ac.in", "c@geu.ac.in"]) await emailLogged(incoming(calls, { from }), env);
   assert.deepEqual(
     calls.filter(([kind]) => kind === "reply").map(([, to]) => to),
-    ["a@x.in", "b@x.in"],
+    ["a@geu.ac.in", "b@geu.ac.in"],
   );
   assert.equal(calls.filter(([kind]) => kind === "forward").length, 3);
   assert.deepEqual(global.keys, ["all", "all", "all"]);
@@ -578,6 +578,59 @@ test("only Cloudflare's own first Authentication-Results with dmarc=pass allows 
   assert.match(worker.dmarcReason(withResults("mx.cloudflare.net; dmarc=fail")), /dmarc=fail/);
 });
 
+test("sender text quoted inside Cloudflare's result is never read as structure (RFC 8601)", () => {
+  const ok = (...r) => worker.dmarcReason(withResults(...r)) === null;
+  // A quoted envelope local part echoed as smtp.mailfrom can hold ";" and ",": neither may
+  // inject a pass nor cut off Cloudflare's real result.
+  assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x;dmarc=pass,"@victim.example; dmarc=none header.from=victim.example'), false);
+  assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x;dmarc=pass"@victim.example; dmarc=none header.from=victim.example'), false);
+  // The real result after a quoted string still counts.
+  assert.equal(ok('mx.cloudflare.net; spf=pass smtp.mailfrom="a,b;c"@x.in; dmarc=pass header.from=x.in'), true);
+  // Unbalanced quotes or comments: unreadable, so no reply.
+  assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x@y; dmarc=pass header.from=x.in'), false);
+  assert.equal(ok("mx.cloudflare.net; spf=none (open comment; dmarc=pass header.from=x.in"), false);
+});
+
+test("the reply goes only to an envelope sender in the domain DMARC authenticated", async () => {
+  const replied = async (from, results) => {
+    const { sent, fetcher } = resendRecorder();
+    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
+    const calls = [];
+    const logged = await emailLogged(incoming(calls, { from, rawHeaders: withResults(results) }), env, fetcher);
+    assert.deepEqual(calls, [["forward", "me@example.com"]], "always forwarded");
+    return { sent: sent.length === 1, log: logged.at(-1) };
+  };
+  // DKIM-aligned mail from the attacker's own domain with someone else's envelope sender.
+  const forged = "mx.cloudflare.net; spf=fail smtp.mailfrom=victim.example; dkim=pass header.d=attacker.example; dmarc=pass header.from=attacker.example";
+  const r = await replied("victim@victim.example", forged);
+  assert.equal(r.sent, false);
+  assert.match(r.log, /no auto-reply \(sender: /);
+  // A pass that names no header.from domain can't be tied to the sender.
+  assert.equal((await replied("riya@geu.ac.in", "mx.cloudflare.net; dmarc=pass")).sent, false);
+  // Only a plain address: no quotes, commas, spaces, brackets or a second @.
+  for (const from of ['"a,b"@geu.ac.in', "a b@geu.ac.in", "<riya@geu.ac.in>", "a@b@geu.ac.in", "riya@geu.ac.in, x@evil.example", "riya@geu"]) {
+    assert.equal((await replied(from, CF_PASS)).sent, false, from);
+  }
+  // Aligned: the same domain (any case) or a subdomain of it (relaxed alignment).
+  assert.equal((await replied("Riya@GEU.ac.in", CF_PASS)).sent, true);
+  assert.equal((await replied("riya@mail.geu.ac.in", CF_PASS)).sent, true);
+  assert.equal((await replied("riya@notgeu.ac.in", CF_PASS)).sent, false, "a suffix is not a subdomain");
+});
+
+test("the Resend idempotency key is bound to the recipient as well as the Message-ID", async () => {
+  const keys = [];
+  const { fetcher } = resendRecorder();
+  const recording = async (url, init) => {
+    keys.push(init.headers["Idempotency-Key"]);
+    return fetcher(url, init);
+  };
+  const env = () => ({ FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() });
+  await emailLogged(incoming([], { from: "riya@geu.ac.in" }), env(), recording);
+  await emailLogged(incoming([], { from: "aman@geu.ac.in" }), env(), recording);
+  assert.equal(keys.length, 2);
+  assert.notEqual(keys[0], keys[1]);
+});
+
 test("without Cloudflare's dmarc=pass, nothing is sent (Resend or Cloudflare) but the email is forwarded", async () => {
   for (const results of [[], ["evil.example; dmarc=pass"], ["mx.cloudflare.net; dmarc=fail", "mx.cloudflare.net; dmarc=pass"]]) {
     const { sent, fetcher } = resendRecorder();
@@ -642,6 +695,6 @@ test("a Message-ID is used for threading only when it is short and shaped <left@
   });
   assert.equal(sent[0].headers["In-Reply-To"], at250);
   assert.equal(sent[0].headers.References, at250);
-  assert.equal(keys[0], `support-auto-reply-${createHash("sha256").update(at250).digest("hex")}`);
+  assert.equal(keys[0], `support-auto-reply-${createHash("sha256").update(`riya@geu.ac.in ${at250}`).digest("hex")}`);
   assert.ok(keys[0].length <= 256);
 });
