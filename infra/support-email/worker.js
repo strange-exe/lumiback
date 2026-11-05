@@ -127,9 +127,15 @@ function cloudflareDmarc(headers) {
   if (dmarc.length > 1) return { reason: "more than one dmarc result" };
   const verdict = /^dmarc\s*=\s*([a-z]*)/i.exec(dmarc[0])[1].toLowerCase();
   if (verdict !== "pass") return { reason: `dmarc=${verdict}` };
-  const from = /(?:^|\s)header\.from\s*=\s*([A-Za-z0-9.-]+)(?=\s|$)/i.exec(dmarc[0]);
-  return { reason: null, domain: from ? from[1].toLowerCase().replace(/\.$/, "") : null };
+  // Quoted values are blanked first, so text echoed inside one can't pose as the property.
+  const props = dmarc[0].replace(QUOTED_STRING, '""');
+  const froms = [...props.matchAll(/(?:^|\s)header\.from\s*=\s*([A-Za-z0-9.-]+)(?=\s|$)/gi)];
+  if (froms.length > 1) return { reason: "more than one header.from in the dmarc result" };
+  return { reason: null, domain: froms.length ? froms[0][1].toLowerCase().replace(/\.$/, "") : null };
 }
+
+// An RFC 5322 quoted string, with its quoted-pairs.
+const QUOTED_STRING = /"(?:[^"\\]|\\.)*"/g;
 
 /** Why Cloudflare's own result doesn't show dmarc=pass, or null when it does (RFC 8601). */
 export function dmarcReason(headers) {
@@ -142,10 +148,28 @@ export function dmarcReason(headers) {
 const PLAIN_ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)$/;
 
 /**
+ * The single address in a From header ("Name" <a@b> or a bare a@b), or null when it holds
+ * anything else (several mailboxes, an address in the display name, a non-plain address).
+ */
+function headerFromAddress(value) {
+  const text = (value || "").trim();
+  const open = text.lastIndexOf("<");
+  if (open === -1) return PLAIN_ADDRESS.test(text) ? text : null;
+  const close = text.indexOf(">", open);
+  if (close === -1 || text.slice(close + 1).trim() !== "") return null;
+  const display = text.slice(0, open).replace(QUOTED_STRING, "");
+  if (/[@,<>"]/.test(display)) return null;
+  const address = text.slice(open + 1, close).trim();
+  return PLAIN_ADDRESS.test(address) ? address : null;
+}
+
+/**
  * Why the auto-reply must not go to `from` (the envelope sender), or null. DMARC
- * authenticates the header From domain only, and the reply goes to the envelope sender, so
- * the two must match: the same domain, or a subdomain of it (DMARC's relaxed alignment).
- * Otherwise a sender who passes DMARC for their own domain could aim replies at anyone.
+ * authenticates the header From domain (DKIM signs the From header, never the envelope), and
+ * the reply goes to the envelope sender. So the envelope sender must be exactly the signed
+ * From address, in the authenticated domain or a subdomain of it (relaxed alignment).
+ * Otherwise a sender who passes DMARC (or replays someone's signed message) could aim
+ * replies at another mailbox.
  */
 export function senderReason(from, headers) {
   const dmarc = cloudflareDmarc(headers);
@@ -156,6 +180,10 @@ export function senderReason(from, headers) {
   const domain = plain[1].toLowerCase();
   if (domain !== dmarc.domain && !domain.endsWith(`.${dmarc.domain}`)) {
     return `sender: ${domain} is not the DMARC-authenticated ${dmarc.domain}`;
+  }
+  const signed = headerFromAddress(headers.get("From"));
+  if (!signed || signed.toLowerCase() !== from.toLowerCase()) {
+    return "sender: the envelope sender is not the From address";
   }
   return null;
 }

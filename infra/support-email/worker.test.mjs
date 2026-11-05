@@ -319,7 +319,7 @@ const incoming = (calls, { failReply = false, extraHeaders = {}, from = "riya@ge
   to: to || "support@lumiback.abhinesh.codes",
   headers:
     rawHeaders ||
-    headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>", "Authentication-Results": CF_PASS, ...extraHeaders }),
+    headers({ From: from, Subject: "Help", "Message-ID": "<m@geu.ac.in>", "Authentication-Results": CF_PASS, ...extraHeaders }),
   forward: async (to) => calls.push(["forward", to]),
   reply: async (msg) => {
     calls.push(["reply", msg.to]);
@@ -592,11 +592,13 @@ test("sender text quoted inside Cloudflare's result is never read as structure (
 });
 
 test("the reply goes only to an envelope sender in the domain DMARC authenticated", async () => {
-  const replied = async (from, results) => {
+  const replied = async (from, results, headerFrom = from) => {
     const { sent, fetcher } = resendRecorder();
     const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
     const calls = [];
-    const logged = await emailLogged(incoming(calls, { from, rawHeaders: withResults(results) }), env, fetcher);
+    const rawHeaders = withResults(results);
+    if (headerFrom !== null) rawHeaders.set("From", headerFrom);
+    const logged = await emailLogged(incoming(calls, { from, rawHeaders }), env, fetcher);
     assert.deepEqual(calls, [["forward", "me@example.com"]], "always forwarded");
     return { sent: sent.length === 1, log: logged.at(-1) };
   };
@@ -615,6 +617,22 @@ test("the reply goes only to an envelope sender in the domain DMARC authenticate
   assert.equal((await replied("Riya@GEU.ac.in", CF_PASS)).sent, true);
   assert.equal((await replied("riya@mail.geu.ac.in", CF_PASS)).sent, true);
   assert.equal((await replied("riya@notgeu.ac.in", CF_PASS)).sent, false, "a suffix is not a subdomain");
+  // DKIM signs the From header, not the envelope: a signed message replayed with another
+  // mailbox of the same domain as its envelope sender gets no reply.
+  const replay = await replied("victim@geu.ac.in", CF_PASS, "attacker@geu.ac.in");
+  assert.equal(replay.sent, false);
+  assert.match(replay.log, /no auto-reply \(sender: /);
+  assert.equal((await replied("riya@geu.ac.in", CF_PASS, null)).sent, false, "no From header");
+  assert.equal((await replied("riya@geu.ac.in", CF_PASS, "a@geu.ac.in, riya@geu.ac.in")).sent, false);
+  // A display name is fine; the address inside the angle brackets is what counts.
+  assert.equal((await replied("riya@geu.ac.in", CF_PASS, '"Verma, Riya" <Riya@geu.ac.in>')).sent, true);
+  assert.equal((await replied("riya@geu.ac.in", CF_PASS, '"riya@geu.ac.in" <x@geu.ac.in>')).sent, false);
+  // header.from text inside a quoted value is not the property; two of them is ambiguous.
+  const quotedFrom = 'mx.cloudflare.net; dmarc=pass reason="x header.from=victim.example" header.from=geu.ac.in';
+  assert.equal((await replied("victim@victim.example", quotedFrom)).sent, false);
+  assert.equal((await replied("riya@geu.ac.in", quotedFrom)).sent, true);
+  const twoFroms = "mx.cloudflare.net; dmarc=pass header.from=geu.ac.in header.from=victim.example";
+  assert.equal((await replied("riya@geu.ac.in", twoFroms)).sent, false);
 });
 
 test("the Resend idempotency key is bound to the recipient as well as the Message-ID", async () => {
