@@ -453,6 +453,19 @@ class PushToken(Base):
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class PushTicket(Base):
+    """A push Expo accepted but hasn't confirmed yet. The sweep asks Expo for its receipt about
+    15 minutes later, prunes the token if the phone is gone, and deletes the row. Kept in the
+    database (not memory) so a restart or the free tier's sleep doesn't lose it."""
+
+    __tablename__ = "push_tickets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Expo's ticket id
+    token: Mapped[str] = mapped_column(String(255))  # no FK: the token may be gone by then
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    checked_at: Mapped[datetime | None]  # last time Expo had no receipt for it yet
+
+
 class WardenHostel(Base):
     """A hostel a warden looks after. Only users with the warden role have rows here."""
 
