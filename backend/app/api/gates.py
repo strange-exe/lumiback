@@ -15,7 +15,12 @@ from app.api.deps import (
     client_ip,
     enforce,
 )
-from app.api.outings import safe_return_ended, safe_return_pepper, safe_return_started
+from app.api.outings import (
+    release_unused,
+    safe_return_ended,
+    safe_return_slot,
+    safe_return_started,
+)
 from app.models import Hostel, ScanDirection
 from app.schemas import CampusOut, GateScanIn, GateScanOut, KioskOut, TodayRulesOut
 from app.security.gate_codes import gate_code, qr_payload, window_at, window_ends_at
@@ -70,25 +75,31 @@ async def scan(
 ) -> GateScanOut:
     """Tap out (no open outing) or tap in (open outing) by scanning the gate's QR."""
     await enforce(limiter, "scan:user", str(me.id), SCANS_PER_USER)
-    start_safe_return = await safe_return_pepper(body.safe_return, me, limiter, settings)
+    slot = await safe_return_slot(body.safe_return, me, limiter, settings)
     try:
         outcome = await svc.scan(
             session,
             me.id,
             body,
             settings.code_pepper.get_secret_value(),
-            start_safe_return=start_safe_return is not None,
+            start_safe_return=slot is not None,
         )
     except svc.ScanRejected as e:
+        await release_unused(limiter, slot, None)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.message) from None
     except svc.AlreadyScanned:
+        await release_unused(limiter, slot, None)
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You just scanned. Check Today to see your status."
         ) from None
     except outings.AlreadyOut:  # a parallel request opened an outing first
+        await release_unused(limiter, slot, None)
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You're already checked out."
         ) from None
+    # A tap-in starts nothing (the outing it closes may have a share of its own).
+    started = outcome.outing if outcome.direction is ScanDirection.OUT else None
+    await release_unused(limiter, slot, started)
     if outcome.direction is ScanDirection.OUT:
         await safe_return_started(outcome.outing, me, mailer=mailer, settings=settings, tasks=tasks)
     else:

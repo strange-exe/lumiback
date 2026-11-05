@@ -20,7 +20,7 @@ VALID_ENV = {
     "SMTP_PASSWORD": "fake-smtp-password",
     "EMAIL_FROM": "Lumiback <no-reply@example.com>",
 }
-OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT"]
+OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT", "BREACH_CHECK"]
 
 
 @pytest.fixture
@@ -128,6 +128,17 @@ def test_console_email_is_refused_in_production(env):
     assert "EMAIL_BACKEND=console" in str(exc.value)
     env.setenv("APP_ENV", "development")
     assert load().email_backend == "console"
+
+
+def test_switching_the_breached_password_check_off_is_refused_in_production(env):
+    """BREACH_CHECK=off is for offline local test servers, never for real sign-ups."""
+    assert load().breach_check == "hibp"
+    env.setenv("BREACH_CHECK", "off")
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "BREACH_CHECK=off" in str(exc.value)
+    env.setenv("APP_ENV", "development")  # as scripts/e2e_server.py sets it
+    assert load().breach_check == "off"
 
 
 @pytest.mark.parametrize("key", ["SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"])

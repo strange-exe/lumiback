@@ -21,7 +21,8 @@ contact also stops the emails. The contact's address (outings.safe_return_email)
 as soon as the contact stops following: on return, stop, expiry, revocation, or when the
 student changes their emergency email while out. Check-outs with safe return are limited per
 student and per contact address (a student could otherwise use it to send mail to anyone);
-the address is counted in a canonical form, so plus-aliases and case share one limit.
+the address is counted in a canonical form, so plus-aliases and case share one limit. Only
+starts that happen count: a try that's refused or starts no share gives its slot back.
 
 The watch token is derived (HMAC over the share id, with a key of its own derived from the code
 pepper) rather than random, so the overdue email can carry the same link again without storing
@@ -102,21 +103,38 @@ def canonical_address(email: str) -> str:
     return f"{local.split('+', 1)[0]}@{domain}"
 
 
-async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> bool:
+@dataclass(frozen=True)
+class Reservation:
+    """One safe-return start counted against both limits (the recorded hits' ids)."""
+
+    hit_ids: tuple[int, ...]
+
+
+async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> Reservation | None:
     """Counts one safe-return start against both limits, atomically under the limiter's locks:
-    True if both were under their limit (both are now counted), False if either was full
-    (neither is counted). Called before the check-out, so a check-out that then fails still
-    used its slot: the limits only ever err towards fewer emails."""
+    a Reservation if both were under their limit (both are now counted), None if either was
+    full (neither is counted). Called before the check-out, so a burst of parallel tries can
+    never pass a limit; a try that then starts no share gives its slot back with release()."""
     try:
-        await limiter.hit_all(
+        ids = await limiter.hit_all(
             [
                 ("safe_return:student", str(student_id), PER_STUDENT),
                 ("safe_return:contact", canonical_address(email), PER_CONTACT),
             ]
         )
     except RateLimited:
-        return False
-    return True
+        return None
+    return Reservation(tuple(ids))
+
+
+async def release(limiter: RateLimiter, reservation: Reservation) -> None:
+    """Gives a reservation back: its check-out started no share (refused, already out, a bad
+    scan, a tap-in), so it must not count against the student or the contact. Best effort: if
+    this fails, the slot stays used, which only errs towards fewer emails."""
+    try:
+        await limiter.undo(reservation.hit_ids)
+    except Exception:
+        logger.exception("could not release a safe return reservation")
 
 
 def _contact_name(student: User, to: str) -> str | None:

@@ -22,23 +22,36 @@ from pydantic import (
 from app.security.passwords import MAX_LENGTH, password_problem
 
 _NAME_JOINERS = frozenset((chr(0x200C), chr(0x200D)))  # ZWNJ, ZWJ
+# Letters (Lo) that show nothing: the Hangul fillers. A name of only these looks empty.
+_INVISIBLE_LETTERS = frozenset(map(chr, (0x115F, 0x1160, 0x3164, 0xFFA0)))
 
 
 def _no_control_characters(value: object) -> object:
     """Names go into email subjects and greetings and onto other people's screens: refuse
-    control characters (Cc: CR, LF, tab, NUL, C1 such as NEL) and invisible format characters
-    (Cf: bidi overrides, zero-width spaces, BOM) anywhere, even where stripping would hide them.
-    ZWNJ and ZWJ are the exception: Indic scripts spell real names with them."""
+    control characters (Cc: CR, LF, tab, NUL, C1 such as NEL), invisible format characters
+    (Cf: bidi overrides, zero-width spaces, BOM) and line or paragraph separators (Zl, Zp)
+    anywhere, even where stripping would hide them. ZWNJ and ZWJ are the exception: Indic
+    scripts spell real names with them."""
     if isinstance(value, str) and any(
-        unicodedata.category(c) in ("Cc", "Cf") and c not in _NAME_JOINERS for c in value
+        unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") and c not in _NAME_JOINERS
+        for c in value
     ):
         raise ValueError("must not contain control or invisible formatting characters")
+    return value
+
+
+def _has_a_letter_or_digit(value: str) -> str:
+    """A person's name shows at least one letter or digit (joiners, marks, punctuation or
+    Hangul fillers alone would look like a blank name on someone else's screen)."""
+    if not any(unicodedata.category(c)[0] in "LN" and c not in _INVISIBLE_LETTERS for c in value):
+        raise ValueError("must contain a letter or digit")
     return value
 
 
 Name = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    AfterValidator(_has_a_letter_or_digit),
     # Last, so it runs first (before validators run outermost-first): it sees the raw input,
     # before strip_whitespace could remove a trailing CR or LF.
     BeforeValidator(_no_control_characters),
@@ -364,8 +377,18 @@ def _phone(value: str) -> str:
 Phone = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=24), AfterValidator(_phone)
 ]
-PersonName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
-Relation = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+# Emailed and shown to others like Name (the same checks, see Name for the order).
+PersonName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+    AfterValidator(_has_a_letter_or_digit),
+    BeforeValidator(_no_control_characters),
+]
+Relation = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=40),
+    BeforeValidator(_no_control_characters),
+]
 
 
 class ContactsIn(Input):

@@ -83,9 +83,10 @@ class RateLimiter:
         """Atomically check, then record one hit."""
         await self.hit_all([(scope, key, limit)])
 
-    async def hit_all(self, hits: Sequence[tuple[str, str, Limit]]) -> None:
+    async def hit_all(self, hits: Sequence[tuple[str, str, Limit]]) -> list[int]:
         """Atomically check every (scope, key, limit), then record one hit on each: either all
-        are under their limit and all are counted, or RateLimited is raised and none is."""
+        are under their limit and all are counted, or RateLimited is raised and none is.
+        Returns the recorded hits' ids (for undo)."""
         keyed = [(scope, self._key_hash(scope, key), limit) for scope, key, limit in hits]
         async with self._sessionmaker() as session:
             # Always in the same order, so two callers locking overlapping keys can't deadlock.
@@ -97,10 +98,23 @@ class RateLimiter:
                 if retry is not None:
                     await session.rollback()  # releases the locks
                     raise RateLimited(retry)
-            session.add_all(
+            recorded = [
                 RateLimitHit(scope=scope, key_hash=key_hash, hit_at=now)
                 for scope, key_hash, _ in keyed
-            )
+            ]
+            session.add_all(recorded)
+            await session.flush()  # assigns the ids (read now: commit expires the objects)
+            ids = [hit.id for hit in recorded]
+            await session.commit()
+        return ids
+
+    async def undo(self, hit_ids: Sequence[int]) -> None:
+        """Remove exactly these recorded hits (from hit_all): the attempt they counted didn't
+        happen. Removing hits only ever lowers a count, so it can't let a burst past a limit."""
+        if not hit_ids:
+            return
+        async with self._sessionmaker() as session:
+            await session.execute(delete(RateLimitHit).where(RateLimitHit.id.in_(hit_ids)))
             await session.commit()
 
     async def record(self, scope: str, key: str) -> None:

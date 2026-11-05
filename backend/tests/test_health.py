@@ -1,6 +1,7 @@
 """GET /health reports whether the background sweep is still finishing, without failing on it."""
 
 import asyncio
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -141,6 +142,39 @@ def test_a_database_outage_is_reported_and_kept_briefly_too(client):
         assert res.status_code == 503
         assert res.json() == {"status": "database unavailable"}
     assert client.app.state.sessionmaker.opened == 1
+
+
+class HangingSession:
+    """A database that accepts the connection, then never answers (in test time)."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc) -> None:
+        return None
+
+    async def execute(self, *_args, **_kwargs):
+        await asyncio.sleep(5)
+
+
+def test_a_database_that_hangs_is_reported_unavailable_within_the_timeout(client):
+    """A hung query must not hold /health (and every ping queued behind its lock) open."""
+    ticks = Ticks()
+    client.app.state.health_clock = ticks
+    client.app.state.health_db_timeout = 0.2
+    client.app.state.sessionmaker = CountingSessions(HangingSession)
+    started = time.monotonic()
+    res = client.get("/health")
+    assert time.monotonic() - started < 2
+    assert res.status_code == 503
+    assert res.json() == {"status": "database unavailable"}
+    # Cached like any other failure: the next ping doesn't wait again.
+    assert client.get("/health").status_code == 503
+    assert client.app.state.sessionmaker.opened == 1
+
+
+def test_the_health_check_waits_at_most_three_seconds_for_the_database(settings, clean_db):
+    assert create_app(settings, start_jobs=False).state.health_db_timeout == 3.0
 
 
 def test_the_running_app_reports_its_own_sweep(settings, clean_db):

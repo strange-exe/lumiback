@@ -420,16 +420,21 @@ async def list_holidays(
     return [HolidayIO(day=h.day, name=h.name) for h in (await session.execute(query)).scalars()]
 
 
-@router.put("/holidays/{day}")
-async def put_holiday(day: date, body: HolidayIO, me: RulesUser, session: SessionDep) -> HolidayIO:
-    if body.day != day:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Dates don't match")
-    # Past days already ran under their rules (outings, requests, escalations were judged by
-    # them): adding or renaming a holiday there would rewrite history. Today is still allowed.
+def refuse_past(day: date) -> None:
+    """Past days already ran under their rules (outings, requests, escalations were judged by
+    them): adding, renaming or deleting a holiday there would rewrite history. Today (IST) is
+    still allowed."""
     if day < rules.ist_date(datetime.now(UTC)):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="That day has already passed"
         )
+
+
+@router.put("/holidays/{day}")
+async def put_holiday(day: date, body: HolidayIO, me: RulesUser, session: SessionDep) -> HolidayIO:
+    if body.day != day:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Dates don't match")
+    refuse_past(day)
     holiday = await session.get(Holiday, day)
     if holiday is None:
         session.add(Holiday(day=day, name=body.name))
@@ -442,6 +447,7 @@ async def put_holiday(day: date, body: HolidayIO, me: RulesUser, session: Sessio
 
 @router.delete("/holidays/{day}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_holiday(day: date, me: RulesUser, session: SessionDep) -> None:
+    refuse_past(day)
     holiday = await session.get(Holiday, day)
     if holiday is None:
         raise NOT_FOUND

@@ -38,6 +38,7 @@ from app.security.breached import make_breach_checker
 from app.security.rate_limit import RateLimiter
 
 HEALTH_CACHE_SECONDS = 5.0
+HEALTH_DB_TIMEOUT_SECONDS = 3.0  # the longest /health waits for the database's answer
 
 
 def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> FastAPI:
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.state.health_clock = time.monotonic  # tests swap in a hand-moved clock
     app.state.health_db = None  # (checked at, database answered) for GET /health
     app.state.health_lock = asyncio.Lock()
+    app.state.health_db_timeout = HEALTH_DB_TIMEOUT_SECONDS
 
     app.add_middleware(
         CORSMiddleware,
@@ -136,10 +138,13 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
             now = state.health_clock()
             if state.health_db is None or now - state.health_db[0] >= HEALTH_CACHE_SECONDS:
                 try:
-                    async with state.sessionmaker() as db:
-                        await db.execute(text("SELECT 1"))
+                    # A hung database answers "unavailable" (and is cached like any failure)
+                    # rather than holding this ping, and every one queued behind the lock.
+                    async with asyncio.timeout(state.health_db_timeout):
+                        async with state.sessionmaker() as db:
+                            await db.execute(text("SELECT 1"))
                     db_ok = True
-                except Exception:
+                except Exception:  # TimeoutError included
                     db_ok = False
                 state.health_db = (now, db_ok)
         if not state.health_db[1]:

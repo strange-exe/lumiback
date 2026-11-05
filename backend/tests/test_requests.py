@@ -319,6 +319,19 @@ def test_a_holiday_cant_be_set_for_a_day_already_past(client, db, warden):
     assert db.execute(text("SELECT count(*) FROM holidays")).scalar_one() == 0
 
 
+def test_a_holiday_on_a_day_already_past_cant_be_deleted(client, db, warden):
+    """Deleting a past holiday rewrites history as much as adding one would."""
+    yesterday = ist_today() - timedelta(days=1)
+    db.execute(
+        text("INSERT INTO holidays (day, name) VALUES (:d, 'Founders'' Day')"), {"d": yesterday}
+    )
+    db.commit()
+    r = client.delete(f"/admin/holidays/{yesterday.isoformat()}", headers=warden)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == "That day has already passed"
+    assert db.execute(text("SELECT count(*) FROM holidays")).scalar_one() == 1
+
+
 def test_admin_rules_pages_are_admin_only(client, riya):
     for path in ("/admin/rule-sets", "/admin/hostels", "/admin/holidays"):
         assert client.get(path, headers=riya).status_code == 403

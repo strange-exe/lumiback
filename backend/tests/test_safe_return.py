@@ -14,9 +14,12 @@ import pytest
 from sqlalchemy import text
 
 from app.jobs.expiry import sweep
+from app.models import SessionStatus
 from app.push import MemoryPushSender
 from app.security.rate_limit import RateLimiter
+from app.services import outings as outings_svc
 from app.services import safe_return
+from app.services import sessions as sessions_svc
 from app.services.safe_return import PER_CONTACT, PER_STUDENT, watch_token
 from tests.helpers import create_gate, kiosk_qr, make_admin, signup
 from tests.test_escalations import late_by
@@ -71,7 +74,7 @@ def link_in(email) -> tuple[str, str]:
 
 async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> bool:
     """One safe-return start against both limits, as a check-out makes it."""
-    return await safe_return.reserve(limiter, student_id, email)
+    return await safe_return.reserve(limiter, student_id, email) is not None
 
 
 def run_sweep(client):
@@ -296,6 +299,34 @@ def test_parallel_check_outs_cant_pass_the_contact_limit(client):
     assert client.portal.call(burst).count(True) == PER_CONTACT.max_hits
 
 
+def test_failed_check_outs_dont_use_up_the_contacts_limit(client, db, riya, gate):
+    """Only starts that happen count: another student who names riya's contact as their own
+    can't burn the address's daily limit with scans and check-outs that fail."""
+    mallory = signup(client, "mallory@geu.ac.in", "Mallory")[1]
+    r = client.patch(
+        "/profile", json={"contacts": CONTACTS, "emergency_email": CONTACT}, headers=mallory
+    )
+    assert r.status_code == 200, r.text
+    for _ in range(PER_CONTACT.max_hits):  # an invalid QR is refused
+        bogus = client.post(
+            "/gates/scan", json={"qr": "bogus", **AT_GATE, "safe_return": True}, headers=mallory
+        )
+        assert bogus.status_code == 422, bogus.text
+    assert go_out(client, mallory)["safe_return_session_id"] is None  # out without it
+    for _ in range(2):  # already out
+        again = client.post(
+            "/outings", json={"destination": "Rajpur Road", "safe_return": True}, headers=mallory
+        )
+        assert again.status_code == 409, again.text
+    age_scans(db)
+    back = scan(client, mallory, gate, safe_return=True)  # a tap-in starts nothing
+    assert back.json()["direction"] == "in", back.text
+    assert to_contact(client) == []
+
+    assert go_out(client, riya, safe_return=True)["safe_return_session_id"] is not None
+    assert len(to_contact(client)) == 1
+
+
 def test_a_student_over_their_limit_uses_none_of_the_contacts(client):
     limiter = client.app.state.limiter
     student = uuid.uuid4()
@@ -304,6 +335,59 @@ def test_a_student_over_their_limit_uses_none_of_the_contacts(client):
     assert not client.portal.call(reserve, limiter, student, CONTACT)
     for _ in range(PER_CONTACT.max_hits):  # the refused try took nothing from the address
         assert client.portal.call(reserve, limiter, uuid.uuid4(), CONTACT)
+
+
+# ---------- locking: return vs stopping the share ----------
+
+
+async def wait_for_a_lock_wait(sessionmaker, timeout: float = 5.0) -> None:
+    """Until another connection to this database is waiting on a row lock."""
+    query = text(
+        "SELECT count(*) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+    )
+    async with sessionmaker() as watcher:
+        for _ in range(int(timeout / 0.02)):
+            if await watcher.scalar(query):
+                return
+            await watcher.rollback()  # a fresh snapshot of pg_stat_activity each time
+            await asyncio.sleep(0.02)
+    raise AssertionError("the return never waited on the share's lock")
+
+
+def test_returning_while_the_share_is_being_stopped_doesnt_deadlock(client, db, riya):
+    """Stopping a share (and the sweep's expiry) locks the share, then the outing: a return
+    must take them in the same order, or the two deadlock and one of them fails."""
+    shared = uuid.UUID(go_out(client, riya, safe_return=True)["safe_return_session_id"])
+    student_id = db.execute(
+        text("SELECT id FROM users WHERE email = 'riya@geu.ac.in'")
+    ).scalar_one()
+    state = client.app.state
+    pepper = state.settings.code_pepper.get_secret_value()
+
+    async def race() -> tuple[object, bool]:
+        async with state.sessionmaker() as stopping, state.sessionmaker() as returning:
+            # The stop has locked the share (its first statement) when the return starts.
+            await stopping.execute(
+                text("SELECT id FROM share_sessions WHERE id = :id FOR UPDATE"), {"id": shared}
+            )
+            back = asyncio.create_task(
+                outings_svc.mark_return(returning, student_id, pepper=pepper)
+            )
+            await wait_for_a_lock_wait(state.sessionmaker)
+            stopped = await sessions_svc.end(
+                stopping, shared, status=SessionStatus.ENDED, reason="stopped"
+            )
+            return await back, stopped
+
+    returned, stopped = client.portal.call(race)
+    assert returned is not None and stopped
+    assert returned.outing.returned_at is not None
+    row = db.execute(
+        text("SELECT safe_return_email, returned_at FROM outings WHERE student_id = :s"),
+        {"s": student_id},
+    ).one()
+    assert row.safe_return_email is None and row.returned_at is not None
 
 
 # ---------- the student cuts the contact off ----------

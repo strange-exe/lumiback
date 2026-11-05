@@ -2,6 +2,7 @@
 the admin API (app/api/admin.py)."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -43,20 +44,37 @@ def refused(e: rules.Refused) -> HTTPException:
     return HTTPException(status.HTTP_403_FORBIDDEN, detail=e.message)
 
 
-async def safe_return_pepper(
+@dataclass(frozen=True)
+class SafeReturnSlot:
+    """Safe return may start with this check-out: its start is already counted."""
+
+    pepper: str
+    reservation: safe_return.Reservation
+
+
+async def safe_return_slot(
     wanted: bool, me: User, limiter: RateLimiter, settings: Settings
-) -> str | None:
-    """The pepper to start safe return with, or None: not ticked, no emergency email, or over
+) -> SafeReturnSlot | None:
+    """A slot to start safe return with, or None: not ticked, no emergency email, or over
     today's limit. The check-out itself goes ahead either way (its response then has no
-    safe_return_session_id, which the app and website explain). A pepper means this start is
-    already counted against the limits (counted and checked under one lock)."""
-    if (
-        wanted
-        and me.emergency_email
-        and await safe_return.reserve(limiter, me.id, me.emergency_email)
-    ):
-        return settings.code_pepper.get_secret_value()
-    return None
+    safe_return_session_id, which the app and website explain). A slot is counted against the
+    limits before the check-out (counted and checked under one lock, so a burst can't pass
+    them); every path that then starts no share must call release_unused."""
+    if not (wanted and me.emergency_email):
+        return None
+    reservation = await safe_return.reserve(limiter, me.id, me.emergency_email)
+    if reservation is None:
+        return None
+    return SafeReturnSlot(settings.code_pepper.get_secret_value(), reservation)
+
+
+async def release_unused(
+    limiter: RateLimiter, slot: SafeReturnSlot | None, outing: Outing | None
+) -> None:
+    """Gives the slot back unless `outing` started safe return with it (None: no outing was
+    opened). Only starts that happen count, so failed tries can't use up a contact's limit."""
+    if slot is not None and (outing is None or outing.safe_return_session_id is None):
+        await safe_return.release(limiter, slot.reservation)
 
 
 async def safe_return_started(
@@ -67,7 +85,7 @@ async def safe_return_started(
     settings: Settings,
     tasks: BackgroundTasks,
 ) -> None:
-    """Emails the contact after the response (safe_return_pepper already counted the start)."""
+    """Emails the contact after the response (safe_return_slot already counted the start)."""
     if outing.safe_return_session_id is None or outing.safe_return_email is None:
         return
     email = safe_return.start_email(
@@ -96,15 +114,22 @@ async def check_out(
     mailer: MailerDep,
     tasks: BackgroundTasks,
 ) -> OutingOut:
-    pepper = await safe_return_pepper(body.safe_return, me, limiter, settings)
+    slot = await safe_return_slot(body.safe_return, me, limiter, settings)
     try:
-        outing = await svc.check_out(session, me, body, safe_return_pepper=pepper)
+        outing = await svc.check_out(
+            session, me, body, safe_return_pepper=slot.pepper if slot else None
+        )
     except rules.Refused as e:
+        await release_unused(limiter, slot, None)
         raise refused(e) from None
     except svc.AlreadyOut:
+        await release_unused(limiter, slot, None)
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You are already on an outing; mark your return first"
         ) from None
+    # Any other error keeps the slot: whether the share was saved is unknown, so it errs
+    # towards fewer emails.
+    await release_unused(limiter, slot, outing)
     await safe_return_started(outing, me, mailer=mailer, settings=settings, tasks=tasks)
     return svc.to_out(outing, datetime.now(UTC))
 

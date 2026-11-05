@@ -14,7 +14,7 @@ from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Outing, OutingRequest, RequestStatus, User, Via
+from app.models import Outing, OutingRequest, RequestStatus, ShareSession, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
 from app.services import requests, rules, safe_return
 
@@ -177,11 +177,31 @@ async def mark_return(
 ) -> Returned | None:
     """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once. Ends its
     safe-return share in the same transaction (`pepper`: the code pepper, which identifies
-    the contact's viewer row)."""
+    the contact's viewer row).
+
+    Lock order: the safe-return share before the outing, as stopping a share and the sweep's
+    expiry take them (share, then forget_address on the outing); the opposite order would
+    deadlock with them."""
+    open_outing = (
+        await session.execute(
+            select(Outing.id, Outing.safe_return_session_id).where(
+                Outing.student_id == student_id, Outing.returned_at.is_(None)
+            )
+        )
+    ).one_or_none()
+    if open_outing is None:
+        return None
+    if open_outing.safe_return_session_id is not None:  # set at check-out, never changed
+        await session.execute(
+            select(ShareSession.id)
+            .where(ShareSession.id == open_outing.safe_return_session_id)
+            .with_for_update()
+        )
     returned = (
         await session.execute(
             update(Outing)
-            .where(Outing.student_id == student_id, Outing.returned_at.is_(None))
+            # This outing only: if a parallel request closed it first, there's nothing to do.
+            .where(Outing.id == open_outing.id, Outing.returned_at.is_(None))
             .values(
                 returned_at=func.now(),
                 in_via=Via.GATE if gate_id else Via.SELF,

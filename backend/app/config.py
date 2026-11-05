@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     def _email_delivery(self) -> "Settings":
         if self.email_backend == "console" and self.app_env == "production":
             raise ValueError("EMAIL_BACKEND=console is not allowed in production; configure SMTP")
+        if self.breach_check == "off" and self.app_env == "production":
+            # Only offline local test servers (scripts/e2e_server.py, APP_ENV=development).
+            raise ValueError("BREACH_CHECK=off is not allowed in production")
         if self.email_backend == "smtp":
             missing = [
                 name.upper()

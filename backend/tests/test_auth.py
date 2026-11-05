@@ -6,8 +6,10 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 
+from app.schemas import ContactsIn, HostelContactIn, HostelIn
 from app.security.tokens import create_access_token
 from tests.conftest import FAKE_SECRET
 from tests.helpers import PASSWORD, auth_header, login, register
@@ -63,6 +65,74 @@ def test_register_refuses_control_and_format_characters_in_the_name(client, db, 
     )
     assert r.status_code == 422, r.text
     assert db.execute(text("SELECT count(*) FROM pending_registrations")).scalar_one() == 0
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Riya" + chr(0x2028) + "Sharma",  # line separator (Zl): a line break in a greeting
+        "Riya" + chr(0x2029) + "Sharma",  # paragraph separator (Zp)
+        chr(0x200D) + chr(0x200C),  # only joiners: allowed inside a name, never a name alone
+        chr(0x3164),  # Hangul filler: a "letter" that shows nothing
+        chr(0x115F) + chr(0x3164),  # Hangul choseong filler + filler
+        chr(0x3164) + " " + chr(0x200D),
+        "-'.",  # no letter or digit at all
+    ],
+)
+def test_register_refuses_names_that_break_lines_or_show_nothing(client, db, name):
+    r = client.post(
+        "/auth/register", json={"name": name, "email": "riya@example.com", "password": PASSWORD}
+    )
+    assert r.status_code == 422, r.text
+    assert db.execute(text("SELECT count(*) FROM pending_registrations")).scalar_one() == 0
+
+
+PERSON_NAME_REFUSED = [
+    "Sunita" + chr(13) + chr(10) + "Bcc: x@example.com",
+    "Sunita" + chr(0x202E) + "amrahS",
+    "Sunita" + chr(0x200B) + "Sharma",
+    "Sunita" + chr(0x2028) + "Sharma",
+    chr(0x200D),
+    chr(0x3164),
+    chr(0x115F),
+]
+RELATION_REFUSED = [
+    "Mother" + chr(10) + "Bcc: x@example.com",
+    "Mother" + chr(0x202E),
+    chr(0xFEFF) + "Mother",
+    "Mo" + chr(0x2029) + "ther",
+]
+CONTACTS_OK = {
+    "phone": "9876543210",
+    "emergency_name": "Sunita Sharma",
+    "emergency_relation": "Mother",
+    "emergency_phone": "9123456789",
+}
+
+
+@pytest.mark.parametrize("name", PERSON_NAME_REFUSED)
+def test_emergency_and_warden_names_refuse_control_format_and_empty_looking_text(name):
+    with pytest.raises(ValidationError):
+        ContactsIn(**{**CONTACTS_OK, "emergency_name": name})
+    with pytest.raises(ValidationError):
+        HostelContactIn(warden_name=name)
+    with pytest.raises(ValidationError):
+        HostelIn(name="Hostel A", rule_set_id=uuid.uuid4(), warden_name=name)
+
+
+@pytest.mark.parametrize("relation", RELATION_REFUSED)
+def test_the_emergency_relation_refuses_control_and_format_characters(relation):
+    with pytest.raises(ValidationError):
+        ContactsIn(**{**CONTACTS_OK, "emergency_relation": relation})
+
+
+def test_person_names_keep_any_script_and_the_joiners():
+    malayalam = "".join(map(chr, (0xD28, 0xD3F, 0xD24, 0xD4D, 0x200D, 0xD2F)))
+    contacts = ContactsIn(
+        **{**CONTACTS_OK, "emergency_name": f"  {malayalam} ", "emergency_relation": "Guardian"}
+    )
+    assert contacts.emergency_name == malayalam
+    assert HostelContactIn(warden_name="Mr. D'Souza").warden_name == "Mr. D'Souza"
 
 
 def test_register_keeps_names_in_any_script(client):
