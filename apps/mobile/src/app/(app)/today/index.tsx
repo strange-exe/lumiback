@@ -15,15 +15,19 @@ import type {
   OutingPage,
   OutingRequest,
   OutingSummary,
+  Profile,
   Role,
   TodayRules,
 } from "@/lib/types";
+import { safeReturnNotice, safeReturnOffer, type SafeReturnOffer } from "@/lib/safe-return";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { RequestSheet } from "@/screens/outing-request";
+import { SafeReturnStatus, SafeReturnTick, sendForOuting } from "@/screens/safe-return";
+import { stopOutingShare } from "@/location/task";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
 import { Button, Clock, Field, FormError, Press, Screen, StatusChip, T } from "@/ui/kit";
@@ -47,6 +51,8 @@ interface TodayData {
   rulesStatus: RulesStatus;
   request: OutingRequest | null;
   recent: Outing[] | null;
+  /** For the safe-return tick (null: not loaded, so neither the tick nor the hint). */
+  profile: Profile | null;
 }
 
 /** Students get their outing; wardens, head wardens and admins get the hostel office (no
@@ -134,12 +140,13 @@ function StudentToday(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
   const load = useCallback(async (): Promise<TodayData> => {
-    const [outing, summary, campus, page, request] = await Promise.all([
+    const [outing, summary, campus, page, request, profile] = await Promise.all([
       api<Outing | null>("/outings/current"),
       api<OutingSummary>("/outings/summary").catch(() => null),
       api<Campus>("/campus").catch(() => undefined),
       api<OutingPage>("/outings?limit=4").catch(() => null),
       api<OutingRequest | null>("/outings/request").catch(() => null),
+      api<Profile>("/profile").catch(() => null),
     ]);
     // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
     // outing changed on the web or one that just ended.
@@ -148,9 +155,11 @@ function StudentToday(): ReactNode {
     const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
     const rules = campus?.today ?? null;
     const rulesStatus: RulesStatus = campus === undefined ? "failed" : rules ? "ok" : "none";
-    return { outing, summary, rules, rulesStatus, request, recent };
+    return { outing, summary, rules, rulesStatus, request, recent, profile };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
+  // After a check-out with safe return ticked: what to fix, if anything (shown on the Out card).
+  const [safeNotice, setSafeNotice] = useState<string | null>(null);
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
   const { action, at } = useLocalSearchParams<{ action?: string; at?: string }>();
   const logRequest = action === "log" ? (at ?? null) : null;
@@ -171,7 +180,7 @@ function StudentToday(): ReactNode {
       {loading ? (
         <HeroSkeleton />
       ) : data?.outing ? (
-        <Out outing={data.outing} onChange={reload} />
+        <Out outing={data.outing} onChange={reload} safeNotice={safeNotice} />
       ) : !data ? (
         // Never loaded (offline at launch): we don't know if the student is out, so don't
         // offer to tap out.
@@ -183,6 +192,8 @@ function StudentToday(): ReactNode {
           request={data.request}
           onDone={reload}
           logRequest={logRequest}
+          offer={safeReturnOffer(data.profile)}
+          onSafeNotice={setSafeNotice}
         />
       )}
       {data ? <FormError message={error} /> : null}
@@ -313,16 +324,23 @@ function AtHostel({
   request,
   onDone,
   logRequest,
+  offer,
+  onSafeNotice,
 }: {
   rules: TodayRules | null;
   rulesStatus: RulesStatus;
   request: OutingRequest | null;
   onDone: () => Promise<void>;
   logRequest: string | null;
+  offer: SafeReturnOffer;
+  onSafeNotice: (notice: string | null) => void;
 }): ReactNode {
   const c = useColors();
   const now = useNow(30_000);
   const [tapped, setTapped] = useState(false);
+  const [follow, setFollow] = useState(false);
+  // Only a visible, ticked box counts (an email removed on the web hides it).
+  const safeReturn = follow && offer.kind === "tick";
   // A request opens the sheet once: it stays "handled" after closing until the next one.
   const [handled, setHandled] = useState<string | null>(null);
   const line = rules ? rulesLine(rules, now) : null;
@@ -375,6 +393,9 @@ function AtHostel({
           </Text>
           <Text style={[type.body, { color: c.heroMuted }]}>{body}</Text>
         </View>
+        {canGoOut ? (
+          <SafeReturnTick offer={offer} checked={safeReturn} onChange={setFollow} />
+        ) : null}
         <View style={{ gap: space(2) }}>
           <Button
             label="Scan at the gate"
@@ -384,7 +405,9 @@ function AtHostel({
             icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onHero} />}
             onPress={() => {
               haptic.tap();
-              router.push("/scan");
+              router.push(
+                canGoOut && safeReturn ? { pathname: "/scan", params: { safe: "1" } } : "/scan",
+              );
             }}
           />
           {canGoOut ? (
@@ -405,8 +428,10 @@ function AtHostel({
         open={open}
         rules={rules}
         request={request}
+        safeReturn={safeReturn}
         onClose={() => setOpen(false)}
         onDone={onDone}
+        onSafeNotice={onSafeNotice}
       />
     </>
   );
@@ -416,14 +441,18 @@ function LogTripSheet({
   open,
   rules,
   request,
+  safeReturn,
   onClose,
   onDone,
+  onSafeNotice,
 }: {
   open: boolean;
   rules: TodayRules | null;
   request: OutingRequest | null;
+  safeReturn: boolean;
   onClose: () => void;
   onDone: () => Promise<void>;
+  onSafeNotice: (notice: string | null) => void;
 }): ReactNode {
   const c = useColors();
   const now = useNow(30_000); // keeps "back by" honest if the sheet stays open
@@ -441,14 +470,18 @@ function LogTripSheet({
     setBusy(true);
     setError(null);
     try {
-      await api("/outings", {
+      const outing = await api<Outing>("/outings", {
         method: "POST",
-        body: { destination: destination.trim() || null },
+        body: { destination: destination.trim() || null, safe_return: safeReturn },
       });
       haptic.success();
       setDestination("");
       onClose();
       await allowNotifications().catch(() => false); // for the return reminders
+      // Ticked: send location for the share the check-out started, like a manual share.
+      const sessionId = outing.safe_return_session_id;
+      const started = safeReturn && sessionId ? await sendForOuting(sessionId) : null;
+      onSafeNotice(safeReturnNotice(safeReturn, sessionId, started));
       await onDone();
     } catch (e) {
       haptic.warning();
@@ -481,7 +514,15 @@ function LogTripSheet({
   );
 }
 
-function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<void> }): ReactNode {
+function Out({
+  outing,
+  onChange,
+  safeNotice,
+}: {
+  outing: Outing;
+  onChange: () => Promise<void>;
+  safeNotice: string | null;
+}): ReactNode {
   const c = useColors();
   const now = useNow(15_000);
   const [busy, setBusy] = useState<"return" | "on_my_way" | "safe" | null>(null);
@@ -600,6 +641,10 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         )
       ) : null}
 
+      {outing.safe_return_session_id ? (
+        <SafeReturnStatus sessionId={outing.safe_return_session_id} notice={safeNotice} />
+      ) : null}
+
       <Button
         label="Scan to tap in"
         icon={<Ionicons name="scan" size={18} color={c.onAccent} />}
@@ -615,7 +660,13 @@ function Out({ outing, onChange }: { outing: Outing; onChange: () => Promise<voi
         busy={busy === "return"}
         busyLabel="Marking…"
         style={{ minHeight: 44 }}
-        onPress={() => void act("return", () => api("/outings/current/return", { method: "POST" }))}
+        onPress={() =>
+          void act("return", async () => {
+            await api("/outings/current/return", { method: "POST" });
+            // The server ended the safe-return share; stop this phone sending for it.
+            await stopOutingShare(outing.safe_return_session_id).catch(() => undefined);
+          })
+        }
       />
       {error ? (
         <Text style={[type.label, { color: c.heroDanger }]} accessibilityRole="alert">

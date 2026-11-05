@@ -10,9 +10,12 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { gateCode, refusal, toFix, type Fix } from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { safeReturnNotice } from "@/lib/safe-return";
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { GateScanned, Outing } from "@/lib/types";
+import { stopOutingShare } from "@/location/task";
 import { allowNotifications } from "@/notify/notify";
+import { sendForOuting } from "@/screens/safe-return";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
 import { Button, Press } from "@/ui/kit";
@@ -21,7 +24,7 @@ import { radius, space, type, useColors } from "@/ui/theme";
 type Phase =
   | { kind: "camera" }
   | { kind: "checking"; step: "location" | "server" }
-  | { kind: "done"; result: GateScanned }
+  | { kind: "done"; result: GateScanned; notice: string | null }
   | { kind: "refused"; message: string; retry: boolean; fallback: boolean; settings?: boolean };
 
 const LOCATION_TIMEOUT_MS = 20_000;
@@ -76,7 +79,9 @@ async function freshFix(): Promise<Fix> {
 export default function Scan(): ReactNode {
   const { status } = useAuth();
   const c = useColors();
-  const { qr: linked } = useLocalSearchParams<{ qr?: string }>();
+  // safe=1: Today's "Let my emergency contact follow until I'm back" was ticked.
+  const { qr: linked, safe } = useLocalSearchParams<{ qr?: string; safe?: string }>();
+  const safeReturn = safe === "1";
   const [permission, requestPermission] = useCameraPermissions();
   // A code handed over by a link skips the camera, so it starts out already checking.
   const [phase, setPhase] = useState<Phase>(() =>
@@ -112,25 +117,40 @@ export default function Scan(): ReactNode {
   const lastIgnored = useRef<string | null>(null);
   const insets = useSafeAreaInsets();
 
-  const send = useCallback(async (qr: string, fix: Fix): Promise<void> => {
-    setPhase({ kind: "checking", step: "server" });
-    try {
-      const result = await api<GateScanned>("/gates/scan", {
-        method: "POST",
-        body: { qr, ...fix },
-      });
+  const send = useCallback(
+    async (qr: string, fix: Fix): Promise<void> => {
+      setPhase({ kind: "checking", step: "server" });
+      let result: GateScanned;
+      try {
+        result = await api<GateScanned>("/gates/scan", {
+          method: "POST",
+          body: { qr, ...fix, safe_return: safeReturn },
+        });
+      } catch (e) {
+        haptic.warning();
+        setPhase(
+          e instanceof ApiError
+            ? refusal(e.status, e.detail)
+            : refusal(500, "Something went wrong. Scan again."),
+        );
+        return;
+      }
       haptic.success();
-      setPhase({ kind: "done", result });
-      if (result.direction === "out") void allowNotifications().catch(() => false); // reminders
-    } catch (e) {
-      haptic.warning();
-      setPhase(
-        e instanceof ApiError
-          ? refusal(e.status, e.detail)
-          : refusal(500, "Something went wrong. Scan again."),
-      );
-    }
-  }, []);
+      const sessionId = result.outing.safe_return_session_id;
+      let notice: string | null = null;
+      if (result.direction === "out") {
+        void allowNotifications().catch(() => false); // reminders
+        // Ticked: send location for the share the check-out started, like a manual share.
+        const started = safeReturn && sessionId ? await sendForOuting(sessionId) : null;
+        notice = safeReturnNotice(safeReturn, sessionId, started);
+      } else {
+        // Back in: the server ended the safe-return share; stop this phone sending for it.
+        await stopOutingShare(sessionId).catch(() => undefined);
+      }
+      setPhase({ kind: "done", result, notice });
+    },
+    [safeReturn],
+  );
 
   /** Location, then the server. Every state change here comes after an await. */
   const check = useCallback(
@@ -322,7 +342,7 @@ function Body({
         </Panel>
       );
     case "done":
-      return <Done result={phase.result} />;
+      return <Done result={phase.result} notice={phase.notice} />;
   }
 }
 
@@ -365,7 +385,7 @@ function Viewfinder({ notGate }: { notGate: boolean }): ReactNode {
   );
 }
 
-function Done({ result }: { result: GateScanned }): ReactNode {
+function Done({ result, notice }: { result: GateScanned; notice: string | null }): ReactNode {
   const c = useColors();
   const out = result.direction === "out";
   return (
@@ -390,6 +410,17 @@ function Done({ result }: { result: GateScanned }): ReactNode {
             ? `Tapped in at ${result.gate}, ${formatMinutes(result.outing.late_minutes)} late. This is recorded as late.`
             : `Tapped in at ${result.gate}. Your trip is closed.`}
       </Detail>
+      {out && result.outing.safe_return_session_id && !notice ? (
+        <Detail>Your emergency contact can follow you until you&apos;re back.</Detail>
+      ) : null}
+      {notice ? (
+        <Text
+          accessibilityRole="alert"
+          style={[type.body, { color: c.onHero, textAlign: "center" }]}
+        >
+          {notice}
+        </Text>
+      ) : null}
       <Button
         label="Done"
         variant="onHero"

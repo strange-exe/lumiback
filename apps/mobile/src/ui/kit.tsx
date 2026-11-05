@@ -36,7 +36,7 @@ export function Press({
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
   accessibilityLabel?: string;
-  accessibilityRole?: "button" | "link" | "radio" | "tab";
+  accessibilityRole?: "button" | "link" | "radio" | "tab" | "checkbox";
   accessibilityState?: {
     checked?: boolean;
     busy?: boolean;

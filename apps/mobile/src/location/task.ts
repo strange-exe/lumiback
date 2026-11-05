@@ -146,6 +146,21 @@ export async function startSending(sessionId: string, endsAt: string): Promise<S
   return "started";
 }
 
+/**
+ * Safe return: send location for the outing's share the same way a manual share does. The
+ * share already exists (the check-out created it); this only starts the location service.
+ */
+export async function startOutingShare(sessionId: string): Promise<StartResult> {
+  const share = await api<ShareSession>(`/sessions/${sessionId}`);
+  return startSending(share.id, share.ends_at);
+}
+
+/** Back from an outing: stop sending for its safe-return share (the server has ended it). */
+export async function stopOutingShare(sessionId: string | null | undefined): Promise<void> {
+  if (!sessionId) return;
+  if ((await activeShare())?.sessionId === sessionId) await stopSending();
+}
+
 export async function stopSending(): Promise<void> {
   await SecureStore.deleteItemAsync(ACTIVE_KEY);
   if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)) {
