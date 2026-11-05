@@ -1,16 +1,18 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { Directory } from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { router, useFocusEffect } from "expo-router";
 import * as Updates from "expo-updates";
 import { useCallback, useState, type ReactNode } from "react";
-import { Linking, Text, View } from "react-native";
+import { Alert, Linking, Text, View } from "react-native";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
 import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
+import { saveMyData } from "@/lib/my-data";
 import { formatDate } from "@/lib/time";
 import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -30,6 +32,7 @@ export default function Profile(): ReactNode {
   const { data: profile } = useData(loadProfile);
   const c = useColors();
   const [signingOut, setSigningOut] = useState(false);
+  const [savingData, setSavingData] = useState(false);
   // Re-checked on focus: the student may come back from Android settings.
   const [blocked, setBlocked] = useState(false);
   useFocusEffect(
@@ -156,6 +159,41 @@ export default function Profile(): ReactNode {
       </Section>
 
       <Section title="Account">
+        <Row
+          leading={icon("download-outline")}
+          title={savingData ? "Preparing your file…" : "Download my data"}
+          detail="Save a copy of everything kept about you"
+          onPress={() => {
+            if (savingData) return;
+            setSavingData(true);
+            void saveMyData({
+              pickFolder: () => Directory.pickDirectoryAsync(),
+              loadExport: () => api<unknown>("/profile/export"),
+            })
+              .then((result) => {
+                if (result.kind === "saved") {
+                  Alert.alert(
+                    "Saved",
+                    `${result.file} is in ${result.folder || "the folder you picked"}.`,
+                  );
+                }
+              })
+              .catch((error: unknown) => {
+                const message =
+                  error instanceof ApiError
+                    ? error.detail
+                    : "The file couldn't be saved here. Try another folder, or download it from the website.";
+                Alert.alert("Couldn't save your data", message, [
+                  { text: "Close", style: "cancel" },
+                  {
+                    text: "Open website",
+                    onPress: () => void Linking.openURL(`${WEB_URL}/account`),
+                  },
+                ]);
+              })
+              .finally(() => setSavingData(false));
+          }}
+        />
         <Row
           leading={icon("log-out-outline")}
           title={signingOut ? "Signing out…" : "Sign out"}
