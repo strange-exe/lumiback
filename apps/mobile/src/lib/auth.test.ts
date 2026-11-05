@@ -25,17 +25,24 @@ jest.mock("@/location/task", () => ({
   sendingShareId: () => mockSendingShareId(),
 }));
 jest.mock("@/lib/api", () => ({
-  ApiError: class ApiError extends Error {},
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(mockStatus: number) {
+      super(`HTTP ${mockStatus}`);
+      this.status = mockStatus;
+    }
+  },
   api: (path: string) => mockApi(path),
 }));
+// The refresh token the launch check finds: none by default (signed out at launch).
+let mockStoredToken: string | null = null;
 jest.mock("@/lib/session", () => ({
   clearTokens: jest.fn(async () => void mockCalls.push("clearTokens")),
   onSignedOut: (listener: () => void) => {
     mockSignedOutListener = listener;
     return () => undefined;
   },
-  // Signed out at launch: the provider makes no requests of its own during the test.
-  storedRefreshToken: jest.fn(async () => (mockCalls.length > 0 ? "r1" : null)),
+  storedRefreshToken: jest.fn(async () => mockStoredToken),
   storeTokens: jest.fn(),
 }));
 jest.mock("@/notify/notify", () => ({
@@ -64,6 +71,16 @@ async function mount(): Promise<{ auth: Auth; tree: ReactTestRenderer }> {
   return { auth: auth!, tree: tree! };
 }
 
+// Most tests look only at what happens after launch: signed out on screen, with a stored
+// session for signOut to end, and a clean record.
+async function mountQuietly(): Promise<{ auth: Auth; tree: ReactTestRenderer }> {
+  const mounted = await mount();
+  mockStoredToken = "r1";
+  mockCalls.length = 0;
+  mockStopSending.mockClear();
+  return mounted;
+}
+
 beforeEach(() => {
   mockCalls.length = 0;
   mockStopSending.mockClear();
@@ -73,13 +90,43 @@ beforeEach(() => {
   mockApi.mockReset();
   mockApi.mockImplementation(mockRecord);
   mockShareSource = "app";
+  mockStoredToken = null;
   clearSafeReturn();
+});
+
+describe("the launch check", () => {
+  it("with no stored session, forgets what a session ended out of sight left behind", async () => {
+    const id = armSafeReturn();
+    const { tree } = await mount();
+    expect(mockCalls).toEqual(expect.arrayContaining(["stopSending", "syncReturnReminders"]));
+    expect(safeReturnFor({ intent: id })).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the session through a server error, as refresh does", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    mockStoredToken = "r1";
+    mockApi.mockRejectedValue(new ApiError(503));
+    const { auth, tree } = await mount();
+    expect(mockCalls).not.toContain("clearTokens");
+    expect(auth.status).toBe("signedOut");
+    act(() => tree.unmount());
+  });
+
+  it("ends the session when the server refuses it", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    mockStoredToken = "r1";
+    mockApi.mockRejectedValue(new ApiError(401));
+    const { tree } = await mount();
+    expect(mockCalls).toContain("clearTokens");
+    act(() => tree.unmount());
+  });
 });
 
 describe("signing out ends the share on the server", () => {
   it("stops the share this phone is sending, after the service and before logout", async () => {
     mockSendingShareId.mockResolvedValue("s1");
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(mockCalls).toEqual([
       "stopSending",
@@ -96,7 +143,7 @@ describe("signing out ends the share on the server", () => {
   it("leaves a safe-return share running, so the contact's overdue email still comes", async () => {
     mockSendingShareId.mockResolvedValue("s1");
     mockShareSource = "outing";
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(mockCalls).toContain("stopSending"); // the phone itself stops sending
     expect(mockCalls.some((c) => c.endsWith("/stop"))).toBe(false);
@@ -110,7 +157,7 @@ describe("signing out ends the share on the server", () => {
       mockCalls.push(`api ${path}`);
       if (path === "/sessions/s1") throw new Error("offline");
     });
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls.some((c) => c.endsWith("/stop"))).toBe(false);
     expect(mockCalls.at(-1)).toBe("clearTokens");
@@ -118,7 +165,7 @@ describe("signing out ends the share on the server", () => {
   });
 
   it("makes no stop request when the phone isn't sending", async () => {
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(mockCalls.some((c) => c.includes("/stop"))).toBe(false);
     act(() => tree.unmount());
@@ -133,7 +180,7 @@ describe("signing out ends the share on the server", () => {
       }
       return mockRecord(path);
     });
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls).toContain("api /auth/logout");
     expect(mockCalls.at(-1)).toBe("clearTokens");
@@ -142,7 +189,7 @@ describe("signing out ends the share on the server", () => {
 
   it("still signs out when reading the stored share fails", async () => {
     mockSendingShareId.mockRejectedValue(new Error("keystore locked"));
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls).toContain("stopSending");
     expect(mockCalls.at(-1)).toBe("clearTokens");
@@ -153,7 +200,7 @@ describe("signing out ends the share on the server", () => {
 describe("a forced sign-out leaves nothing of the student on the phone", () => {
   it("stops sending, clears return reminders and forgets an armed intent", async () => {
     const id = armSafeReturn();
-    const { tree } = await mount();
+    const { tree } = await mountQuietly();
     await act(async () => mockSignedOutListener?.());
     expect(mockCalls).toEqual(expect.arrayContaining(["stopSending", "syncReturnReminders"]));
     expect(safeReturnFor({ intent: id })).toBe(false);
@@ -164,7 +211,7 @@ describe("a forced sign-out leaves nothing of the student on the phone", () => {
 describe("signing out forgets an armed safe-return intent", () => {
   it("signOut clears it", async () => {
     const id = armSafeReturn();
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(safeReturnFor({ intent: id })).toBe(false);
     act(() => tree.unmount());
@@ -172,7 +219,7 @@ describe("signing out forgets an armed safe-return intent", () => {
 
   it("deleteAccount clears it", async () => {
     const id = armSafeReturn();
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.deleteAccount("pw");
     expect(safeReturnFor({ intent: id })).toBe(false);
     act(() => tree.unmount());
@@ -181,7 +228,7 @@ describe("signing out forgets an armed safe-return intent", () => {
 
 describe("signing out stops location sharing", () => {
   it("signOut stops the location service and its stored share before clearing the tokens", async () => {
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(mockStopSending).toHaveBeenCalledTimes(1);
     expect(mockCalls.indexOf("stopSending")).toBeLessThan(mockCalls.indexOf("clearTokens"));
@@ -194,7 +241,7 @@ describe("signing out stops location sharing", () => {
       mockCalls.push("stopSending");
       throw new Error("location service gone");
     });
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls).toContain("stopSending");
     expect(mockCalls.at(-1)).toBe("clearTokens");
@@ -202,7 +249,7 @@ describe("signing out stops location sharing", () => {
   });
 
   it("deleteAccount stops sharing after the server deletes the account, before clearing tokens", async () => {
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await auth.deleteAccount("pw");
     expect(mockCalls[0]).toBe("api /auth/delete-account");
     expect(mockStopSending).toHaveBeenCalledTimes(1);
@@ -212,7 +259,7 @@ describe("signing out stops location sharing", () => {
 
   it("deleteAccount still clears the tokens when stopping the share fails", async () => {
     mockStopSending.mockRejectedValue(new Error("location service gone"));
-    const { auth, tree } = await mount();
+    const { auth, tree } = await mountQuietly();
     await expect(auth.deleteAccount("pw")).resolves.toBeUndefined();
     expect(mockCalls.at(-1)).toBe("clearTokens");
     act(() => tree.unmount());

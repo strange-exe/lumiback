@@ -48,6 +48,19 @@ export function useAuth(): AuthValue {
   return value;
 }
 
+/** Forget one student's local safety state: an armed safe-return intent, the share this phone
+ * sends, and the "due back" reminders. Best effort; each step is idempotent. */
+function forgetStudentOnPhone(): void {
+  clearSafeReturn();
+  void stopSending().catch(() => undefined);
+  void syncReturnReminders(null).catch(() => undefined);
+}
+
+/** Only the server refusing the session ends it, as in refresh(): not a 5xx or 429. */
+function refusedSession(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<User | null>(null);
@@ -70,17 +83,21 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       setStatus("signedOut");
       // Also when the server ended the session (a refused refresh): nothing of this student
       // stays on the phone for the next one to sign in, best effort.
-      clearSafeReturn();
-      void stopSending().catch(() => undefined);
-      void syncReturnReminders(null).catch(() => undefined);
+      forgetStudentOnPhone();
     });
     void (async () => {
-      if (!(await storedRefreshToken())) return setStatus("signedOut");
+      if (!(await storedRefreshToken())) {
+        // The session may have ended while no screen was open (the location task got the
+        // refusal), so this listener never ran: clean up before anyone signs in.
+        forgetStudentOnPhone();
+        return setStatus("signedOut");
+      }
       try {
         await loadUser();
       } catch (error) {
-        // Offline at launch: stay signed out on screen; the token is kept for the next try.
-        if (!(error instanceof ApiError) || error.status !== 0) await clearTokens();
+        // Offline, rate-limited or a server error at launch: stay signed out on screen and
+        // keep the token for the next try, as refresh() does. A refusal ends the session.
+        if (refusedSession(error)) await clearTokens();
         setStatus("signedOut");
       }
     })();
