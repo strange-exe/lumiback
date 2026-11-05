@@ -39,6 +39,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+import anyio
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -130,9 +131,12 @@ async def reserve(limiter: RateLimiter, student_id: uuid.UUID, email: str) -> Re
 async def release(limiter: RateLimiter, reservation: Reservation) -> None:
     """Gives a reservation back: its check-out started no share (refused, already out, a bad
     scan, a tap-in), so it must not count against the student or the contact. Best effort: if
-    this fails, the slot stays used, which only errs towards fewer emails."""
+    this fails, the slot stays used, which only errs towards fewer emails. Shielded: it often
+    runs because the request failed or was aborted, and a cancelled refund would leave the
+    contact's limit used up by a request that sent nothing."""
     try:
-        await limiter.undo(reservation.hit_ids)
+        with anyio.CancelScope(shield=True):
+            await limiter.undo(reservation.hit_ids)
     except Exception:
         logger.exception("could not release a safe return reservation")
 

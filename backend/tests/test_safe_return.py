@@ -10,6 +10,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
+import anyio
 import pytest
 from sqlalchemy import text
 
@@ -342,6 +343,22 @@ def test_check_out_text_refuses_control_characters(client, riya, field):
             headers=riya,
         )
         assert r.status_code == 422 and "destination" in r.text, r.text
+
+
+def test_a_cancelled_request_still_gives_the_slot_back(client):
+    """An aborted request (cancellation) must not skip the refund: release runs shielded."""
+    limiter = client.app.state.limiter
+
+    async def reserve_then_cancel() -> None:
+        reservation = await safe_return.reserve(limiter, uuid.uuid4(), CONTACT)
+        assert reservation is not None
+        with anyio.CancelScope() as scope:
+            scope.cancel()  # every unshielded await in here is cancelled
+            await safe_return.release(limiter, reservation)
+
+    for _ in range(PER_CONTACT.max_hits + 1):
+        client.portal.call(reserve_then_cancel)
+    assert client.portal.call(reserve, limiter, uuid.uuid4(), CONTACT)
 
 
 def test_an_unexpected_check_out_error_gives_the_slot_back(client, riya, monkeypatch):
