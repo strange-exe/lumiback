@@ -21,6 +21,9 @@ and enabled only by the student. There is no covert mode.
 | Codes | Single-use, ~10 minutes, ~50 bits, stored as HMAC, attempts rate-limited |
 | Real students | Only verified `@geu.ac.in` addresses can register or be added as contacts |
 
+The Android app shares location through a foreground service with a visible notification, so it
+needs only while-in-use location permission, never background location.
+
 ## API overview
 
 | Area | Endpoints |
@@ -38,171 +41,42 @@ and enabled only by the student. There is no covert mode.
 
 Access tokens last 15 minutes; refresh tokens rotate on every use. Guests send their token in the
 `X-Guest-Token` header. Outing times are returned in IST (`+05:30`); outing status (out, overdue,
-returned) is computed when read. Interactive docs are served at `/docs` when `APP_ENV=development`.
+returned) is computed when read.
 
-## Backend setup
+## App updates
 
-```bash
-cd backend
-cp .env.example .env              # fill in values; the server refuses to start if any are missing or weak
-uv sync
-uv run pytest                     # needs TEST_DATABASE_URL: a local Postgres database ending in _test
-uv run alembic upgrade head       # apply migrations to DATABASE_URL
-uv run uvicorn --factory app.main:create_app --reload --loop asyncio:SelectorEventLoop
-```
+JavaScript-only changes reach installed apps over the air. `runtimeVersion` uses Expo's
+`fingerprint` policy, so an update never reaches a build it isn't compatible with. When native code
+changes, installed apps learn about the new build from `apps/web/public/app/android.json` and offer
+the download. Each build ships three APKs: 64-bit ARM (the default), 32-bit ARM, and a universal
+one. Phones pick the APK for their processor. The version people see comes from
+`apps/mobile/src/updates/changelog.json`.
 
-`--loop asyncio:SelectorEventLoop` is required on Windows (psycopg's async driver does not support
-the default Proactor loop). It is harmless elsewhere.
+## Hosting
 
-## Web setup
+The API and the website run as two free Render web services. Cloudflare serves
+`lumiback.abhinesh.codes` in front of the website, and Supabase hosts the database. The browser
+only talks to the website, which talks to the API server-side.
 
-```bash
-cd apps/web
-cp .env.example .env.local        # BACKEND_URL of the API
-npm install
-npm run dev
-npm run test:e2e                  # Playwright against the API on the local test database
-```
+- **Single instance.** Live updates and token-refresh de-duplication are in-process, so each
+  service runs as one instance.
+- **Free-plan sleep.** Render spins a free service down after 15 minutes without traffic, and
+  wakes it in about a minute. The late-alert sweep runs inside the API, so it pauses while the API
+  sleeps. Supabase pauses a free project after about a week of low activity.
+- **Keep-awake.** A Cloudflare Worker cron (`infra/support-email`) pings each service every 10
+  minutes inside its own IST window. The API's ping runs `SELECT 1`, which also keeps Supabase
+  active. Both services share Render's 750 free hours a month, and running out suspends both, so
+  the windows are sized for a 31-day month:
 
-## Mobile setup
+  | Service | Window (IST) | Hours a month |
+  |---|---|---|
+  | API | 09:30–22:00 | ~396 |
+  | Website | 17:00–22:00 | ~163 |
+  | Left for visits outside the windows | | ~190 |
 
-The Android app shares location through a foreground service with a visible notification, so it
-needs only while-in-use location permission (no background-location access).
+- **Email.** Mail goes through Resend's HTTPS API, because Render's free plan blocks SMTP ports.
+- **Support address.** `support@lumiback.abhinesh.codes` uses Cloudflare Email Routing. The same
+  Worker forwards each message to an inbox and sends one automatic acknowledgement. It never
+  answers bounces, mailing lists or other auto-replies.
 
-```bash
-cd apps/mobile
-cp .env.example .env              # EXPO_PUBLIC_API_URL of the API
-npm install
-npx eas-cli build --profile development --platform android   # dev client APK, install on the phone
-npm start                         # then open the dev client and scan the QR code
-npm test && npm run lint && npm run typecheck
-```
-
-**A standalone app (no PC needed).** The `preview` profile builds an installable APK in Expo's
-cloud with the JavaScript bundled in. It reads `EXPO_PUBLIC_API_URL` from the EAS project's
-environment variables (`npx eas-cli env:list preview`), not from your local `.env`:
-
-```bash
-npx eas-cli build --profile preview --platform android
-```
-
-**Updates without a new APK.** JavaScript-only changes ship over the air with `expo-updates`;
-installed apps download them on launch and use them from the next start. A new build is needed only
-when native code changes (new native modules, permissions, app config); `runtimeVersion` uses the
-`fingerprint` policy, so an update never reaches a build it isn't compatible with. Before publishing,
-check the runtime still matches an installed build: `npx expo-updates fingerprint:generate
---platform android` must print a hash listed in `NATIVE_BUILDS` (`apps/mobile/src/updates/changelog.ts`).
-If it doesn't, something native changed (a package version, `app.json`, `eas.json`, assets) and
-the update would reach nobody.
-
-```bash
-npx eas-cli update --branch production --environment production --message "What changed"
-```
-
-Releases go to the `production` update branch. Builds read the channel they were built with, so
-both channels point at that branch: `production` (builds from now on) and `preview` (the first
-APKs people installed; relinked with `npx eas-cli channel:edit preview --branch production`).
-Check with `npx eas-cli channel:list`.
-
-**Versions.** The version people see (`1.3.0`) is the newest entry in
-`apps/mobile/src/updates/changelog.json`, shown under Profile and in a one-time "What's new"
-sheet. Every update that changes something adds an entry first: patch for fixes (1.3.1), minor
-for features (1.4.0), major for big changes (2.0.0). Copy the file to
-`apps/web/src/lib/changelog.json` (a web test checks they match).
-
-**Releasing a new app build** (only when native code changed). Installed apps can't receive
-updates for a different runtime, so they learn about the new build from
-`apps/web/public/app/android.json` and ask people to download it:
-
-1. Build it on the `production` channel:
-   `npx eas-cli build --profile production-apk --platform android`. One build makes three APKs
-   (`apps/mobile/plugins/with-abi-splits.js`): the universal one (the build's download link) and,
-   under the build's artifacts, `app-arm64-v8a-release.apk` (modern phones) and
-   `app-armeabi-v7a-release.apk` (older 32-bit phones). Don't edit `eas.json` between builds:
-   it's part of the runtime fingerprint, so a change would stop over-the-air updates from
-   reaching the installed app.
-2. Create GitHub release `build-<n>`, marked latest, with the three APKs named `lumiback.apk`
-   (universal), `lumiback-arm64-v8a.apk` and `lumiback-armeabi-v7a.apk`.
-3. Add the build's runtime version to `NATIVE_BUILDS` in `apps/mobile/src/updates/changelog.ts`
-   with the next number, and add a changelog entry.
-4. In `android.json`, for each channel set `build` to that number and `notes` to one sentence.
-   `apks` lists `arm64-v8a`, `armeabi-v7a` and `universal`, each with its `url`, `size` and
-   `md5`. The top-level `url` is the download page (build 1 can only open a link, and the page
-   offers the small APK), while the top-level `size` and `md5` stay the universal APK's: older
-   builds that download the top-level link themselves then reject the page instead of
-   installing it (a web test enforces this). Use the release's
-   tag URLs (`releases/download/build-<n>/…`) so the checksums always match the file. Phones
-   from build 3 on download the APK for their processor; the download page offers the 64-bit one
-   by default and the others under "Other versions". Raise `min_build` only when older builds
-   can no longer work with the server; they then can't dismiss the prompt.
-5. Push (the website serves the new file) and publish an over-the-air update, which brings the
-   new build its own build number.
-
-**Push notifications (optional).** Android delivers push through Firebase. Create a Firebase
-project with an Android app `codes.abhinesh.lumiback`, download `google-services.json`, and upload it
-as a file variable: `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value
-./google-services.json --environment preview --environment production --visibility secret`. Then
-upload the FCM service-account key with `npx eas-cli credentials`. Until then the app uses local
-notifications only.
-
-## Deploying (Render + Cloudflare)
-
-`render.yaml` describes two free Render web services: `lumiback-api` (FastAPI) and
-`lumiback-web` (Next.js). Cloudflare serves `lumiback.abhinesh.codes` in front of the web app. The
-browser only ever talks to the web app; the web app talks to the API server-side.
-
-1. **Render:** New → Blueprint → this repository. When asked, fill in `DATABASE_URL` (Supabase
-   session pooler), `RESEND_API_KEY` and, for the web app, `BACKEND_URL` (the API's
-   `https://…onrender.com` address; set it after the API's first deploy if needed) and
-   `EDGE_SECRET` (generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
-   Put both services in the same region as the Supabase database.
-2. **Custom domain:** in `lumiback-web` → Settings → Custom Domains, add
-   `lumiback.abhinesh.codes`. In Cloudflare DNS, add `CNAME lumiback → <web>.onrender.com`
-   as **DNS only** (grey cloud) until Render shows the domain as verified, then switch it to
-   **Proxied**. Set SSL/TLS mode to **Full (strict)**.
-3. **Edge secret:** Cloudflare → Rules → Transform Rules → Modify Request Header, for hostname
-   `lumiback.abhinesh.codes`: set static header `X-Edge-Auth` to the same `EDGE_SECRET`.
-   Without it the web app ignores `CF-Connecting-IP` (anyone could forge it on the onrender.com
-   address), and rate limits fall back to the web server's address.
-4. **Check:** `https://<api>.onrender.com/health` returns `{"status":"ok"}` (it queries the
-   database), sign-up emails arrive, and a live share works between two browsers.
-5. **First admin:** sign up in the app with the warden's address, then in `lumiback-api` → Shell
-   run `.venv/bin/python scripts/make_admin.py warden@geu.ac.in`. Further admins are promoted
-   from the dashboard; the last admin can't be demoted.
-
-**Free-tier limits.** Free services sleep after 15 minutes without traffic and take about a minute
-to wake. The 750 free instance hours per month are shared by both services, so keeping either one
-awake around the clock leaves almost nothing for the other. If you use a pinger, schedule it for
-peak hours only (e.g. 16:00–23:00 IST, about 430 hours a month for both), and hit the API's
-`/health` at least once a day so the Supabase project never counts as inactive.
-
-Email goes through Resend's HTTPS API, not SMTP: Render's free plan blocks outbound traffic on
-SMTP ports (25, 465, 587).
-
-Each service must run as a single instance: live updates and token-refresh de-duplication are
-in-process. Moving off the free plan or to another host needs no code changes.
-
-### Support email
-
-`support@lumiback.abhinesh.codes` receives mail through Cloudflare Email Routing. An Email Worker
-(`infra/support-email/worker.js`, no dependencies) forwards each message to a verified inbox and
-sends the sender one automatic "we've got your message" reply; bounces, mailing lists and other
-auto-replies are forwarded but never answered. Set `EMAIL_REPLY_TO` on the API once the address
-works, so Lumiback's emails invite replies.
-
-1. Cloudflare → Workers → Create → paste `worker.js` (or `npx wrangler deploy` in that folder),
-   then add a variable `FORWARD_TO` with the verified destination address, and a secret
-   `RESEND_API_KEY` (a sending-only Resend key). With the key, the auto-reply goes out through
-   Resend like Lumiback's other email; without it, through Cloudflare's `reply()`, which
-   Microsoft 365 trusted less in testing.
-2. Email Routing → Routing rules → the `support@` rule → action **Send to a Worker**.
-3. Test from another account: the message arrives in the inbox, and the sender gets the reply.
-
-`node --test infra/support-email/worker.test.mjs` checks the reply's MIME and the loop guards.
-
-**Keeping the API awake during outing hours.** Render's free plan spins the API down after 15
-minutes without traffic, and the late-alert sweep runs inside the API. The same Worker has a Cron
-Trigger (every 10 minutes) that pings `KEEP_AWAKE_URL` (the API's `/health`) between
-`KEEP_AWAKE_FROM` and `KEEP_AWAKE_UNTIL` (IST, default 09:30-22:00). That is about 396 of the
-workspace's 750 free hours a month, leaving about 354 for the website; narrow the window (for
-example to weekday evenings) if the website needs more. On a paid instance, remove the trigger.
+Moving off the free plan or to another host needs no code changes.

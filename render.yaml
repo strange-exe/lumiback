@@ -1,5 +1,5 @@
 # Render Blueprint: the API and the web app as two web services, with Cloudflare in front of the
-# web app (lumiback.abhinesh.codes). Step-by-step setup: README.md -> "Deploying".
+# web app (lumiback.abhinesh.codes).
 #
 # Both run as ONE instance each: live updates fan out in-process (app/realtime.py), and the web
 # app de-duplicates token refreshes in memory (src/proxy.ts). Scaling out needs a shared hub first.

@@ -1,7 +1,7 @@
 """Async database engine and per-request sessions.
 
 Windows note: psycopg's async mode cannot run on the default ProactorEventLoop. Run the dev
-server with `--loop asyncio:SelectorEventLoop` (see README). Linux (production) is unaffected.
+server with `--loop asyncio:SelectorEventLoop`. Linux (production) is unaffected.
 """
 
 from collections.abc import AsyncIterator
