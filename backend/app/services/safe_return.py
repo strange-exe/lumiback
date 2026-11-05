@@ -94,7 +94,12 @@ def contact_token_hash(session_id: uuid.UUID, pepper: str) -> bytes:
 
 def guest_label(user: User) -> str:
     name = (user.emergency_name or "").strip()
-    return (f"{name} (emergency contact)" if name else "Emergency contact")[:40]
+    if not name:
+        return "Emergency contact"
+    # Cut the name, never the suffix: guest labels can't contain it (schemas.GuestLabel), so a
+    # whole suffix is what tells the sharer this viewer is the real contact.
+    suffix = " (emergency contact)"
+    return name[: 40 - len(suffix)].rstrip() + suffix
 
 
 def canonical_address(email: str) -> str:

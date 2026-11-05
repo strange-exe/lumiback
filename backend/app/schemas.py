@@ -266,14 +266,19 @@ class CodeOut(BaseModel):
     expires_at: datetime
 
 
-# Labels the server gives other viewers (app/services/safe_return.py, locations.py).
-_RESERVED_LABEL_ENDINGS = ("(emergency contact)", "(hostel office)")
+# Phrases in the labels the server gives other viewers (app/services/safe_return.py,
+# locations.py, export.py), compared as letters and digits only.
+_RESERVED_LABEL_PHRASES = ("emergencycontact", "hosteloffice")
 
 
 def _not_a_reserved_label(value: str) -> str:
-    """A guest can't label themselves like the safe-return contact or a warden."""
-    if value.casefold().endswith(_RESERVED_LABEL_ENDINGS):
-        raise ValueError("can't end like a label Lumiback gives other viewers")
+    """A guest can't label themselves like the safe-return contact or a warden. NFKC folds
+    fullwidth and other compatibility forms; dropping everything but letters and digits
+    ignores brackets, spacing and punctuation. Cross-script look-alikes aren't folded: the
+    viewer list also marks guests by kind."""
+    folded = "".join(c for c in unicodedata.normalize("NFKC", value).casefold() if c.isalnum())
+    if any(phrase in folded for phrase in _RESERVED_LABEL_PHRASES):
+        raise ValueError("can't look like a label Lumiback gives other viewers")
     return value
 
 

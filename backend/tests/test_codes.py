@@ -109,6 +109,11 @@ def test_guest_must_give_a_label(client, riya, live):
         ".",
         "Sunita (emergency contact)",  # the safe-return contact's own label
         "Ravi (Hostel Office)",  # a warden's label in the access log
+        "Emergency contact",  # the contact's label when they gave no name
+        "Sunita (emergency contact).",  # a trailing full stop
+        "Sunita " + chr(0xFF08) + "emergency contact" + chr(0xFF09),  # fullwidth brackets
+        "Sunita (emergency" + chr(0xA0) + "contact)",  # a no-break space
+        "Emergency contact for Riya",  # the phrase anywhere, not just at the end
         chr(0xD800) + "Mom",  # a lone surrogate (a cut emoji)
     ],
 )

@@ -9,6 +9,7 @@ import hmac
 import re
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import anyio
 import pytest
@@ -92,6 +93,21 @@ def run_sweep(client):
 
 
 # ---------- the contact's email address ----------
+
+
+@pytest.mark.parametrize(
+    ("name", "label"),
+    [
+        ("Sunita", "Sunita (emergency contact)"),
+        ("", "Emergency contact"),
+        # A long name is cut, never the suffix: a cut-off label is one a guest could copy.
+        ("Sunita Ramakrishnan Venkataraman", "Sunita Ramakrishnan (emergency contact)"),
+    ],
+)
+def test_the_contact_label_always_ends_in_the_whole_suffix(name, label):
+    student = SimpleNamespace(emergency_name=name)
+    assert safe_return.guest_label(student) == label
+    assert len(label) <= 40
 
 
 def test_profile_keeps_the_emergency_email_lowercase(client, riya):
