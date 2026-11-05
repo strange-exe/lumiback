@@ -3,7 +3,10 @@
 # whatever the dashboard holds with [vars] below. Anything private is a secret instead, which a
 # deploy never touches:
 #   npx wrangler secret put FORWARD_TO       (a verified Email Routing destination)
-#   npx wrangler secret put RESEND_API_KEY   (optional, a sending-only Resend key)
+#   npx wrangler secret put RESEND_API_KEY   (a sending-only Resend key; without it, auto-replies
+#                                             fall back to Cloudflare and health alerts are off)
+# Health alerts: when a keep-awake ping finds the API or website down, or the API's sweep stale,
+# the cron run at minute 0 or 30 emails FORWARD_TO (at most 2 emails an hour per incident).
 name = "lumiback-support-email"
 main = "worker.js"
 compatibility_date = "2026-10-09"

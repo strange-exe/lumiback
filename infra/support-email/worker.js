@@ -5,6 +5,8 @@
 // under their message. The reply goes through Resend when the RESEND_API_KEY secret is set
 // (recommended), otherwise through Cloudflare's reply(). Automated mail (bounces, mailing lists,
 // other auto-replies) is forwarded but never answered, so two auto-responders can't loop.
+// Its Cron Trigger also keeps the Render services awake and emails FORWARD_TO when one of them
+// is down or the API's sweep is stale (see "alerting the owner" below).
 // Docs: https://developers.cloudflare.com/email-routing/email-workers/reply-email-workers/
 // No npm packages, so it can be pasted into the dashboard editor as one file.
 
@@ -12,6 +14,8 @@ import { EmailMessage } from "cloudflare:email";
 
 const FROM_NAME = "Lumiback Support";
 const SITE = "https://lumiback.abhinesh.codes";
+// The Worker's own address; Resend already sends the auto-replies from it.
+const SUPPORT_ADDRESS = "support@lumiback.abhinesh.codes";
 
 // Inbox-tested email layout (backend/app/email_templates.py), same colours and type.
 const INK = "#0b0c10";
@@ -192,29 +196,138 @@ export const AWAKE_TARGETS = [
   { name: "web", url: "KEEP_AWAKE_WEB_URL", from: "KEEP_AWAKE_WEB_FROM", until: "KEEP_AWAKE_WEB_UNTIL", fallback: ["17:00", "22:00"] },
 ];
 
+const TEN_MINUTES = 10 * 60 * 1000;
+
+/** The API's /health "sweep" field ("ok", "stale" or "off"), or null when the body isn't JSON. */
+async function sweepOf(res) {
+  try {
+    const body = await res.json();
+    return typeof body?.sweep === "string" ? body.sweep : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pings one service. `line` is for the log; `problem` is set when the owner should hear about
+ * it. A service only counts as down once it was already inside its window 10 minutes earlier:
+ * the first ping of a window wakes it from sleep, and a cold start may time out.
+ */
 async function ping(target, now, env, fetcher) {
   const url = env[target.url];
-  if (!url) return `${target.name}: off (no ${target.url})`;
-  if (!inAwakeWindow(now, env[target.from], env[target.until], target.fallback)) {
-    return `${target.name}: outside the window`;
-  }
+  if (!url) return { line: `${target.name}: off (no ${target.url})`, problem: null };
+  const inWindow = (at) => inAwakeWindow(at, env[target.from], env[target.until], target.fallback);
+  if (!inWindow(now)) return { line: `${target.name}: outside the window`, problem: null };
+  const settled = inWindow(new Date(now.getTime() - TEN_MINUTES));
+  const report = (line, problem) => ({ line, problem: settled ? problem : null });
   try {
     const res = await fetcher(url, { headers: { "User-Agent": "lumiback-keep-awake" } });
-    return `${target.name}: pinged ${res.status}`;
+    if (!res.ok) {
+      return report(`${target.name}: pinged ${res.status}`, `${target.name} answered ${res.status} (${url})`);
+    }
+    if (target.name === "api" && (await sweepOf(res)) === "stale") {
+      return report(
+        `${target.name}: pinged ${res.status}, sweep stale`,
+        "api is up, but its sweep has not finished for a while, so late alerts and escalations are not going out",
+      );
+    }
+    return { line: `${target.name}: pinged ${res.status}`, problem: null };
   } catch (err) {
-    return `${target.name}: ping failed: ${describe(err)}`; // a cold start can time out; the next run retries
+    // A cold start can time out; the next run retries.
+    return report(
+      `${target.name}: ping failed: ${describe(err)}`,
+      `${target.name} did not answer: ${describe(err)} (${url})`,
+    );
   }
+}
+
+/** Pings every configured service inside its window. */
+export async function checkServices(now, env, fetcher = fetch) {
+  return Promise.all(AWAKE_TARGETS.map((t) => ping(t, now, env, fetcher)));
 }
 
 /** Pings every configured service inside its window; one log line says what happened to each. */
 export async function keepAwake(now, env, fetcher = fetch) {
-  const results = await Promise.all(AWAKE_TARGETS.map((t) => ping(t, now, env, fetcher)));
-  return results.join("; ");
+  return (await checkServices(now, env, fetcher)).map((r) => r.line).join("; ");
+}
+
+// ---------- alerting the owner ----------
+//
+// When a ping finds a problem (the API or the website down, or the API's sweep stale), the
+// Worker emails FORWARD_TO through Resend. The Worker keeps no state between cron runs, so it
+// can't tell a new incident from an old one; instead it only emails on the runs at minute 0
+// and 30 (the cron fires every 10 minutes). An incident that lasts sends at most 2 emails an
+// hour, and one that clears within 10-20 minutes may send none. The other runs log
+// "alert held". Problems only count inside a service's keep-awake window: outside it, the
+// services are meant to sleep.
+
+/** Does this cron run send alerts? Minute 0 and 30 (IST is UTC+5:30, so the same minutes). */
+export const isAlertMinute = (now) => now.getUTCMinutes() % 30 === 0;
+
+const istTime = (now) => {
+  const ist = new Date(now.getTime() + IST_OFFSET_MIN * 60 * 1000);
+  return `${ist.toISOString().slice(0, 16).replace("T", " ")} IST`;
+};
+
+/** The alert email: one line per problem, and where to look next. Plain text on purpose. */
+export function alertEmail(problems, now) {
+  const subject =
+    problems.length === 1 ? `Lumiback alert: ${problems[0].split(" ")[0]} needs a look` : "Lumiback alert: services need a look";
+  const text = [
+    `The keep-awake check at ${istTime(now)} found:`,
+    "",
+    ...problems.map((p) => `- ${p}`),
+    "",
+    "Check the service's logs on Render (and Supabase if the database is down).",
+    "This check runs every 10 minutes and emails at :00 and :30 while the problem lasts.",
+    "Lumiback monitor (Cloudflare Worker lumiback-support-email).",
+  ].join("\n");
+  return { subject, text };
+}
+
+/** Sends the alert through Resend to FORWARD_TO. Throws with Resend's reason when refused. */
+export async function sendAlert(problems, now, env, fetcher = fetch) {
+  const { subject, text } = alertEmail(problems, now);
+  const res = await fetcher("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+      // A retried cron run for the same minute must not send a second email.
+      "Idempotency-Key": `health-alert-${now.toISOString().slice(0, 16)}`,
+    },
+    body: JSON.stringify({
+      from: `Lumiback Monitor <${SUPPORT_ADDRESS}>`,
+      to: [env.FORWARD_TO],
+      subject,
+      text,
+      headers: { "Auto-Submitted": "auto-generated" },
+    }),
+  });
+  if (!res.ok) throw new Error(`Resend answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+/** One cron run: ping, then alert when needed. Returns the run's log line. */
+export async function monitor(now, env, fetcher = fetch) {
+  const results = await checkServices(now, env, fetcher);
+  const line = results.map((r) => r.line).join("; ");
+  const problems = results.map((r) => r.problem).filter(Boolean);
+  if (problems.length === 0) return line;
+  if (!isAlertMinute(now)) return `${line}; alert held until :00 or :30`;
+  if (!env.RESEND_API_KEY || !env.FORWARD_TO) {
+    return `${line}; alert NOT sent: needs the RESEND_API_KEY and FORWARD_TO secrets`;
+  }
+  try {
+    await sendAlert(problems, now, env, fetcher);
+    return `${line}; alert sent`;
+  } catch (err) {
+    return `${line}; alert NOT sent: ${describe(err)}`;
+  }
 }
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(keepAwake(new Date(event.scheduledTime), env).then((r) => console.log(r)));
+    ctx.waitUntil(monitor(new Date(event.scheduledTime), env).then((r) => console.log(r)));
   },
 
   // The Worker only handles email; its workers.dev address answers web visits with a plain

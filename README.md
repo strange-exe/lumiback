@@ -74,6 +74,13 @@ only talks to the website, which talks to the API server-side.
   | Website | 17:00–22:00 | ~163 |
   | Left for visits outside the windows | | ~190 |
 
+- **Health alerts.** `GET /health` answers `{"status": "ok", "sweep": "ok"}`; `sweep` turns
+  `stale` when the background sweep (late alerts, escalations, expiry) hasn't finished for 3
+  intervals (90 s). It stays 200 when only the sweep is stale, so Render's health check doesn't
+  restart the API in a loop. The same Worker emails the support inbox (`FORWARD_TO`, through
+  Resend) when a ping inside a window finds a service down or the sweep stale. It keeps no state,
+  so it only emails on the runs at :00 and :30: at most 2 emails an hour while a problem lasts.
+  The first ping of each window only wakes the service and never alerts.
 - **Email.** Mail goes through Resend's HTTPS API, because Render's free plan blocks SMTP ports.
 - **Support address.** `support@lumiback.abhinesh.codes` uses Cloudflare Email Routing. The same
   Worker forwards each message to an inbox and sends one automatic acknowledgement. It never
