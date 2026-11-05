@@ -106,18 +106,21 @@ function StartShare(): ReactNode {
 }
 
 function LiveShare(): ReactNode {
-  const { session, fix, sentAt, problem, screenAwake, stop, retry } = useShare();
+  const { session, fix, sentAt, problem, screenAwake, sendingHere, sendFromHere, stop, retry } =
+    useShare();
   const now = useNow(5_000);
   const [stopping, startStop] = useTransition();
   const [error, setError] = useState<string | null>(null);
   if (!session) return null;
   const safeReturn = session.source === "outing";
 
-  const status = problem
-    ? "Paused: we can't get your location"
-    : sentAt && now
-      ? `Live · updated ${ago(sentAt, now)}`
-      : "Live · finding you…";
+  const status = !sendingHere
+    ? "Not sending from this browser"
+    : problem
+      ? "Paused: we can't get your location"
+      : sentAt && now
+        ? `Live · updated ${ago(sentAt, now)}`
+        : "Live · finding you…";
 
   return (
     <section aria-labelledby="live-heading" className="flex flex-col gap-6">
@@ -125,7 +128,7 @@ function LiveShare(): ReactNode {
         <p className="flex items-center gap-2 text-sm font-bold text-accent">
           <span
             aria-hidden="true"
-            className={`size-2.5 rounded-full ${problem ? "bg-muted" : "bg-accent"}`}
+            className={`size-2.5 rounded-full ${problem || !sendingHere ? "bg-muted" : "bg-accent"}`}
           />
           <span aria-live="polite">{status}</span>
         </p>
@@ -135,23 +138,40 @@ function LiveShare(): ReactNode {
         <p className="mt-1 text-muted">
           {safeReturn
             ? "With your emergency contact, until you're back. It ends when you check back in."
-            : `Until ${formatTime(session.ends_at)} at the latest, or until you close this tab.`}
+            : `Until ${formatTime(session.ends_at)} at the latest, or until you close the tab that started it.`}
         </p>
       </div>
 
-      <p className="flex gap-3 rounded-control bg-accent-soft px-4 py-3 text-sm leading-relaxed text-ink">
-        <DeviceMobile size={20} weight="duotone" aria-hidden="true" className="mt-0.5 shrink-0" />
-        <span>
-          {screenAwake
-            ? "Your screen will stay on while you share. "
-            : "Keep this tab open with your screen on. "}
-          {safeReturn
-            ? "Locking your phone or closing this tab pauses sharing until you open Lumiback again. The app can keep sharing with the screen off."
-            : "Locking your phone or switching apps pauses sharing, and it ends after 5 minutes away."}
-        </span>
-      </p>
+      {sendingHere ? (
+        <p className="flex gap-3 rounded-control bg-accent-soft px-4 py-3 text-sm leading-relaxed text-ink">
+          <DeviceMobile size={20} weight="duotone" aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>
+            {screenAwake
+              ? "Your screen will stay on while you share. "
+              : "Keep this tab open with your screen on. "}
+            {safeReturn
+              ? "Locking your phone or closing this tab pauses sharing until you open Lumiback again. The app can keep sharing with the screen off."
+              : "Locking your phone or switching apps pauses sharing, and it ends after 5 minutes away."}
+          </span>
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3 rounded-control bg-accent-soft p-4">
+          <p className="text-sm leading-relaxed text-ink">
+            This browser isn&apos;t sending your location. Your viewers see it only while a device
+            sends it, like the Lumiback app or the tab you started sharing from.
+          </p>
+          <button
+            type="button"
+            onClick={sendFromHere}
+            className="min-h-12 self-start rounded-control bg-accent px-5 font-bold text-on-accent hover:brightness-110"
+          >
+            Share location from this browser
+          </button>
+          <p className="text-sm text-muted">Your browser will ask to use your location.</p>
+        </div>
+      )}
 
-      {problem && (
+      {problem && sendingHere && (
         <div role="alert" className="flex flex-col gap-3 rounded-control bg-danger-soft p-4">
           <p className="text-ink">{problem}</p>
           <button
@@ -166,7 +186,7 @@ function LiveShare(): ReactNode {
 
       <LiveMap
         point={fix}
-        paused={Boolean(problem)}
+        paused={Boolean(problem) || !sendingHere}
         label={
           fix
             ? `Map of the location you're sharing, accurate to about ${Math.round(fix.accuracy_m)} metres.`

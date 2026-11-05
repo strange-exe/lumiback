@@ -36,6 +36,8 @@ export const viewport: Viewport = {
 /**
  * The share engine sits at the root so a running share keeps reporting on every page, including
  * public ones like /privacy or /watch reached from inside the app. Signed out: no API call.
+ * Loading a running share only shows it; this tab sends location only once the student chooses
+ * to here (see ShareProvider and send-here.ts).
  */
 export default async function RootLayout({
   children,

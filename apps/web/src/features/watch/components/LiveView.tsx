@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Lantern } from "@/components/illustrations/Lantern";
 import { LiveMap } from "@/components/map/LiveMap";
 import { formatTime } from "@/features/outings/time";
+import type { ClaimResult } from "@/features/watch/access";
 import { claimWatchKey } from "@/features/watch/actions";
 import { TERMINAL, type WatchEvent } from "@/features/watch/events";
 import { ago } from "@/lib/ago";
@@ -38,6 +39,7 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   const [share, setShare] = useState<Watching | null>(null);
   const [reason, setReason] = useState("ended");
   const [connection, setConnection] = useState(0); // bump to reconnect after going offline
+  const linkKey = useRef<string | null>(null); // a safe-return key not yet checked by the server
   const now = useNow(5_000);
 
   const handle = useCallback((event: WatchEvent) => {
@@ -84,14 +86,33 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
         }
       };
     };
-    // A safe-return link carries its key after "#": store it as the guest cookie first, and
-    // take it out of the address bar (and history) before anything else happens.
-    const key = new URLSearchParams(window.location.hash.slice(1)).get("key");
-    if (key) {
+    // A safe-return link carries its key after "#": take it out of the address bar (and
+    // history) before anything else happens, and keep it here until the server has checked it,
+    // so "Try again" after a failed check still has it.
+    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
+    if (fromLink) {
       window.history.replaceState(null, "", window.location.pathname);
+      linkKey.current = fromLink;
+    }
+    const key = linkKey.current;
+    if (key) {
+      // The server sets the guest cookie only if the key is real and the signed-in user (if
+      // any) can't already see this share; otherwise it sets nothing.
       void claimWatchKey(sessionId, key)
-        .catch(() => false)
-        .finally(connect);
+        .catch((): ClaimResult => "unavailable")
+        .then((result) => {
+          if (cancelled) return;
+          if (result === "unavailable") return setPhase("offline");
+          linkKey.current = null;
+          if (result === "ended") {
+            setReason("ended");
+            setPhase("ended");
+          } else if (result === "invalid") {
+            setPhase("gone");
+          } else {
+            connect(); // "granted" (now a guest) or "own" (already a viewer or the sharer)
+          }
+        });
     } else {
       connect();
     }

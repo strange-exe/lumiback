@@ -3,6 +3,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { claimKey, type ClaimResult } from "@/features/watch/access";
+import { probeWatchAccess } from "@/features/watch/probe";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
 import { COOKIE_BASE, GUEST_MAX_AGE, guestCookie, WATCH_KEY_MAX_AGE } from "@/lib/cookies";
 import { isUuid } from "@/lib/route";
@@ -55,19 +57,25 @@ export async function joinWithCode(_: FormState, form: FormData): Promise<FormSt
   redirect(`/watch/${joined.session_id}`);
 }
 
-const WATCH_KEY = /^[A-Za-z0-9_-]{20,100}$/;
-
 /**
  * Safe return: an emergency contact opened the link a student's check-out emailed them. The key
  * (after "#" in the link, so it never reached a server log) becomes the same httpOnly guest
- * cookie a code-joined guest gets. Nothing is checked here: the backend decides on every read,
- * and a wrong key simply sees nothing.
+ * cookie a code-joined guest gets, but only once the backend confirms it grants access to this
+ * share, and only if the signed-in user can't already see it. A crafted link with a made-up key
+ * sets nothing (see access.ts).
  */
-export async function claimWatchKey(sessionId: string, key: string): Promise<boolean> {
-  if (!isUuid(sessionId) || !WATCH_KEY.test(key)) return false;
-  (await cookies()).set(guestCookie(sessionId), key, {
-    ...COOKIE_BASE,
-    maxAge: WATCH_KEY_MAX_AGE,
+export async function claimWatchKey(sessionId: string, key: string): Promise<ClaimResult> {
+  if (typeof sessionId !== "string" || typeof key !== "string" || !isUuid(sessionId)) {
+    return "invalid";
+  }
+  return claimKey(key, {
+    userToken: await accessToken(),
+    probe: (credential) => probeWatchAccess(sessionId, credential),
+    store: async (verified) => {
+      (await cookies()).set(guestCookie(sessionId), verified, {
+        ...COOKIE_BASE,
+        maxAge: WATCH_KEY_MAX_AGE,
+      });
+    },
   });
-  return true;
 }

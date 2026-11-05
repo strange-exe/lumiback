@@ -6,8 +6,9 @@ import type { ShareSession, Watching } from "@/lib/types";
 /** Reads for Server Components. Each call carries the student's own access token. */
 export const shareApi = {
   /**
-   * The share this browser sends location for: a live tab share (at most one is started from
-   * the web), or the outing's safe-return share, which any tab of the student's picks up.
+   * The share this browser shows: a live tab share (at most one is started from the web), or
+   * the outing's safe-return share. Showing it never sends location: a tab sends only after the
+   * student starts the share there or taps "Share location from this browser" (send-here.ts).
    */
   async activeTabShare(token: string): Promise<ShareSession | null> {
     const mine = await callBackend<ShareSession[]>("/sessions/mine", { token });

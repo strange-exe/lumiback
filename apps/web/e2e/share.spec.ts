@@ -188,6 +188,15 @@ test.describe("guards", () => {
     await expect(page.getByRole("heading", { name: "This share isn't available" })).toBeVisible();
   });
 
+  test("a safe-return link with a made-up key sets no guest cookie", async ({ page }) => {
+    const id = "00000000-0000-4000-8000-000000000000";
+    await page.goto(`/watch/${id}#key=${"x".repeat(43)}`);
+    await expect(page.getByRole("heading", { name: "This share isn't available" })).toBeVisible();
+    expect(page.url()).not.toContain("key=");
+    const cookies = await page.context().cookies();
+    expect(cookies.filter((c) => c.name.startsWith("outing_guest_"))).toEqual([]);
+  });
+
   test("an invite link fills in the code, then drops it from the address bar", async ({ page }) => {
     await page.goto("/join#code=7KQ2M-XW4PD");
     await expect(page.getByLabel("Join code")).toHaveValue("7KQ2M-XW4PD");

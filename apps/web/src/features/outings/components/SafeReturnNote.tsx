@@ -23,7 +23,7 @@ export function SafeReturnNote({
   sessionId: string | null;
   state: SafeReturnState;
 }): ReactNode {
-  const { session, problem } = useShare();
+  const { session, problem, sendingHere } = useShare();
 
   if (state === "off") return null;
   if (state === "failed") {
@@ -47,7 +47,7 @@ export function SafeReturnNote({
     );
   }
 
-  const here = session?.id === sessionId;
+  const here = session?.id === sessionId && sendingHere;
   return (
     <div role="status" className="flex flex-col gap-1 rounded-control bg-accent-soft px-4 py-3">
       <p className="font-bold text-ink">
@@ -58,7 +58,7 @@ export function SafeReturnNote({
           ? problem
             ? `Your location isn't coming through. ${problem}`
             : "This tab is sending your location. Keep it open, or share from the app, so they can see where you are."
-          : "They see your location only while you share it from the app or this website."}{" "}
+          : "They see your location only while you share it from the app, or from this browser on the Share page."}{" "}
         <Link href="/share" className={LINK}>
           Manage
         </Link>

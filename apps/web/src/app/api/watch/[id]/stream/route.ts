@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 
+import { chooseCredential } from "@/features/watch/access";
 import type { WatchEvent } from "@/features/watch/events";
+import { probeWatchAccess } from "@/features/watch/probe";
 import { callBackend } from "@/lib/backend";
 import { BACKEND_URL } from "@/lib/config";
 import { guestCookie } from "@/lib/cookies";
@@ -43,8 +45,17 @@ export async function GET(
   ctx: RouteContext<"/api/watch/[id]/stream">,
 ): Promise<Response> {
   const { id } = await ctx.params;
-  const guest = isUuid(id) ? ((await cookies()).get(guestCookie(id))?.value ?? null) : null;
-  const token = guest ? null : await accessToken();
+  // Signed in with a guest cookie for this share too: the user's own access comes first, and
+  // the cookie is used only when it does better (see chooseCredential).
+  const credential = isUuid(id)
+    ? await chooseCredential({
+        userToken: await accessToken(),
+        guestToken: (await cookies()).get(guestCookie(id))?.value ?? null,
+        probe: (c) => probeWatchAccess(id, c),
+      })
+    : null;
+  const guest = credential?.kind === "guest" ? credential.token : null;
+  const token = credential?.kind === "user" ? credential.token : null;
 
   let finish = (): void => {};
   const stream = new ReadableStream<Uint8Array>({

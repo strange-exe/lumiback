@@ -1,5 +1,3 @@
-import { IS_PRODUCTION } from "@/lib/config";
-
 export const ACCESS_COOKIE = "outing_at";
 export const REFRESH_COOKIE = "outing_rt";
 
@@ -7,12 +5,21 @@ export const REFRESH_COOKIE = "outing_rt";
 export const ACCESS_MAX_AGE = 14 * 60;
 export const REFRESH_MAX_AGE = 30 * 24 * 60 * 60;
 
-export const COOKIE_BASE = {
-  httpOnly: true, // never readable by page JavaScript
-  secure: IS_PRODUCTION,
-  sameSite: "lax", // not sent on cross-site POSTs; Server Actions also check Origin
-  path: "/",
-} as const;
+/**
+ * Options every cookie we set shares. Secure in production (the same test as IS_PRODUCTION in
+ * config.ts, which this file doesn't import so unit tests can load it); plain http only in
+ * local development. render.yaml pins NODE_ENV=production for the deployed web service.
+ */
+export function cookieBase(nodeEnv: string | undefined) {
+  return {
+    httpOnly: true, // never readable by page JavaScript
+    secure: nodeEnv === "production",
+    sameSite: "lax", // not sent on cross-site POSTs; Server Actions also check Origin
+    path: "/",
+  } as const;
+}
+
+export const COOKIE_BASE = cookieBase(process.env.NODE_ENV);
 
 /**
  * A guest's proof of having joined one session with a code. One cookie per session, so joining

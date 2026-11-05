@@ -8,10 +8,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
 import { startShare, stopShare } from "@/features/share/actions";
+import { createSendHere, startTracking } from "@/features/share/send-here";
 import type { ShareSession } from "@/lib/types";
 
 export interface Fix {
@@ -34,6 +36,10 @@ interface ShareContextValue {
   endedReason: string | null;
   /** The browser agreed to keep the screen on while sharing (Screen Wake Lock). */
   screenAwake: boolean;
+  /** This tab sends the running share's location (chosen here; see send-here.ts). */
+  sendingHere: boolean;
+  /** Start sending the running share's location from this tab. Only ever from a tap. */
+  sendFromHere(): void;
   start(minutes: number): Promise<string | null>;
   stop(): Promise<string | null>;
   /** Replace the session after an approve/remove (the action returns the fresh view). */
@@ -60,6 +66,10 @@ const HEARTBEAT: PositionOptions = {
   timeout: 15_000,
 };
 const FIRST: PositionOptions = { enableHighAccuracy: true, maximumAge: 30_000, timeout: 20_000 };
+
+/** This tab's choice to send location, kept in sessionStorage (read lazily, client only). */
+const sendHere = createSendHere(() => window.sessionStorage);
+const notChosenOnServer = (): string | null => null;
 
 function explain(error: GeolocationPositionError): string {
   switch (error.code) {
@@ -93,7 +103,12 @@ function firstPosition(): Promise<GeolocationPosition> {
 
 /**
  * Runs a live tab share for as long as the student stays in the app, whichever page they're on.
- * Lives in the signed-in layout, which stays mounted across in-app navigation.
+ * Lives in the root layout, which stays mounted across in-app navigation.
+ *
+ * Sending: only from a tab that chose to. The tab that taps Start sends; any other tab that
+ * loads a running share (the outing's safe return, or a share from another tab) only shows it
+ * until the student taps "Share location from this browser" there. Until then nothing here
+ * calls the Geolocation API.
  *
  * Ending: the Stop button; closing the tab (a beacon on `pagehide`); or, if neither arrives,
  * the backend ends the share once this tab stops checking in. Nothing here can extend a share.
@@ -117,6 +132,8 @@ export function ShareProvider({
   const sending = useRef(false);
 
   const sessionId = session?.id ?? null;
+  const sendingFor = useSyncExternalStore(sendHere.subscribe, sendHere.get, notChosenOnServer);
+  const sendingHere = sessionId !== null && sendingFor === sessionId;
   // The share this tab is running now, for replies that arrive after it changed.
   const current = useRef(sessionId);
   useEffect(() => {
@@ -137,6 +154,7 @@ export function ShareProvider({
   }
 
   const end = useCallback((reason: string) => {
+    sendHere.set(null);
     setSession(null);
     setFix(null);
     setSentAt(null);
@@ -191,9 +209,9 @@ export function ShareProvider({
     [refresh],
   );
 
-  // Track and report location while a share is running.
+  // Track and report location while a share runs and this tab chose to send it.
   useEffect(() => {
-    if (!sessionId || !("geolocation" in navigator)) return;
+    if (!sessionId) return;
     const onFix = (position: GeolocationPosition): void => {
       const next = toFix(position);
       setFix(next);
@@ -201,15 +219,18 @@ export function ShareProvider({
       void send(sessionId, next);
     };
     const onError = (error: GeolocationPositionError): void => setProblem(explain(error));
-    const watchId = navigator.geolocation.watchPosition(onFix, onError, WATCH);
-    const heartbeat = window.setInterval(() => {
-      navigator.geolocation.getCurrentPosition(onFix, onError, HEARTBEAT);
-    }, HEARTBEAT_MS);
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-      window.clearInterval(heartbeat);
-    };
-  }, [sessionId, send, attempt]);
+    return startTracking({
+      sessionId,
+      sendingHere,
+      geolocation: "geolocation" in navigator ? navigator.geolocation : null,
+      timers: window,
+      onFix,
+      onError,
+      watch: WATCH,
+      heartbeat: HEARTBEAT,
+      heartbeatMs: HEARTBEAT_MS,
+    });
+  }, [sessionId, sendingHere, send, attempt]);
 
   // Pick up join requests, and notice a share that ended elsewhere.
   useEffect(() => {
@@ -223,7 +244,7 @@ export function ShareProvider({
   // Keep the screen on while sharing: a locked phone pauses the page, and with it the share.
   // Browsers drop the lock whenever the tab is hidden, so take it again on return.
   useEffect(() => {
-    if (!sessionId || !("wakeLock" in navigator)) return;
+    if (!sessionId || !sendingHere || !("wakeLock" in navigator)) return;
     let lock: WakeLockSentinel | null = null;
     let cancelled = false;
     const acquire = async (): Promise<void> => {
@@ -249,14 +270,15 @@ export function ShareProvider({
       document.removeEventListener("visibilitychange", onVisibility);
       void lock?.release();
     };
-  }, [sessionId]);
+  }, [sessionId, sendingHere]);
 
-  // Closing the tab ends the share. sendBeacon is delivered even as the page unloads.
+  // Closing the tab that sends a share ends it. sendBeacon is delivered even as the page unloads.
   // A safe-return share is the outing's, not this tab's: closing the tab only pauses it (the
-  // contact sees "paused"), and it ends when the student is back or taps Stop.
+  // contact sees "paused"), and it ends when the student is back or taps Stop. Closing a tab
+  // that only shows a share (it never sent from here) leaves it running.
   const tabOwned = session?.source !== "outing";
   useEffect(() => {
-    if (!sessionId || !tabOwned) return;
+    if (!sessionId || !tabOwned || !sendingHere) return;
     const warn = (event: BeforeUnloadEvent): void => event.preventDefault();
     const onHide = (event: PageTransitionEvent): void => {
       if (event.persisted) return; // kept in the back/forward cache; the tab is still open
@@ -268,7 +290,7 @@ export function ShareProvider({
       window.removeEventListener("beforeunload", warn);
       window.removeEventListener("pagehide", onHide);
     };
-  }, [sessionId, tabOwned]);
+  }, [sessionId, tabOwned, sendingHere]);
 
   // A double tap (or a second tap while the browser asks for location) must not start two shares.
   const startingNow = useRef(false);
@@ -294,6 +316,7 @@ export function ShareProvider({
         const first = toFix(position);
         setProblem(null);
         setFix(first);
+        sendHere.set(result.data.id); // started from this tab's tap: this tab sends
         setSession(result.data);
         lastSent.current = 0;
         await send(result.data.id, first, true);
@@ -333,6 +356,12 @@ export function ShareProvider({
     setAttempt((n) => n + 1);
   }, []);
 
+  const sendFromHere = useCallback(() => {
+    if (!sessionId) return;
+    setProblem(null);
+    sendHere.set(sessionId);
+  }, [sessionId]);
+
   const value = useMemo<ShareContextValue>(
     () => ({
       session,
@@ -342,12 +371,28 @@ export function ShareProvider({
       problem,
       endedReason,
       screenAwake,
+      sendingHere,
+      sendFromHere,
       start,
       stop,
       update,
       retry,
     }),
-    [session, starting, fix, sentAt, problem, endedReason, screenAwake, start, stop, update, retry],
+    [
+      session,
+      starting,
+      fix,
+      sentAt,
+      problem,
+      endedReason,
+      screenAwake,
+      sendingHere,
+      sendFromHere,
+      start,
+      stop,
+      update,
+      retry,
+    ],
   );
   return <ShareContext.Provider value={value}>{children}</ShareContext.Provider>;
 }
