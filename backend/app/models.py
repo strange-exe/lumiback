@@ -154,6 +154,9 @@ class User(Base):
     __table_args__ = (
         # Stored normalized; the DB enforces it so uniqueness is case-insensitive by construction.
         CheckConstraint("email = lower(email)", name="email_lowercase"),
+        CheckConstraint(
+            "emergency_email = lower(emergency_email)", name="emergency_email_lowercase"
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -175,6 +178,9 @@ class User(Base):
     emergency_name: Mapped[str | None] = mapped_column(String(80))
     emergency_relation: Mapped[str | None] = mapped_column(String(40))
     emergency_phone: Mapped[str | None] = mapped_column(String(16))
+    # Optional: lets the student choose "safe return" at check-out (the contact is emailed a
+    # watch link for that outing). Never emailed otherwise.
+    emergency_email: Mapped[str | None] = mapped_column(String(254))
     email_verified_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
 
@@ -239,6 +245,12 @@ class Outing(Base):
     # the student's answer, if any. No answer within minutes and it's escalated.
     late_reply: Mapped[LateReply | None] = mapped_column(str_enum(LateReply, "late_reply"))
     late_replied_at: Mapped[datetime | None]
+    # Safe return (ticked at check-out): the outing-linked share the emergency contact follows,
+    # and the address it was emailed to (a snapshot, cleared once the student is back).
+    safe_return_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("share_sessions.id", ondelete="SET NULL")
+    )
+    safe_return_email: Mapped[str | None] = mapped_column(String(254))
 
 
 class DayType(enum.StrEnum):

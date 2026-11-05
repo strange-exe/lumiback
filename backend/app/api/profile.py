@@ -27,6 +27,7 @@ async def _out(session, user: User) -> ProfileOut:
         emergency_name=user.emergency_name,
         emergency_relation=user.emergency_relation,
         emergency_phone=user.emergency_phone,
+        emergency_email=user.emergency_email,
     )
 
 
@@ -67,5 +68,7 @@ async def update_profile(body: ProfileIn, me: CurrentUser, session: SessionDep) 
     if body.contacts is not None:
         for field, value in body.contacts.model_dump().items():
             setattr(me, field, value)
+    if "emergency_email" in body.model_fields_set:
+        me.emergency_email = body.emergency_email
     await session.commit()
     return await _out(session, me)

@@ -270,6 +270,8 @@ class OutingCreateIn(Input):
     purpose: Purpose | None = None
     # Ignored: the outing rules set the return time. Accepted so older app versions still work.
     expected_return_at: AwareDatetime | None = None
+    # "Let my emergency contact follow until I'm back": emails them a watch link for this outing.
+    safe_return: bool = False
 
 
 class OutingOut(BaseModel):
@@ -287,6 +289,9 @@ class OutingOut(BaseModel):
     out_via: Literal["self", "gate"] = "self"  # tapped out at a gate, or logged in the app
     in_via: Literal["self", "gate"] | None = None
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the "are you OK?" alert
+    # The share the emergency contact follows (safe return), for the app or website to send
+    # location to. None: not chosen, or it couldn't start (e.g. today's email limit).
+    safe_return_session_id: uuid.UUID | None = None
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -349,11 +354,16 @@ class ContactsIn(Input):
     emergency_phone: Phone
 
 
+ContactEmail = Annotated[EmailStr, Field(max_length=254), AfterValidator(str.lower)]
+
+
 class ProfileIn(Input):
     """Fields a student may change on their profile. Omitted fields stay as they are."""
 
     hostel_id: uuid.UUID | None = None
     contacts: ContactsIn | None = None
+    # Separate from `contacts` so app versions that don't know it never clear it. null clears.
+    emergency_email: ContactEmail | None = None
 
 
 class ProfileOut(BaseModel):
@@ -365,6 +375,7 @@ class ProfileOut(BaseModel):
     emergency_name: str | None
     emergency_relation: str | None
     emergency_phone: str | None
+    emergency_email: str | None = None  # for safe return; never shown to anyone else
 
 
 class HostelChoiceOut(BaseModel):
@@ -421,6 +432,8 @@ class GateScanIn(Input):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
         | None
     ) = None
+    # Tapping out only: safe return, as in OutingCreateIn. Ignored when tapping in.
+    safe_return: bool = False
 
 
 class GateScanOut(BaseModel):

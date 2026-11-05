@@ -7,6 +7,7 @@ set, overdue if now is past expected_return_at, otherwise out.
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select, update
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Outing, OutingRequest, RequestStatus, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
-from app.services import requests, rules
+from app.services import requests, rules, safe_return
 
 MIN_AHEAD = rules.MIN_AHEAD
 
@@ -51,6 +52,7 @@ def to_out(outing: Outing, now: datetime) -> OutingOut:
         out_via=outing.out_via.value,
         in_via=outing.in_via.value if outing.in_via else None,
         late_reply=outing.late_reply.value if outing.late_reply else None,
+        safe_return_session_id=outing.safe_return_session_id,
     )
 
 
@@ -82,10 +84,12 @@ async def check_out(
     *,
     gate_id: uuid.UUID | None = None,
     commit: bool = True,
+    safe_return_pepper: str | None = None,
 ) -> Outing:
     """Opens an outing if today's rules allow it (raises rules.Refused otherwise). `gate_id`:
     tapped out at that gate (otherwise logged in the app). `commit=False` leaves the commit to
-    the caller, so a gate scan saves atomically."""
+    the caller, so a gate scan saves atomically. `safe_return_pepper`: also start safe return
+    (app/services/safe_return.py) in the same transaction; the caller has checked its limits."""
     now = datetime.now(UTC)
     window = await rules.today_window(session, student, now)
     request = None
@@ -111,6 +115,8 @@ async def check_out(
         request_id=request.id if request else None,
         hostel_id=student.hostel_id,  # the hostel now: the record stays with it if they move
     )
+    if safe_return_pepper is not None:
+        await safe_return.start(session, outing, student, safe_return_pepper)
     session.add(outing)
     try:
         if commit:
@@ -155,14 +161,21 @@ async def rules_in_use(session: AsyncSession, user: User) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class Returned:
+    outing: Outing
+    back: safe_return.Back | None  # the safe-return share it ended, if any
+
+
 async def mark_return(
     session: AsyncSession,
     student_id: uuid.UUID,
     *,
     gate_id: uuid.UUID | None = None,
     commit: bool = True,
-) -> Outing | None:
-    """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once."""
+) -> Returned | None:
+    """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once. Ends its
+    safe-return share in the same transaction."""
     returned = (
         await session.execute(
             update(Outing)
@@ -175,9 +188,10 @@ async def mark_return(
             .returning(Outing)
         )
     ).scalar_one_or_none()
+    back = await safe_return.finish(session, returned) if returned is not None else None
     if commit:
         await session.commit()
-    return returned
+    return Returned(returned, back) if returned is not None else None
 
 
 async def history(

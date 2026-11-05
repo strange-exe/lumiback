@@ -34,7 +34,7 @@ from app.models import (
 from app.push import PushMessage, PushSender, notify_or_email, notify_user
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
-from app.services import escalations, password_reset, verification
+from app.services import escalations, password_reset, safe_return, verification
 from app.services.rules import IST
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,7 @@ async def sweep(
     push: PushSender | None = None,
     mailer: Mailer | None = None,
     web_url: str = "",
+    pepper: str | None = None,  # the code pepper: safe-return watch links (none without it)
 ) -> SweepResult:
     now = datetime.now(UTC)
     async with sessionmaker() as session:
@@ -130,6 +131,12 @@ async def sweep(
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
         resets = await password_reset.delete_expired(session, now)  # unused reset codes
         late = await escalations.send_alerts(session, now)
+        # The contacts following these students (safe return), told at the same moment.
+        contacts_told = (
+            await safe_return.overdue_emails(session, now, web_url, pepper)
+            if late and pepper is not None
+            else []
+        )
         opened = await escalations.open_escalations(session, now)  # each one's hostel
         office = await escalations.recipients(session, opened)
         # One retention period (Admin > Settings) for the campus records: gate scans, who
@@ -183,6 +190,9 @@ async def sweep(
                 to=user.email, name=user.name, due_at=due, web_url=web_url
             ),
         )
+    if mailer is not None:
+        for email in contacts_told:
+            await safe_return.send(mailer, email)
     if push is not None:
         for person in office:
             await notify_user(
@@ -229,10 +239,11 @@ async def run_forever(
     mailer: Mailer | None = None,
     web_url: str = "",
     interval: float = INTERVAL_SECONDS,
+    pepper: str | None = None,
 ) -> None:
     while True:
         try:
-            result = await sweep(sessionmaker, hub, push, mailer, web_url)
+            result = await sweep(sessionmaker, hub, push, mailer, web_url, pepper)
             if result.expired_sessions or result.closed_tabs:
                 logger.info(
                     "ended %d expired and %d idle tab-live share sessions",
