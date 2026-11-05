@@ -1,16 +1,30 @@
 import { createElement, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { armSafeReturn, clearSafeReturn, safeReturnFor } from "@/gate/intent";
 import { AuthProvider, useAuth } from "@/lib/auth";
 
 // Every step of signing out records itself here, so the tests can check the order.
 const mockCalls: string[] = [];
 const mockStopSending = jest.fn(async () => void mockCalls.push("stopSending"));
 
-jest.mock("@/location/task", () => ({ stopSending: () => mockStopSending() }));
+// The share this phone is sending (read before the service stops), or null.
+const mockSendingShareId = jest.fn(async (): Promise<string | null> => null);
+// What GET /sessions/{id} says started the share: "app" (Share screen) or "outing" (safe return).
+let mockShareSource = "app";
+async function mockRecord(path: string): Promise<unknown> {
+  mockCalls.push(`api ${path}`);
+  return path === "/sessions/s1" ? { id: "s1", source: mockShareSource } : undefined;
+}
+const mockApi = jest.fn(mockRecord);
+
+jest.mock("@/location/task", () => ({
+  stopSending: () => mockStopSending(),
+  sendingShareId: () => mockSendingShareId(),
+}));
 jest.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {},
-  api: jest.fn(async (path: string) => void mockCalls.push(`api ${path}`)),
+  api: (path: string) => mockApi(path),
 }));
 jest.mock("@/lib/session", () => ({
   clearTokens: jest.fn(async () => void mockCalls.push("clearTokens")),
@@ -46,6 +60,103 @@ beforeEach(() => {
   mockCalls.length = 0;
   mockStopSending.mockClear();
   mockStopSending.mockImplementation(async () => void mockCalls.push("stopSending"));
+  mockSendingShareId.mockReset();
+  mockSendingShareId.mockResolvedValue(null);
+  mockApi.mockReset();
+  mockApi.mockImplementation(mockRecord);
+  mockShareSource = "app";
+  clearSafeReturn();
+});
+
+describe("signing out ends the share on the server", () => {
+  it("stops the share this phone is sending, after the service and before logout", async () => {
+    mockSendingShareId.mockResolvedValue("s1");
+    const { auth, tree } = await mount();
+    await auth.signOut();
+    expect(mockCalls).toEqual([
+      "stopSending",
+      "api /sessions/s1",
+      "api /sessions/s1/stop",
+      "unregisterPush",
+      "api /auth/logout",
+      "clearTokens",
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("leaves a safe-return share running, so the contact's overdue email still comes", async () => {
+    mockSendingShareId.mockResolvedValue("s1");
+    mockShareSource = "outing";
+    const { auth, tree } = await mount();
+    await auth.signOut();
+    expect(mockCalls).toContain("stopSending"); // the phone itself stops sending
+    expect(mockCalls.some((c) => c.endsWith("/stop"))).toBe(false);
+    expect(mockCalls.at(-1)).toBe("clearTokens");
+    act(() => tree.unmount());
+  });
+
+  it("leaves the share alone when it can't tell what started it", async () => {
+    mockSendingShareId.mockResolvedValue("s1");
+    mockApi.mockImplementation(async (path: string) => {
+      mockCalls.push(`api ${path}`);
+      if (path === "/sessions/s1") throw new Error("offline");
+    });
+    const { auth, tree } = await mount();
+    await expect(auth.signOut()).resolves.toBeUndefined();
+    expect(mockCalls.some((c) => c.endsWith("/stop"))).toBe(false);
+    expect(mockCalls.at(-1)).toBe("clearTokens");
+    act(() => tree.unmount());
+  });
+
+  it("makes no stop request when the phone isn't sending", async () => {
+    const { auth, tree } = await mount();
+    await auth.signOut();
+    expect(mockCalls.some((c) => c.includes("/stop"))).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("still signs out when the server stop fails", async () => {
+    mockSendingShareId.mockResolvedValue("s1");
+    mockApi.mockImplementation(async (path: string) => {
+      if (path.endsWith("/stop")) {
+        mockCalls.push(`api ${path}`);
+        throw new Error("offline");
+      }
+      return mockRecord(path);
+    });
+    const { auth, tree } = await mount();
+    await expect(auth.signOut()).resolves.toBeUndefined();
+    expect(mockCalls).toContain("api /auth/logout");
+    expect(mockCalls.at(-1)).toBe("clearTokens");
+    act(() => tree.unmount());
+  });
+
+  it("still signs out when reading the stored share fails", async () => {
+    mockSendingShareId.mockRejectedValue(new Error("keystore locked"));
+    const { auth, tree } = await mount();
+    await expect(auth.signOut()).resolves.toBeUndefined();
+    expect(mockCalls).toContain("stopSending");
+    expect(mockCalls.at(-1)).toBe("clearTokens");
+    act(() => tree.unmount());
+  });
+});
+
+describe("signing out forgets an armed safe-return intent", () => {
+  it("signOut clears it", async () => {
+    const id = armSafeReturn();
+    const { auth, tree } = await mount();
+    await auth.signOut();
+    expect(safeReturnFor({ intent: id })).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("deleteAccount clears it", async () => {
+    const id = armSafeReturn();
+    const { auth, tree } = await mount();
+    await auth.deleteAccount("pw");
+    expect(safeReturnFor({ intent: id })).toBe(false);
+    act(() => tree.unmount());
+  });
 });
 
 describe("signing out stops location sharing", () => {

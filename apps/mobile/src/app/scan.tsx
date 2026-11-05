@@ -8,7 +8,15 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { consumeSafeReturn, safeReturnFor } from "@/gate/intent";
-import { confirmCopy, gateCode, refusal, startPhase, toFix, type Fix } from "@/gate/scan";
+import {
+  confirmCopy,
+  gateCode,
+  phaseForNewLink,
+  refusal,
+  startPhase,
+  toFix,
+  type Fix,
+} from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { safeReturnNotice } from "@/lib/safe-return";
@@ -87,7 +95,7 @@ export default function Scan(): ReactNode {
   // Today's "Let my emergency contact follow until I'm back" was ticked: Today armed an
   // in-memory intent and passed its id. Any other parameter (safe=1 included) is ignored, and a
   // code that came by link never asks for safe return. Read once, when the screen opens.
-  const [safeReturn] = useState(() => !linked && safeReturnFor(params));
+  const [safeReturn, setSafeReturn] = useState(() => !linked && safeReturnFor(params));
   useEffect(() => {
     consumeSafeReturn(params.intent);
   }, [params.intent]);
@@ -115,6 +123,22 @@ export default function Scan(): ReactNode {
   const busy = useRef(false);
   const lastIgnored = useRef<string | null>(null);
   const insets = useSafeAreaInsets();
+
+  // A new link can arrive while this screen is open (expo-router keeps it and swaps the params):
+  // that code gets its own confirm step, with safe return off, instead of an endless spinner.
+  const shownLink = useRef(linked);
+  useEffect(() => {
+    const previous = shownLink.current;
+    if (previous === linked) return;
+    shownLink.current = linked;
+    const next = phaseForNewLink(previous, linked, phase.kind);
+    if (!next) return;
+    busy.current = false;
+    lastIgnored.current = null;
+    setNotGate(false);
+    setSafeReturn(next.safeReturn);
+    setPhase(next.phase);
+  }, [linked, phase.kind]);
 
   const send = useCallback(
     async (qr: string, fix: Fix): Promise<void> => {

@@ -1,4 +1,4 @@
-import { confirmCopy, gateCode, refusal, startPhase, toFix } from "@/gate/scan";
+import { confirmCopy, gateCode, phaseForNewLink, refusal, startPhase, toFix } from "@/gate/scan";
 
 const GATE = "61c6a6d7-178a-4cee-ac83-b5c43bb6f783";
 
@@ -24,6 +24,44 @@ describe("startPhase", () => {
       retry: true,
       fallback: true,
     });
+  });
+});
+
+describe("phaseForNewLink", () => {
+  const first = `${GATE}.1.ABCDEFGHJK`;
+  const second = `${GATE}.2.ABCDEFGHJK`;
+
+  it("asks again for a new linked code on an open screen, never with safe return", () => {
+    for (const shown of ["camera", "confirm", "refused", "done"] as const) {
+      expect(phaseForNewLink(first, second, shown)).toEqual({
+        phase: { kind: "confirm", qr: second },
+        safeReturn: false,
+      });
+    }
+    // The screen was opened for the camera, then a link arrived.
+    expect(phaseForNewLink(undefined, first, "camera")).toEqual({
+      phase: { kind: "confirm", qr: first },
+      safeReturn: false,
+    });
+  });
+
+  it("refuses a new link that isn't a gate code instead of waiting forever", () => {
+    expect(phaseForNewLink(first, "https://example.com/menu", "confirm")).toEqual({
+      phase: {
+        kind: "refused",
+        message: "That link isn't a Lumiback gate code.",
+        retry: true,
+        fallback: true,
+      },
+      safeReturn: false,
+    });
+  });
+
+  it("changes nothing for the same code, a cleared code, or while a check is running", () => {
+    expect(phaseForNewLink(first, first, "confirm")).toBeNull();
+    expect(phaseForNewLink(first, undefined, "camera")).toBeNull();
+    expect(phaseForNewLink(first, "", "camera")).toBeNull();
+    expect(phaseForNewLink(first, second, "checking")).toBeNull();
   });
 });
 

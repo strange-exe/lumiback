@@ -36,6 +36,22 @@ export function startPhase(
 }
 
 /**
+ * expo-router reuses an open scan screen for a new lumiback://scan?qr=... and only replaces its
+ * params. What to show then: the new code waits on its own confirm step (or is refused), and
+ * safe return is off, because a code from a link never asks for it. Null means keep the current
+ * phase: the same code, a cleared one (Scan again does that), or a check already in flight,
+ * whose result the student must still see.
+ */
+export function phaseForNewLink(
+  previous: string | undefined,
+  next: string | undefined,
+  shown: "camera" | "confirm" | "checking" | "refused" | "done",
+): { phase: ReturnType<typeof startPhase>; safeReturn: false } | null {
+  if (!next || next === previous || shown === "checking") return null;
+  return { phase: startPhase(next), safeReturn: false };
+}
+
+/**
  * The confirm step's words. The gate's name is only known after the server checks the code, so
  * they name the direction instead: out on a trip taps in, otherwise out; neutral until known.
  */

@@ -161,13 +161,18 @@ export async function stopOutingShare(sessionId: string | null | undefined): Pro
   if ((await activeShare())?.sessionId === sessionId) await stopSending();
 }
 
+/** The share this phone is sending location for, or null. Read it before stopSending(). */
+export async function sendingShareId(): Promise<string | null> {
+  return (await activeShare())?.sessionId ?? null;
+}
+
 export async function stopSending(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(ACTIVE_KEY);
   } finally {
     // Stop the service even if deleting the stored share failed: a storage error must not
-    // leave the phone sending its location.
-    if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)) {
+    // leave the phone sending its location. If asking whether it runs fails, stop it anyway.
+    if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => true)) {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK).catch(() => undefined);
     }
   }

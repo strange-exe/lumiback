@@ -9,10 +9,11 @@ import {
   type ReactNode,
 } from "react";
 
+import { clearSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
-import type { Registered, TokenPair, User } from "@/lib/types";
-import { stopSending } from "@/location/task";
+import type { Registered, ShareSession, TokenPair, User } from "@/lib/types";
+import { sendingShareId, stopSending } from "@/location/task";
 import { syncPush } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
@@ -136,9 +137,21 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const signOut = useCallback(async () => {
+    clearSafeReturn();
     // A share must not keep sending this phone's location (or keep its stored session) after
     // the student signs out. Best effort: a failure here never keeps them signed in.
+    const sending = await sendingShareId().catch(() => null); // read before stopSending clears it
     await stopSending().catch(() => undefined);
+    // End a share started from this app on the server too (while still signed in), or viewers
+    // keep seeing the last position. After the service stops, so the loop never reports it as
+    // "ended elsewhere". A safe-return share stays: ending it would also cancel the contact's
+    // overdue email while the student is still out (the website leaves it running as well).
+    if (sending) {
+      const share = await api<ShareSession>(`/sessions/${sending}`).catch(() => null);
+      if (share?.source === "app") {
+        await api(`/sessions/${sending}/stop`, { method: "POST", body: {} }).catch(() => undefined);
+      }
+    }
     await unregisterPush(); // while still signed in: the server checks who owns the token
     const token = await storedRefreshToken();
     if (token) {
@@ -154,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const deleteAccount = useCallback(async (password: string) => {
     await api("/auth/delete-account", { method: "POST", body: { password } });
+    clearSafeReturn();
     // Deleted: stop sending location and drop the stored share (best effort, as on sign-out).
     await stopSending().catch(() => undefined);
     await forgetPushToken();
