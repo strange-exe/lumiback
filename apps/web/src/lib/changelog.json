@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.7.0",
+    "date": "2026-11-05",
+    "title": "Safe return and your data",
+    "points": [
+      "Add your emergency contact's email, and when you head out you can tick \"Let them follow until I'm back\". They get a link to your live location that stops when you're back, a note if you're 30 minutes late, and one when you're back safely.",
+      "Profile has Download my data: a file with your profile, outings, requests, shares and gate scans.",
+      "The hostel office shows an error with Try again when it can't load, instead of zero counts. Staff can see the gate scans log, and head wardens and admins can add and remove holidays.",
+      "New passwords are checked against known data breaches, and push notifications are retried and checked for delivery."
+    ]
+  },
+  {
     "version": "1.6.0",
     "date": "2026-10-13",
     "title": "Hostel moves and late follow-up",
