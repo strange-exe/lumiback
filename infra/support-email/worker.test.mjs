@@ -152,6 +152,140 @@ test("keep-awake pings each service only inside its window, and only when config
   );
 });
 
+// ---------- health alerts ----------
+
+const SECRETS = { RESEND_API_KEY: "re_test", FORWARD_TO: "owner@example.com" };
+const API_ONLY = { KEEP_AWAKE_URL: "https://api.example/health", ...SECRETS };
+const BOTH = { ...API_ONLY, KEEP_AWAKE_WEB_URL: "https://web.example/app/android.json" };
+const at = (iso) => new Date(iso);
+const NOON = at("2026-10-10T06:30:00Z"); // 12:00 IST, an alert minute
+const NOON_10 = at("2026-10-10T06:40:00Z"); // 12:10 IST, not one
+const EVENING = at("2026-10-10T13:00:00Z"); // 18:30 IST, both windows
+
+/** A fetcher that answers each URL from `answers` (a Response factory or an Error) and records
+ * every Resend call. */
+function services(answers) {
+  const sent = [];
+  const fetcher = async (url, init) => {
+    if (url === "https://api.resend.com/emails") {
+      sent.push({ headers: init.headers, body: JSON.parse(init.body) });
+      return new Response('{"id":"x"}', { status: 200 });
+    }
+    const answer = answers[url];
+    if (answer instanceof Error) throw answer;
+    return answer();
+  };
+  return { fetcher, sent };
+}
+const json = (body, status = 200) => () => new Response(JSON.stringify(body), { status });
+const healthy = {
+  "https://api.example/health": json({ status: "ok", sweep: "ok" }),
+  "https://web.example/app/android.json": json({ version: 1 }),
+};
+
+test("healthy services send no alert and log what the keep-awake always logged", async () => {
+  const { fetcher, sent } = services(healthy);
+  assert.equal(await worker.monitor(EVENING, BOTH, fetcher), "api: pinged 200; web: pinged 200");
+  assert.equal(await worker.monitor(NOON, BOTH, fetcher), "api: pinged 200; web: outside the window");
+  assert.deepEqual(sent, []);
+});
+
+test("a stale sweep emails the owner through Resend at minute 0 or 30", async () => {
+  const { fetcher, sent } = services({
+    ...healthy,
+    "https://api.example/health": json({ status: "ok", sweep: "stale" }),
+  });
+  assert.equal(await worker.monitor(NOON, API_ONLY, fetcher), "api: pinged 200, sweep stale; web: off (no KEEP_AWAKE_WEB_URL); alert sent");
+  assert.equal(sent.length, 1);
+  const [{ headers, body }] = sent;
+  assert.equal(headers.Authorization, "Bearer re_test");
+  assert.equal(headers["Idempotency-Key"], "health-alert-2026-10-10T06:30");
+  assert.deepEqual(body.to, ["owner@example.com"]);
+  assert.equal(body.from, "Lumiback Monitor <support@lumiback.abhinesh.codes>");
+  assert.equal(body.subject, "Lumiback alert: api needs a look");
+  assert.match(body.text, /2026-10-10 12:00 IST/);
+  assert.match(body.text, /late alerts and escalations are not going out/);
+});
+
+test("alerts are held on the other cron runs, so an incident sends at most 2 an hour", async () => {
+  const { fetcher, sent } = services({ ...healthy, "https://api.example/health": json({ status: "database unavailable" }, 503) });
+  const runs = [0, 10, 20, 30, 40, 50].map((m) => at(`2026-10-10T06:${String(m).padStart(2, "0")}:00Z`));
+  const lines = [];
+  for (const now of runs) lines.push(await worker.monitor(now, API_ONLY, fetcher));
+  assert.equal(sent.length, 2);
+  assert.equal(lines.filter((l) => l.endsWith("alert held until :00 or :30")).length, 4);
+  assert.match(sent[0].body.text, /api answered 503 \(https:\/\/api\.example\/health\)/);
+  assert.equal(worker.isAlertMinute(NOON), true);
+  assert.equal(worker.isAlertMinute(NOON_10), false);
+});
+
+test("an unreachable website or API is an alert, and both problems share one email", async () => {
+  const { fetcher, sent } = services({
+    "https://api.example/health": new TypeError("network down"),
+    "https://web.example/app/android.json": json({}, 502),
+  });
+  const line = await worker.monitor(EVENING, BOTH, fetcher);
+  assert.equal(line, "api: ping failed: TypeError: network down; web: pinged 502; alert sent");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.subject, "Lumiback alert: services need a look");
+  assert.match(sent[0].body.text, /api did not answer: TypeError: network down/);
+  assert.match(sent[0].body.text, /web answered 502/);
+});
+
+test("the first ping of a window only wakes the service; it never alerts", async () => {
+  const { fetcher, sent } = services({ "https://api.example/health": new TypeError("timed out") });
+  const opening = at("2026-10-10T04:00:00Z"); // 09:30 IST: the API's window opens, an alert minute
+  assert.equal(
+    await worker.monitor(opening, API_ONLY, fetcher),
+    "api: ping failed: TypeError: timed out; web: off (no KEEP_AWAKE_WEB_URL)",
+  );
+  assert.deepEqual(sent, []);
+  // Ten minutes in, the same failure counts (held, since 09:40 is not an alert minute).
+  assert.match(await worker.monitor(at("2026-10-10T04:10:00Z"), API_ONLY, fetcher), /alert held/);
+});
+
+test("without the secrets the alert is logged as not sent, and a Resend refusal says why", async () => {
+  const down = { "https://api.example/health": json({}, 503) };
+  const { fetcher, sent } = services(down);
+  const noSecrets = { KEEP_AWAKE_URL: "https://api.example/health" };
+  assert.match(await worker.monitor(NOON, noSecrets, fetcher), /alert NOT sent: needs the RESEND_API_KEY and FORWARD_TO secrets$/);
+  assert.deepEqual(sent, []);
+  const refusing = async (url) =>
+    url === "https://api.resend.com/emails"
+      ? new Response("domain not verified", { status: 403 })
+      : down[url]();
+  assert.match(
+    await worker.monitor(NOON, API_ONLY, refusing),
+    /alert NOT sent: Error: Resend answered 403: domain not verified$/,
+  );
+});
+
+test("an API answer without a sweep field (an older build) is not an alert", async () => {
+  const { fetcher, sent } = services({ "https://api.example/health": json({ status: "ok" }) });
+  assert.equal(await worker.monitor(NOON, API_ONLY, fetcher), "api: pinged 200; web: off (no KEEP_AWAKE_WEB_URL)");
+  const plain = { "https://api.example/health": () => new Response("ok", { status: 200 }) };
+  assert.equal(await worker.monitor(NOON, API_ONLY, services(plain).fetcher), "api: pinged 200; web: off (no KEEP_AWAKE_WEB_URL)");
+  assert.deepEqual(sent, []);
+});
+
+test("the cron handler runs the monitor", async () => {
+  const { fetcher } = services(healthy);
+  const realFetch = globalThis.fetch;
+  const logged = [];
+  const realLog = console.log;
+  globalThis.fetch = fetcher;
+  console.log = (line) => logged.push(line);
+  try {
+    let pending;
+    await worker.default.scheduled({ scheduledTime: EVENING.getTime() }, BOTH, { waitUntil: (p) => (pending = p) });
+    await pending;
+  } finally {
+    globalThis.fetch = realFetch;
+    console.log = realLog;
+  }
+  assert.deepEqual(logged, ["api: pinged 200; web: pinged 200"]);
+});
+
 test("web visits get a plain 404, not an exception", async () => {
   const res = worker.default.fetch(new Request("https://example.workers.dev/"));
   assert.equal(res.status, 404);
