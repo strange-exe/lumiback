@@ -7,7 +7,7 @@ MIN_LENGTH = 10
 MAX_LENGTH = 128  # bounds hashing cost per request
 
 # A small deny-list of the most common passwords that pass the length rule.
-# (A breached-password check via k-anonymity can replace this before public launch.)
+# It stays as the offline floor: the breached-password check (security/breached.py) fails open.
 COMMON = frozenset(
     {
         "1234567890",

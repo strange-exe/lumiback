@@ -33,6 +33,7 @@ from app.email_templates import set_logo, set_reply_to
 from app.jobs import expiry
 from app.push import make_push_sender
 from app.realtime import Hub
+from app.security.breached import make_breach_checker
 from app.security.rate_limit import RateLimiter
 
 
@@ -85,6 +86,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     set_reply_to(settings.email_reply_to)  # emails invite replies only when they can arrive
     set_logo(settings.web_url)  # the website serves the icon the emails show
     app.state.push = make_push_sender(settings)
+    app.state.breaches = make_breach_checker(settings.breach_check)
 
     app.add_middleware(
         CORSMiddleware,

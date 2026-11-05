@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     push_backend: Literal["expo", "log"] = "log"
     # Optional: only needed if "enhanced push security" is turned on in the Expo project.
     expo_access_token: SecretStr | None = None
+    # New passwords are checked against Have I Been Pwned (only a 5-character hash prefix is
+    # sent; fails open if the API is down). "off" keeps tests and offline e2e runs local.
+    breach_check: Literal["hibp", "off"] = "hibp"
     smtp_host: str | None = None
     smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit TLS
     smtp_username: str | None = None

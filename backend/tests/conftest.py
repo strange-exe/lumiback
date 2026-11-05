@@ -14,6 +14,7 @@ from app.config import Settings, TestDbSettings
 from app.email import MemoryMailer
 from app.main import create_app
 from app.models import Base
+from app.security.breached import MemoryBreachChecker
 from app.security.rate_limit import RateLimiter
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -107,6 +108,7 @@ def settings(test_db_url: str) -> Settings:
         app_env="development",
         allowed_email_domains="example.com,geu.ac.in",
         allowed_test_emails="tester@gmail.com",
+        breach_check="off",  # no network: tests list their "breached" passwords (see breaches)
     )
 
 
@@ -140,3 +142,11 @@ def client(settings: Settings, clean_db: Engine) -> TestClient:
     app.state.mailer = MemoryMailer()  # tests read verification codes from here
     with TestClient(app, backend_options={"loop_factory": asyncio.SelectorEventLoop}) as c:
         yield c
+
+
+@pytest.fixture
+def breaches(client: TestClient) -> MemoryBreachChecker:
+    """Add passwords to `.breached` to make the breached-password check reject them."""
+    checker = MemoryBreachChecker()
+    client.app.state.breaches = checker
+    return checker

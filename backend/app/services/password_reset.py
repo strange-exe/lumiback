@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.email import Mailer
 from app.email_templates import password_reset_email
 from app.models import PasswordReset, RefreshToken, User
+from app.security.breached import BREACHED, BreachChecker
 from app.security.passwords import hash_password, password_problem
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,12 @@ async def start(session: AsyncSession, email: str, pepper: str, mailer: Mailer) 
 
 
 async def finish(
-    session: AsyncSession, email: str, code: str, new_password: str, pepper: str
+    session: AsyncSession,
+    email: str,
+    code: str,
+    new_password: str,
+    pepper: str,
+    breaches: BreachChecker,
 ) -> User:
     """The right code sets the new password and signs every device out, in one transaction."""
     email = email.lower()
@@ -100,7 +106,10 @@ async def finish(
 
     # Checked only after the code: a weak password doesn't use up an attempt, and nobody
     # without the code learns anything about the account.
-    if problem := password_problem(new_password, email=email, name=user.name):
+    problem = password_problem(new_password, email=email, name=user.name)
+    if problem is None and await breaches.is_breached(new_password):
+        problem = BREACHED
+    if problem:
         await session.rollback()
         raise WeakPassword(problem)
 

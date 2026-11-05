@@ -16,6 +16,7 @@ from app.email import Email, Mailer
 from app.models import User, UserRole
 from app.push import PushMessage, notify_or_email, notify_user
 from app.realtime import Hub
+from app.security.breached import BreachChecker
 from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
@@ -35,6 +36,10 @@ def get_limiter(request: Request) -> RateLimiter:
 
 def get_mailer(request: Request) -> Mailer:
     return request.app.state.mailer
+
+
+def get_breach_checker(request: Request) -> BreachChecker:
+    return request.app.state.breaches
 
 
 def get_hub(request: Request) -> Hub:
@@ -73,6 +78,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 HubDep = Annotated[Hub, Depends(get_hub)]
 MailerDep = Annotated[Mailer, Depends(get_mailer)]
+BreachesDep = Annotated[BreachChecker, Depends(get_breach_checker)]
 PushDep = Annotated[Pusher, Depends(Pusher)]
 
 
