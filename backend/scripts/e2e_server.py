@@ -301,6 +301,7 @@ def main() -> None:
     os.environ["DATABASE_URL"] = url
     os.environ["APP_ENV"] = "development"
     os.environ["EMAIL_BACKEND"] = "console"
+    os.environ["BREACH_CHECK"] = "off"  # no calls to Have I Been Pwned from test runs
     loop = "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
     uvicorn.run("app.main:create_app", factory=True, host="127.0.0.1", port=args.port, loop=loop)
 

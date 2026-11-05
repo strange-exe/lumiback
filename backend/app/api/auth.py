@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 
 from app.api.deps import (
+    BreachesDep,
     CurrentUser,
     HubDep,
     LimiterDep,
@@ -28,6 +29,7 @@ from app.schemas import (
     UserOut,
     VerifyEmailIn,
 )
+from app.security.breached import BREACHED
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
@@ -82,12 +84,16 @@ async def register(
     settings: SettingsDep,
     limiter: LimiterDep,
     mailer: MailerDep,
+    breaches: BreachesDep,
 ) -> RegisteredOut:
     """Starts a sign-up and emails a code. The account is created only when the code is entered
     (POST /auth/verify-email); until then nothing about this person is kept beyond 15 minutes."""
     if not verification.email_allowed(body.email, settings):
         raise _domain_error(settings)
     await enforce(limiter, "register:ip", client_ip(request), REGISTER_PER_IP)
+    # After the rate limit, so the endpoint can't be used to run lookups in bulk.
+    if await breaches.is_breached(body.password):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Password {BREACHED}")
     try:
         await verification.start(session, body, settings.code_pepper.get_secret_value(), mailer)
     except verification.AlreadyRegistered:
@@ -173,6 +179,7 @@ async def reset_password(
     session: SessionDep,
     settings: SettingsDep,
     limiter: LimiterDep,
+    breaches: BreachesDep,
 ) -> Response:
     """Sets a new password with the emailed code and signs out every device. The app then signs
     in with the new password. Each code allows 5 tries."""
@@ -183,7 +190,12 @@ async def reset_password(
         raise too_many(e) from None
     try:
         await password_reset.finish(
-            session, body.email, body.code, body.password, settings.code_pepper.get_secret_value()
+            session,
+            body.email,
+            body.code,
+            body.password,
+            settings.code_pepper.get_secret_value(),
+            breaches,
         )
     except password_reset.ResetFailed:
         await limiter.record("reset:ip", ip)
