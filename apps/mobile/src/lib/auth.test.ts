@@ -17,6 +17,8 @@ async function mockRecord(path: string): Promise<unknown> {
   return path === "/sessions/s1" ? { id: "s1", source: mockShareSource } : undefined;
 }
 const mockApi = jest.fn(mockRecord);
+// The provider's listener for a forced sign-out (the server refused the session).
+let mockSignedOutListener: (() => void) | null = null;
 
 jest.mock("@/location/task", () => ({
   stopSending: () => mockStopSending(),
@@ -28,7 +30,10 @@ jest.mock("@/lib/api", () => ({
 }));
 jest.mock("@/lib/session", () => ({
   clearTokens: jest.fn(async () => void mockCalls.push("clearTokens")),
-  onSignedOut: () => () => undefined,
+  onSignedOut: (listener: () => void) => {
+    mockSignedOutListener = listener;
+    return () => undefined;
+  },
   // Signed out at launch: the provider makes no requests of its own during the test.
   storedRefreshToken: jest.fn(async () => (mockCalls.length > 0 ? "r1" : null)),
   storeTokens: jest.fn(),
@@ -141,6 +146,17 @@ describe("signing out ends the share on the server", () => {
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls).toContain("stopSending");
     expect(mockCalls.at(-1)).toBe("clearTokens");
+    act(() => tree.unmount());
+  });
+});
+
+describe("a forced sign-out leaves nothing of the student on the phone", () => {
+  it("stops sending, clears return reminders and forgets an armed intent", async () => {
+    const id = armSafeReturn();
+    const { tree } = await mount();
+    await act(async () => mockSignedOutListener?.());
+    expect(mockCalls).toEqual(expect.arrayContaining(["stopSending", "syncReturnReminders"]));
+    expect(safeReturnFor({ intent: id })).toBe(false);
     act(() => tree.unmount());
   });
 });

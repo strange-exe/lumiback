@@ -68,6 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     const off = onSignedOut(() => {
       setUser(null);
       setStatus("signedOut");
+      // Also when the server ended the session (a refused refresh): nothing of this student
+      // stays on the phone for the next one to sign in, best effort.
+      clearSafeReturn();
+      void stopSending().catch(() => undefined);
+      void syncReturnReminders(null).catch(() => undefined);
     });
     void (async () => {
       if (!(await storedRefreshToken())) return setStatus("signedOut");
