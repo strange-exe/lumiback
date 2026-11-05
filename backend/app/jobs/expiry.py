@@ -31,7 +31,14 @@ from app.models import (
     ShareSession,
     ShareSource,
 )
-from app.push import PushMessage, PushSender, notify_or_email, notify_user
+from app.push import (
+    PushMessage,
+    PushSender,
+    ReceiptCheck,
+    check_receipts,
+    notify_or_email,
+    notify_user,
+)
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
 from app.services import escalations, password_reset, verification
@@ -68,6 +75,7 @@ class SweepResult:
     deleted_views: int = 0
     deleted_requests: int = 0
     deleted_escalations: int = 0
+    push_receipts: ReceiptCheck = ReceiptCheck()
 
 
 async def sweep(
@@ -205,6 +213,12 @@ async def sweep(
                 )
             except Exception:
                 logger.exception("escalation email failed")
+    receipts = ReceiptCheck()
+    if push is not None:
+        try:  # last: the alerts above matter more than confirming earlier pushes
+            receipts = await check_receipts(sessionmaker, push, now)
+        except Exception:
+            logger.exception("push receipt check failed")  # tickets stay for the next sweep
     return SweepResult(
         expired,
         closed_tabs,
@@ -219,6 +233,7 @@ async def sweep(
         deleted_requests=old_requests.rowcount,
         deleted_escalations=handled.rowcount,
         deleted_password_resets=resets,
+        push_receipts=receipts,
     )
 
 

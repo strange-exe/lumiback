@@ -204,7 +204,7 @@ def test_expo_sender_batches_and_reports_unregistered_devices():
         tickets = [
             {"status": "error", "details": {"error": "DeviceNotRegistered"}}
             if m["to"].endswith("dead]")
-            else {"status": "ok", "id": "x"}
+            else {"status": "ok", "id": f"ticket-{m['to']}"}
             for m in sent
         ]
         return httpx.Response(200, json={"data": tickets})
@@ -213,9 +213,12 @@ def test_expo_sender_batches_and_reports_unregistered_devices():
     many = [f"ExponentPushToken[t{i:04}]" for i in range(150)] + ["ExponentPushToken[dead]"]
     message = PushMessage(title="Hi", body="There", url="/today", channel="reminders")
 
-    dead = asyncio.run(sender.send(many, message))
+    result = asyncio.run(sender.send(many, message))
 
-    assert dead == {"ExponentPushToken[dead]"}
+    assert result.dead == {"ExponentPushToken[dead]"}
+    assert result.failed == set()
+    # Each accepted message keeps its ticket id, to fetch the receipt later.
+    assert result.tickets == {f"ticket-{t}": t for t in many[:150]}
     assert [len(json.loads(r.content)) for r in requests] == [100, 51]
     assert requests[0].headers["Authorization"] == "Bearer expo-access"
     first = json.loads(requests[0].content)[0]
@@ -239,8 +242,128 @@ def test_expo_sender_omits_a_missing_url():
 
     sender = ExpoPushSender(None, transport=httpx.MockTransport(handler))
     message = PushMessage(title="Hi", body="There", channel="return-reminders")
-    assert asyncio.run(sender.send([TOKEN], message)) == set()
+    assert asyncio.run(sender.send([TOKEN], message)).accepted == {TOKEN}
     assert sent[0]["data"] == {}  # the app then opens its default screen
+
+
+def expo(handler, sleeps: list[float] | None = None) -> ExpoPushSender:
+    async def sleep(seconds: float) -> None:
+        if sleeps is not None:
+            sleeps.append(seconds)
+
+    return ExpoPushSender(None, transport=httpx.MockTransport(handler), sleep=sleep)
+
+
+def ok_ticket(request: httpx.Request) -> httpx.Response:
+    sent = json.loads(request.content)
+    return httpx.Response(200, json={"data": [{"status": "ok", "id": "t1"} for _ in sent]})
+
+
+def test_expo_sender_retries_network_errors_and_server_errors_with_backoff():
+    answers = iter(
+        [
+            httpx.ConnectError("no route"),
+            httpx.Response(503, json={"errors": [{"code": "INTERNAL"}]}),
+            None,  # then it works
+        ]
+    )
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer or ok_ticket(request)
+
+    sleeps: list[float] = []
+    result = asyncio.run(expo(handler, sleeps).send([TOKEN], PushMessage(title="a", body="b")))
+    assert result.tickets == {"t1": TOKEN}
+    assert calls == 3
+    assert sleeps == [1.0, 2.0]  # exponential
+
+
+def test_expo_sender_gives_up_after_three_tries():
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(502)
+
+    sleeps: list[float] = []
+    result = asyncio.run(expo(handler, sleeps).send([TOKEN], PushMessage(title="a", body="b")))
+    assert calls == 3
+    assert len(sleeps) == 2
+    assert result.failed == {TOKEN}  # reported, not raised
+    assert result.dead == set() and result.tickets == {}
+
+
+def test_expo_sender_honours_retry_after_on_429_within_a_cap():
+    answers = iter([httpx.Response(429, headers={"Retry-After": "120"}), None])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return next(answers) or ok_ticket(request)
+
+    sleeps: list[float] = []
+    result = asyncio.run(expo(handler, sleeps).send([TOKEN], PushMessage(title="a", body="b")))
+    assert result.accepted == {TOKEN}
+    assert sleeps == [8.0]  # capped: a send never waits minutes
+
+
+def test_expo_sender_never_retries_a_bad_request():
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"errors": [{"code": "VALIDATION_ERROR"}]})
+
+    result = asyncio.run(expo(handler).send([TOKEN], PushMessage(title="a", body="b")))
+    assert calls == 1
+    assert result.failed == {TOKEN}
+
+
+def test_expo_sender_keeps_going_when_one_batch_fails():
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls <= 3:  # the first batch fails on every try
+            return httpx.Response(500)
+        return ok_ticket(request)
+
+    many = [f"ExponentPushToken[t{i:04}]" for i in range(101)]
+    result = asyncio.run(expo(handler).send(many, PushMessage(title="a", body="b")))
+    assert result.failed == set(many[:100])
+    assert result.accepted == {many[100]}
+
+
+def test_other_ticket_errors_keep_the_token():
+    def handler(request: httpx.Request) -> httpx.Response:
+        error = {"status": "error", "message": "too big", "details": {"error": "MessageTooBig"}}
+        return httpx.Response(200, json={"data": [error]})
+
+    result = asyncio.run(expo(handler).send([TOKEN], PushMessage(title="a", body="b")))
+    assert result.dead == set()
+    assert result.failed == {TOKEN}
+
+
+def test_expo_receipts_are_fetched_in_batches_of_1000():
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/--/api/v2/push/getReceipts"
+        body = json.loads(request.content)
+        bodies.append(body)
+        return httpx.Response(200, json={"data": {i: {"status": "ok"} for i in body["ids"][:1]}})
+
+    ids = [f"ticket-{i}" for i in range(1500)]
+    found = asyncio.run(expo(handler).receipts(ids))
+    assert [len(b["ids"]) for b in bodies] == [1000, 500]
+    assert found == {"ticket-0": {"status": "ok"}, "ticket-1000": {"status": "ok"}}
 
 
 def test_notify_user_counts_the_phones_it_reached(client, push):
@@ -334,3 +457,98 @@ def test_old_scans_are_deleted_after_the_retention_period(client, db, push):
     db.commit()
     assert run_sweep(client, push).deleted_scans == 2
     assert db.execute(text("SELECT count(*) FROM gate_scans")).scalar_one() == 1
+
+
+# ---------- sweep: push receipts ----------
+
+
+def pushed(client, push, *phones: str) -> None:
+    """Riya's phones get one push."""
+    from app.push import notify_user
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+    for phone in phones:
+        register_token(client, riya, phone)
+    me = uuid.UUID(client.get("/auth/me", headers=riya).json()["id"])
+    message = PushMessage(title="Hi", body="There", urgent=True)
+    client.portal.call(notify_user, client.app.state.sessionmaker, push, me, message)
+
+
+def tickets(db) -> dict[str, str]:
+    rows = db.execute(text("SELECT token, id FROM push_tickets"))
+    return {token: ticket for token, ticket in rows}
+
+
+def age_tickets(db, by: str) -> None:
+    db.execute(
+        text("UPDATE push_tickets SET created_at = now() - CAST(:by AS interval)"), {"by": by}
+    )
+    db.commit()
+
+
+def test_accepted_pushes_keep_their_ticket_until_the_receipt(client, db, push):
+    pushed(client, push, TOKEN, OTHER)
+    stored = tickets(db)
+    assert set(stored) == {TOKEN, OTHER}
+
+    run_sweep(client, push)
+    assert push.receipt_requests == []  # too early: Expo has no receipt for 15 minutes
+
+    age_tickets(db, "16 minutes")
+    push.receipts_by_id[stored[TOKEN]] = {"status": "ok"}
+    push.receipts_by_id[stored[OTHER]] = {
+        "status": "error",
+        "message": "gone",
+        "details": {"error": "DeviceNotRegistered"},
+    }
+    result = run_sweep(client, push).push_receipts
+    assert sorted(push.receipt_requests[0]) == sorted(stored.values())
+    assert (result.checked, result.delivered, result.pruned) == (2, 1, 1)
+    assert tickets(db) == {}  # answered: done with them
+    assert [t for t, _ in tokens(db)] == [TOKEN]  # the uninstalled phone is pruned
+
+
+def test_other_receipt_errors_are_logged_and_keep_the_token(client, db, push, caplog):
+    pushed(client, push, TOKEN)
+    age_tickets(db, "20 minutes")
+    push.receipts_by_id[tickets(db)[TOKEN]] = {
+        "status": "error",
+        "message": "bad FCM key",
+        "details": {"error": "InvalidCredentials"},
+    }
+    assert run_sweep(client, push).push_receipts.errors == 1
+    assert "InvalidCredentials" in caplog.text
+    assert [t for t, _ in tokens(db)] == [TOKEN]
+    assert tickets(db) == {}
+
+
+def test_a_missing_receipt_is_asked_again_hourly_then_dropped(client, db, push):
+    pushed(client, push, TOKEN)
+    age_tickets(db, "16 minutes")
+    run_sweep(client, push)
+    run_sweep(client, push)
+    assert len(push.receipt_requests) == 1  # not asked again every 30 s
+    assert set(tickets(db)) == {TOKEN}
+
+    db.execute(text("UPDATE push_tickets SET checked_at = now() - interval '61 minutes'"))
+    db.commit()
+    run_sweep(client, push)
+    assert len(push.receipt_requests) == 2
+
+    age_tickets(db, "25 hours")  # Expo has cleared receipts by now
+    assert run_sweep(client, push).push_receipts.expired == 1
+    assert tickets(db) == {}
+    assert len(push.receipt_requests) == 2
+
+
+def test_a_failing_receipt_check_keeps_the_tickets_and_the_sweep(client, db, push):
+    pushed(client, push, TOKEN)
+    age_tickets(db, "16 minutes")
+
+    async def down(ticket_ids):
+        raise httpx.ConnectError("push service down")
+
+    push.receipts = down
+    result = run_sweep(client, push)
+    assert result.push_receipts.checked == 0
+    assert set(tickets(db)) == {TOKEN}  # tried again on the next sweep
