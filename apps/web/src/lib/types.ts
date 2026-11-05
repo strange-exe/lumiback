@@ -47,6 +47,8 @@ export interface Outing {
   in_via: "self" | "gate" | null;
   /** The answer to "you're late, are you OK?". */
   late_reply?: LateReply | null;
+  /** Safe return: the share the emergency contact follows until the student is back. */
+  safe_return_session_id?: string | null;
 }
 
 /** GET /campus: today's outing rules for this student (their hostel's, or the default). */
@@ -96,6 +98,8 @@ export interface Profile {
   emergency_name: string | null;
   emergency_relation: string | null;
   emergency_phone: string | null;
+  /** Optional: lets the student choose safe return at check-out. */
+  emergency_email?: string | null;
 }
 
 export interface HostelChoice {

@@ -23,6 +23,7 @@ const ENDED: Record<string, string> = {
   stopped_by_sharer: "You stopped sharing.",
   tab_closed: "Sharing stopped when the tab closed.",
   expired: "Your share time ran out.",
+  returned: "You're back, so sharing with your emergency contact stopped.",
 };
 
 function StartShare(): ReactNode {
@@ -110,6 +111,7 @@ function LiveShare(): ReactNode {
   const [stopping, startStop] = useTransition();
   const [error, setError] = useState<string | null>(null);
   if (!session) return null;
+  const safeReturn = session.source === "outing";
 
   const status = problem
     ? "Paused: we can't get your location"
@@ -131,7 +133,9 @@ function LiveShare(): ReactNode {
           You&apos;re sharing your location
         </h1>
         <p className="mt-1 text-muted">
-          Until {formatTime(session.ends_at)} at the latest, or until you close this tab.
+          {safeReturn
+            ? "With your emergency contact, until you're back. It ends when you check back in."
+            : `Until ${formatTime(session.ends_at)} at the latest, or until you close this tab.`}
         </p>
       </div>
 
@@ -141,7 +145,9 @@ function LiveShare(): ReactNode {
           {screenAwake
             ? "Your screen will stay on while you share. "
             : "Keep this tab open with your screen on. "}
-          Locking your phone or switching apps pauses sharing, and it ends after 5 minutes away.
+          {safeReturn
+            ? "Locking your phone or closing this tab pauses sharing until you open Lumiback again. The app can keep sharing with the screen off."
+            : "Locking your phone or switching apps pauses sharing, and it ends after 5 minutes away."}
         </span>
       </p>
 

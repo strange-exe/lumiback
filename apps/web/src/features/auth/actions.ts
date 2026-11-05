@@ -92,8 +92,10 @@ export async function signOut(): Promise<void> {
   const access = await accessToken();
   if (access) {
     // Signing out of the device you're sharing from ends the share: nobody is left to stop it.
+    // Not a safe-return share: it belongs to the outing (the app may be sending it) and ends
+    // when the student is back.
     const live = await shareApi.activeTabShare(access).catch(() => null);
-    if (live) {
+    if (live?.source === "tab_live") {
       await callBackend(`/sessions/${live.id}/stop`, { method: "POST", token: access }).catch(
         () => undefined,
       );

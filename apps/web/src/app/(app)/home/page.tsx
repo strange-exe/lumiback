@@ -5,11 +5,14 @@ import { Gate } from "@/components/illustrations/Gate";
 import { outingsApi } from "@/features/outings/api";
 import { CheckOutForm } from "@/features/outings/components/CheckOutForm";
 import { OutView } from "@/features/outings/components/OutView";
+import type { SafeReturnState } from "@/features/outings/components/SafeReturnNote";
 import { RequestPanel } from "@/features/outings/components/RequestPanel";
 import { isFreeNow, RulesCard } from "@/features/outings/components/RulesCard";
 import { closedAt } from "@/features/outings/rules";
 import { formatTime } from "@/features/outings/time";
+import { shareApi } from "@/features/share/api";
 import { requireUser } from "@/lib/session";
+import type { Outing } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Today" };
 
@@ -30,11 +33,37 @@ function Notice({
   );
 }
 
-export default async function HomePage(): Promise<ReactNode> {
+/** Whether the emergency contact is following this outing (see SafeReturnNote). */
+async function safeReturnState(
+  token: string,
+  outing: Outing,
+  param: string | undefined,
+): Promise<SafeReturnState> {
+  const id = outing.safe_return_session_id;
+  if (!id) return param === "off" ? "failed" : "off";
+  // Unknown (couldn't load): say it's on, which is what the student chose.
+  const share = await shareApi.session(token, id).catch(() => null);
+  return share && share.status !== "active" ? "stopped" : "live";
+}
+
+interface PageProps {
+  /** safe_return=off: the student ticked safe return at check-out, but it couldn't start. */
+  searchParams: Promise<{ safe_return?: string }>;
+}
+
+export default async function HomePage({ searchParams }: PageProps): Promise<ReactNode> {
   const { user, token } = await requireUser();
   const outing = await outingsApi.current(token);
 
-  if (outing) return <OutView outing={outing} serverNow={new Date().toISOString()} />;
+  if (outing) {
+    return (
+      <OutView
+        outing={outing}
+        serverNow={new Date().toISOString()}
+        safeReturn={await safeReturnState(token, outing, (await searchParams).safe_return)}
+      />
+    );
+  }
 
   // Rendered per request, so the server's clock decides what is open right now.
   const now = new Date();
@@ -45,12 +74,11 @@ export default async function HomePage(): Promise<ReactNode> {
   // A request can be sent before outings open, but not once they're over for today.
   const formNeeded = Boolean(rules?.needs_form) && !free && closed !== "after";
   // undefined: the request couldn't be loaded (null: there is none today).
-  const [request, profile] = formNeeded
-    ? await Promise.all([
-        outingsApi.request(token).catch(() => undefined),
-        outingsApi.profile(token).catch(() => null),
-      ])
-    : [null, null];
+  // The profile also says whether safe return can be offered at check-out.
+  const [request, profile] = await Promise.all([
+    formNeeded ? outingsApi.request(token).catch(() => undefined) : null,
+    outingsApi.profile(token).catch(() => null),
+  ]);
   const approved = request?.status === "approved" && !request.used;
 
   let body: ReactNode;
@@ -59,7 +87,7 @@ export default async function HomePage(): Promise<ReactNode> {
     body = (
       <>
         <Notice tone="danger">Couldn&apos;t load today&apos;s rules. Reload to try again.</Notice>
-        <CheckOutForm />
+        <CheckOutForm profile={profile} />
       </>
     );
   } else if (!rules) {
@@ -89,7 +117,7 @@ export default async function HomePage(): Promise<ReactNode> {
             Reload this page then.
           </Notice>
         ) : null}
-        {closed === null && (!formNeeded || approved) ? <CheckOutForm /> : null}
+        {closed === null && (!formNeeded || approved) ? <CheckOutForm profile={profile} /> : null}
       </>
     );
   }
