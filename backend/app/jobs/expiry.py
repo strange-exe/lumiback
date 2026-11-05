@@ -21,12 +21,14 @@ from app.email import Mailer
 from app.email_templates import escalation_email, late_alert_email
 from app.models import (
     AccessLog,
+    AdminAudit,
     CampusSettings,
     Escalation,
     GateScan,
     Location,
     Outing,
     OutingRequest,
+    PushToken,
     RefreshToken,
     SessionStatus,
     ShareCode,
@@ -59,6 +61,11 @@ TAB_IDLE = timedelta(minutes=5)
 # the share ends. Longer than tabs: Android may batch updates while the phone sleeps.
 APP_IDLE = timedelta(minutes=15)
 DEFAULT_SCAN_RETENTION_DAYS = 180
+# Fixed periods (owner decision, 2026-11-05; the privacy page states them).
+KEEP_ADMIN_AUDIT = timedelta(days=365)
+# The app re-registers its push token on every start, so a token unseen this long belongs to a
+# phone that no longer runs Lumiback (uninstalled, reset, or replaced).
+KEEP_UNSEEN_PUSH_TOKENS = timedelta(days=90)
 MINUTE = timedelta(minutes=1)
 
 
@@ -77,6 +84,8 @@ class SweepResult:
     deleted_views: int = 0
     deleted_requests: int = 0
     deleted_escalations: int = 0
+    deleted_audit: int = 0
+    deleted_push_tokens: int = 0
     push_receipts: ReceiptCheck = ReceiptCheck()
 
 
@@ -192,6 +201,12 @@ async def sweep(
                 Escalation.resolved_at.is_not(None), Escalation.created_at < cutoff
             )
         )
+        audit = await session.execute(
+            delete(AdminAudit).where(AdminAudit.at < now - KEEP_ADMIN_AUDIT)
+        )
+        stale_devices = await session.execute(
+            delete(PushToken).where(PushToken.last_seen_at < now - KEEP_UNSEEN_PUSH_TOKENS)
+        )
         await session.commit()
 
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
@@ -261,6 +276,8 @@ async def sweep(
         deleted_requests=old_requests.rowcount,
         deleted_escalations=handled.rowcount,
         deleted_password_resets=resets,
+        deleted_audit=audit.rowcount,
+        deleted_push_tokens=stale_devices.rowcount,
         push_receipts=receipts,
     )
 

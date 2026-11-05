@@ -49,6 +49,8 @@ const PARTS: Part[] = [
       "Outings and records of your past shares stay until you delete your account.",
       "Gate scans, outing requests, records of who viewed your share, and handled late follow-ups are deleted automatically after 180 days (admins can set this between 7 and 730 days). A late follow-up still open stays until the hostel office handles it.",
       "Join codes are deleted a day after they expire. You are signed out after 30 days without using the app.",
+      "A phone's push token is deleted when you sign out on it, or after 90 days without the app being opened on it.",
+      "Records of changes staff make in the admin area (roles, gates, kiosk links, settings) are deleted after 365 days.",
     ],
   },
   {
@@ -63,6 +65,12 @@ const PARTS: Part[] = [
     heading: "Your choices",
     items: [
       "Stop a share or remove a viewer at any time; they lose access at once.",
+      <>
+        Download a copy of your data from the <Link href="/account">Account</Link> page, or Profile
+        in the app: a JSON file with your account, contacts, outings, requests, shares and who
+        viewed them, gate scans and phones. It holds only your own records, plus the names of the
+        people who viewed your shares.
+      </>,
       <>
         Delete your account from the <Link href="/account">Account</Link> page. Everything tied to
         it is erased immediately and can&apos;t be recovered.
@@ -84,7 +92,7 @@ export default function PrivacyPage(): ReactNode {
           <h1 className="font-display text-title text-ink">Privacy</h1>
           <p className="mt-2 max-w-[60ch] leading-relaxed text-muted">
             Lumiback exists to share your location with people you choose, so this page says exactly
-            what is kept, who can see it, and for how long. Last updated 10 October 2026.
+            what is kept, who can see it, and for how long. Last updated 5 November 2026.
           </p>
         </div>
         {PARTS.map((part) => (
