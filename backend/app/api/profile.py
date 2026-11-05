@@ -1,14 +1,23 @@
 """The student's own profile details that the outing rules need: hostel and contacts."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, LimiterDep, SessionDep, enforce
 from app.models import Hostel, RuleSet, User, UserRole
 from app.schemas import HostelChoiceOut, ProfileIn, ProfileOut
+from app.security.rate_limit import Limit
 from app.services import outings
+from app.services.export import export_user
 
 router = APIRouter(tags=["profile"])
+
+# Building the export reads every table: generous for a person, a wall for a loop.
+EXPORT_PER_USER = Limit(max_hits=5, window_seconds=3600)
 
 
 def hostel_locked(user: User) -> bool:
@@ -45,6 +54,21 @@ async def hostel_choices(_: CurrentUser, session: SessionDep) -> list[HostelChoi
 @router.get("/profile")
 async def get_profile(me: CurrentUser, session: SessionDep) -> ProfileOut:
     return await _out(session, me)
+
+
+@router.get("/profile/export")
+async def export_my_data(me: CurrentUser, session: SessionDep, limiter: LimiterDep) -> JSONResponse:
+    """Everything kept about the signed-in person, as a JSON file to save (any role)."""
+    await enforce(limiter, "export:user", str(me.id), EXPORT_PER_USER)
+    data = await export_user(session, me)
+    day = datetime.now(UTC).date().isoformat()
+    return JSONResponse(
+        jsonable_encoder(data),
+        headers={
+            "Content-Disposition": f'attachment; filename="lumiback-data-{day}.json"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.patch("/profile")
