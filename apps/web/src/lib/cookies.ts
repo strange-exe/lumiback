@@ -23,3 +23,8 @@ export function guestCookie(sessionId: string): string {
   return `outing_guest_${sessionId}`;
 }
 export const GUEST_MAX_AGE = 9 * 60 * 60;
+/**
+ * A safe-return link's guest cookie. The outing's share can outlive 9 h (it lasts until the
+ * student is back); the emailed link can set the cookie again whenever it's opened.
+ */
+export const WATCH_KEY_MAX_AGE = 24 * 60 * 60;

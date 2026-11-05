@@ -5,11 +5,22 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
-from app.api.deps import CurrentUser, PushDep, SessionDep
-from app.models import LateReply
+from app.api.deps import (
+    CurrentUser,
+    HubDep,
+    LimiterDep,
+    MailerDep,
+    PushDep,
+    SessionDep,
+    SettingsDep,
+)
+from app.config import Settings
+from app.email import Mailer
+from app.models import LateReply, Outing, User
 from app.push import PushMessage
+from app.realtime import AccessChanged, Hub
 from app.schemas import (
     LateReplyIn,
     OutingCreateIn,
@@ -19,7 +30,8 @@ from app.schemas import (
     OutingRequestOut,
     OutingSummary,
 )
-from app.services import escalations, requests, rules, staff
+from app.security.rate_limit import RateLimiter
+from app.services import escalations, requests, rules, safe_return, staff
 from app.services import outings as svc
 
 router = APIRouter(prefix="/outings", tags=["outings"])
@@ -31,16 +43,68 @@ def refused(e: rules.Refused) -> HTTPException:
     return HTTPException(status.HTTP_403_FORBIDDEN, detail=e.message)
 
 
+async def safe_return_pepper(
+    wanted: bool, me: User, limiter: RateLimiter, settings: Settings
+) -> str | None:
+    """The pepper to start safe return with, or None: not ticked, no emergency email, or over
+    today's limit. The check-out itself goes ahead either way (its response then has no
+    safe_return_session_id, which the app and website explain)."""
+    if wanted and await safe_return.allowed(limiter, me):
+        return settings.code_pepper.get_secret_value()
+    return None
+
+
+async def safe_return_started(
+    outing: Outing,
+    me: User,
+    *,
+    limiter: RateLimiter,
+    mailer: Mailer,
+    settings: Settings,
+    tasks: BackgroundTasks,
+) -> None:
+    """Counts the start against the limits and emails the contact after the response."""
+    if outing.safe_return_session_id is None or outing.safe_return_email is None:
+        return
+    await safe_return.record(limiter, me.id, outing.safe_return_email)
+    email = safe_return.start_email(
+        outing, me, settings.web_url, settings.code_pepper.get_secret_value()
+    )
+    tasks.add_task(safe_return.send, mailer, email)
+
+
+async def safe_return_ended(
+    back: safe_return.Back | None, *, hub: Hub, mailer: Mailer, tasks: BackgroundTasks
+) -> None:
+    """After a return's commit: cut the contact off now, and tell them the student is back."""
+    if back is None:
+        return
+    await hub.publish(AccessChanged(back.session_id))
+    tasks.add_task(safe_return.send, mailer, back.email)
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def check_out(body: OutingCreateIn, me: CurrentUser, session: SessionDep) -> OutingOut:
+async def check_out(
+    body: OutingCreateIn,
+    me: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    mailer: MailerDep,
+    tasks: BackgroundTasks,
+) -> OutingOut:
+    pepper = await safe_return_pepper(body.safe_return, me, limiter, settings)
     try:
-        outing = await svc.check_out(session, me, body)
+        outing = await svc.check_out(session, me, body, safe_return_pepper=pepper)
     except rules.Refused as e:
         raise refused(e) from None
     except svc.AlreadyOut:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You are already on an outing; mark your return first"
         ) from None
+    await safe_return_started(
+        outing, me, limiter=limiter, mailer=mailer, settings=settings, tasks=tasks
+    )
     return svc.to_out(outing, datetime.now(UTC))
 
 
@@ -61,11 +125,14 @@ async def extend(_me: CurrentUser) -> OutingOut:
 
 
 @router.post("/current/return")
-async def mark_return(me: CurrentUser, session: SessionDep) -> OutingOut:
-    outing = await svc.mark_return(session, me.id)
-    if outing is None:
+async def mark_return(
+    me: CurrentUser, session: SessionDep, hub: HubDep, mailer: MailerDep, tasks: BackgroundTasks
+) -> OutingOut:
+    returned = await svc.mark_return(session, me.id)
+    if returned is None:
         raise NOT_OUT
-    return svc.to_out(outing, datetime.now(UTC))
+    await safe_return_ended(returned.back, hub=hub, mailer=mailer, tasks=tasks)
+    return svc.to_out(returned.outing, datetime.now(UTC))
 
 
 @router.get("")

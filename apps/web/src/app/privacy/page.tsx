@@ -22,7 +22,7 @@ const PARTS: Part[] = [
     items: [
       "Your account: name, university email, an optional roll number, and your password, stored only as a one-way hash.",
       "Your outings: when you left, when you expect to be back, when you returned, and an optional destination.",
-      "Your hostel (it decides your outing hours), and, if you add them, your phone number and an emergency contact's name, relation and phone number.",
+      "Your hostel (it decides your outing hours), and, if you add them, your phone number and an emergency contact's name, relation, phone number and email.",
       "Outing requests for days that need approval (currently Sundays and holidays): where and why, how long, and the phone numbers on the form, with the hostel office's decision.",
       "If you're late: your answer to the “Are you OK?” alert, and whether the hostel office followed it up.",
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
@@ -38,6 +38,7 @@ const PARTS: Part[] = [
       "Hostel admins (wardens and security staff given admin access) see the outing register: your name, email, roll number, hostel, destination, when you left, when you're due and when you returned, and whether each was scanned at a gate or self-reported. They also see gate scans, including refused ones, and can download the register as a spreadsheet.",
       "Admins see your outing requests, including the phone numbers on them, so they can decide and call if needed.",
       "If you're 30 minutes late and don't answer the alert within 10 minutes, admins are told and see your phone number, your emergency contact and your hostel warden's number. If you are sharing your location at that moment, they also see your latest shared position, and that look is listed in your share's viewer history. Otherwise they see only your last gate scan: which gate, and when. Nothing new is collected for this.",
+      "Safe return: only if you tick “Let my emergency contact follow until I'm back” when you check out, we email that contact a link. It says you chose to send it, shows your location while you share it from the app or website, and stops working when you're back or stop sharing. They're also emailed if you're 30 minutes late, and when you're back. Their views are listed in your share's viewer history like anyone else's. Their email address is kept with that outing only until you're back.",
       "We don't sell your data, show ads, or use analytics or tracking cookies.",
       "The only cookies keep you signed in, or let a guest keep following one share, and they can't be read by scripts on the page.",
     ],
@@ -56,7 +57,7 @@ const PARTS: Part[] = [
   {
     heading: "Where it's stored",
     items: [
-      "The app runs on Render, the database on Supabase, emails (sign-up and password codes, request decisions and “Are you OK?” alerts to students who don't use the app, and late-student alerts to admins) are sent through Resend, and app notifications through Expo's push service (Firebase on Android). They process data only to run Lumiback.",
+      "The app runs on Render, the database on Supabase, emails (sign-up and password codes, request decisions and “Are you OK?” alerts to students who don't use the app, late-student alerts to admins, and safe-return emails to an emergency contact you chose) are sent through Resend, and app notifications through Expo's push service (Firebase on Android). They process data only to run Lumiback.",
       `Emails to ${SUPPORT_EMAIL} are forwarded to the Lumiback team's inbox and answered from there; an automatic reply confirms we got it.`,
       "Map images come from OpenStreetMap's tile servers, which see your IP address and the map area shown; “Open in Google Maps” sends the position to Google only when you click it.",
     ],

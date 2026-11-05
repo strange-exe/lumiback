@@ -141,6 +141,17 @@ export function OutingDetails({
             defaultValue={value("emergency_phone")}
           />
         </div>
+        <Field
+          label="Their email (optional)"
+          name="emergency_email"
+          id="account-emergency-email"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          maxLength={254}
+          defaultValue={contactState.fields?.emergency_email ?? profile.emergency_email ?? ""}
+          hint="Lets you choose, when you check out, to email them a link to follow you until you're back. Nothing is sent unless you choose it."
+        />
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton variant="secondary" pendingLabel="Saving…">
             Save contacts

@@ -2,11 +2,20 @@ import type { ReactNode } from "react";
 
 import { LateReply, ReturnButton } from "@/features/outings/components/OutingControls";
 import { ReturnArc } from "@/features/outings/components/ReturnArc";
+import { SafeReturnNote, type SafeReturnState } from "@/features/outings/components/SafeReturnNote";
 import { clockParts, formatMinutes } from "@/features/outings/time";
 import type { Outing } from "@/lib/types";
 
 /** Shown while the student is out: where, the return arc, when they're due, and "I'm back". */
-export function OutView({ outing, serverNow }: { outing: Outing; serverNow: string }): ReactNode {
+export function OutView({
+  outing,
+  serverNow,
+  safeReturn = "off",
+}: {
+  outing: Outing;
+  serverNow: string;
+  safeReturn?: SafeReturnState;
+}): ReactNode {
   const overdue = outing.status === "overdue";
   const due = clockParts(outing.expected_return_at);
 
@@ -53,6 +62,7 @@ export function OutView({ outing, serverNow }: { outing: Outing; serverNow: stri
           <LateReply />
         )
       ) : null}
+      <SafeReturnNote sessionId={outing.safe_return_session_id ?? null} state={safeReturn} />
       <ReturnButton />
     </section>
   );

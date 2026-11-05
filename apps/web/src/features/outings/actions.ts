@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { ApiError, callBackend } from "@/lib/backend";
 import { accessToken } from "@/lib/session";
-import type { FormState } from "@/lib/types";
+import type { FormState, Outing } from "@/lib/types";
 
 /** Every action re-checks the session itself (never trust that a page was protected). */
 async function tokenOrSignIn(): Promise<string> {
@@ -43,15 +43,24 @@ async function run(
 export async function checkOut(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const destination = text(form, "destination");
-  return run(
-    () =>
-      callBackend("/outings", {
+  const safeReturn = form.get("safe_return") === "on";
+  let outing: Outing | null = null;
+  const state = await run(
+    async () => {
+      outing = await callBackend<Outing>("/outings", {
         method: "POST",
         token,
-        body: { destination: destination || null },
-      }),
+        body: { destination: destination || null, safe_return: safeReturn },
+      });
+    },
     { destination },
   );
+  // Ticked, but it couldn't start (usually today's email limit): the outing itself is fine, and
+  // Today (now showing the outing) says so.
+  if (!state.error && safeReturn && !(outing as Outing | null)?.safe_return_session_id) {
+    redirect("/home?safe_return=off");
+  }
+  return state;
 }
 
 export async function markReturn(_: FormState): Promise<FormState> {
@@ -118,6 +127,9 @@ export async function cancelRequest(_: FormState, form: FormData): Promise<FormS
 
 // ---------- hostel and contacts ----------
 
+/** A first check for a typo; the server validates the address properly. */
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function saveHostel(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const hostel = text(form, "hostel_id");
@@ -145,12 +157,23 @@ export async function saveContacts(_: FormState, form: FormData): Promise<FormSt
     emergency_relation: text(form, "emergency_relation"),
     emergency_phone: text(form, "emergency_phone"),
   };
+  // Optional, and saved apart from the four above: empty clears it.
+  const email = text(form, "emergency_email");
+  const typed = { ...fields, emergency_email: email };
   if (Object.values(fields).some((v) => !v)) {
-    return { error: "Fill in all four.", fields };
+    return { error: "Fill in your number and your emergency contact's details.", fields: typed };
+  }
+  if (email && !LOOKS_LIKE_EMAIL.test(email)) {
+    return { error: "Enter their full email address, like name@gmail.com.", fields: typed };
   }
   return run(
-    () => callBackend("/profile", { method: "PATCH", token, body: { contacts: fields } }),
-    fields,
+    () =>
+      callBackend("/profile", {
+        method: "PATCH",
+        token,
+        body: { contacts: fields, emergency_email: email || null },
+      }),
+    typed,
     "Saved.",
   );
 }

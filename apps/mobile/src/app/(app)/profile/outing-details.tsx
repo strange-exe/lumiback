@@ -136,6 +136,11 @@ export default function OutingDetails(): ReactNode {
   );
 }
 
+/** A first check for a typo; the server validates the address properly. */
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function ContactsForm({
   initial,
   onSaved,
@@ -147,6 +152,7 @@ function ContactsForm({
   const [name, setName] = useState(initial.emergency_name ?? "");
   const [relation, setRelation] = useState(initial.emergency_relation ?? "");
   const [emergency, setEmergency] = useState(initial.emergency_phone ?? "");
+  const [email, setEmail] = useState(initial.emergency_email ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -155,6 +161,13 @@ function ContactsForm({
     setBusy(true);
     setError(null);
     setSaved(false);
+    const typedEmail = email.trim();
+    if (typedEmail && !looksLikeEmail(typedEmail)) {
+      setBusy(false);
+      haptic.warning();
+      setError("Enter their full email address, like name@gmail.com.");
+      return;
+    }
     try {
       await api("/profile", {
         method: "PATCH",
@@ -165,6 +178,8 @@ function ContactsForm({
             emergency_relation: relation.trim(),
             emergency_phone: emergency,
           },
+          // Optional: empty clears it.
+          emergency_email: typedEmail || null,
         },
       });
       haptic.success();
@@ -215,6 +230,17 @@ function ContactsForm({
         onChangeText={setEmergency}
         keyboardType="phone-pad"
         maxLength={24}
+      />
+      <Field
+        label="Their email (optional)"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholder="name@gmail.com"
+        maxLength={254}
+        hint="Lets you choose, when you go out, to email them a link to follow you until you're back. Nothing is sent unless you choose it."
       />
       <FormError message={error} />
       {saved ? <Notice>Saved.</Notice> : null}

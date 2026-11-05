@@ -52,6 +52,7 @@ const ENDED: Record<string, string> = {
   stopped_by_sharer: "Sharing was stopped from another device.",
   device_quiet: "Your phone stopped sending its location for 15 minutes.",
   tab_closed: "Sharing was stopped from the web.",
+  returned: "You're back, so sharing with your emergency contact stopped.",
 };
 
 /**

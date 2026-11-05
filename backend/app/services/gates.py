@@ -22,6 +22,7 @@ from app.models import CampusSettings, Gate, GateScan, Outing, ScanDirection, Sc
 from app.schemas import GateScanIn, OutingCreateIn
 from app.security.gate_codes import code_is_valid, hash_kiosk_token, parse_qr
 from app.services import outings, rules
+from app.services.safe_return import Back
 
 EARTH_RADIUS_M = 6_371_000
 MAX_ACCURACY_M = 150  # worse than this, GPS cannot say which side of a gate you're on
@@ -45,6 +46,7 @@ class ScanOutcome:
     direction: ScanDirection
     gate: Gate
     outing: Outing
+    back: Back | None = None  # tap-in that ended a safe-return share
 
 
 def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -107,8 +109,14 @@ async def _record(
 
 
 async def scan(
-    session: AsyncSession, user_id: uuid.UUID, body: GateScanIn, pepper: str
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    body: GateScanIn,
+    pepper: str,
+    *,
+    start_safe_return: bool = False,
 ) -> ScanOutcome:
+    """`start_safe_return`: on a tap-out, start safe return (the caller checked its limits)."""
     now = datetime.now(UTC)
     open_outing = await outings.current(session, user_id)
     direction = ScanDirection.IN if open_outing else ScanDirection.OUT
@@ -140,10 +148,12 @@ async def scan(
     if last is not None and now - last < REPLAY_WINDOW:
         raise AlreadyScanned  # nothing recorded: the earlier scan already did the work
 
+    back = None
     if direction is ScanDirection.IN:
-        outing = await outings.mark_return(session, user_id, gate_id=gate.id, commit=False)
-        if outing is None:  # closed by a simultaneous request; treat as a double scan
+        returned = await outings.mark_return(session, user_id, gate_id=gate.id, commit=False)
+        if returned is None:  # closed by a simultaneous request; treat as a double scan
             raise AlreadyScanned
+        outing, back = returned.outing, returned.back
     else:
         student = await session.get(User, user_id)
         assert student is not None  # the caller is signed in as this user
@@ -154,6 +164,7 @@ async def scan(
                 OutingCreateIn(destination=body.destination),
                 gate_id=gate.id,
                 commit=False,
+                safe_return_pepper=pepper if start_safe_return else None,
             )
         except rules.Refused as e:  # at the gate, but not allowed out now: worth a log entry
             # (the rules refuse before check_out writes anything, so nothing to undo)
@@ -161,7 +172,7 @@ async def scan(
     await _record(session, user_id, gate, direction, ScanResult.ACCEPTED, body, outing.id)
     await session.commit()
     await session.refresh(outing)
-    return ScanOutcome(direction, gate, outing)
+    return ScanOutcome(direction, gate, outing, back)
 
 
 async def gate_for_kiosk(session: AsyncSession, kiosk_token: str) -> Gate | None:

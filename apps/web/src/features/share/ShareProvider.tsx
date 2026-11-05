@@ -252,8 +252,11 @@ export function ShareProvider({
   }, [sessionId]);
 
   // Closing the tab ends the share. sendBeacon is delivered even as the page unloads.
+  // A safe-return share is the outing's, not this tab's: closing the tab only pauses it (the
+  // contact sees "paused"), and it ends when the student is back or taps Stop.
+  const tabOwned = session?.source !== "outing";
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !tabOwned) return;
     const warn = (event: BeforeUnloadEvent): void => event.preventDefault();
     const onHide = (event: PageTransitionEvent): void => {
       if (event.persisted) return; // kept in the back/forward cache; the tab is still open
@@ -265,7 +268,7 @@ export function ShareProvider({
       window.removeEventListener("beforeunload", warn);
       window.removeEventListener("pagehide", onHide);
     };
-  }, [sessionId]);
+  }, [sessionId, tabOwned]);
 
   // A double tap (or a second tap while the browser asks for location) must not start two shares.
   const startingNow = useRef(false);

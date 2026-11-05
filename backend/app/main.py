@@ -58,6 +58,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                     app.state.mailer,
                     settings.web_url,
                     health=app.state.sweep_health,
+                    pepper=settings.code_pepper.get_secret_value(),
                 )
             )
             if start_jobs

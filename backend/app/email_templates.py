@@ -252,7 +252,7 @@ class Notice:
     tone: str  # "alert" | "good" | "neutral"
     heading: str
     paragraphs: tuple[str, ...]
-    action: tuple[str, str]  # (button label, URL)
+    action: tuple[str, str] | None  # (button label, URL); None: nothing to do
     note: str | None  # small print under the action
     reason: str  # why this address got the email (footer)
     # How the HTML shows the action: "button", "text" (a written-out link) or "plain" (the
@@ -267,9 +267,11 @@ def _hhmm(moment: datetime) -> str:
 
 
 def _notice_text(n: Notice) -> str:
-    label, url = n.action
     # Same words as the HTML part, which filters compare: the status label leads the heading.
-    parts = [n.greeting, f"{n.label}\n{n.heading}", *n.paragraphs, f"{label}: {url}"]
+    parts = [n.greeting, f"{n.label}\n{n.heading}", *n.paragraphs]
+    if n.action:
+        label, url = n.action
+        parts.append(f"{label}: {url}")
     if n.note:
         parts.append(n.note)
     parts.append(f"Sent to {n.to} because {n.reason}.")
@@ -278,9 +280,11 @@ def _notice_text(n: Notice) -> str:
 
 def _notice_html(n: Notice, *, link: str | None = None) -> str:
     """`link` overrides the notice's own style (for inbox tests)."""
-    label, url = n.action
+    label, url = n.action or ("", "")
     link = link or n.link
-    if link == "plain":
+    if n.action is None:
+        action = ""
+    elif link == "plain":
         shown = url.removeprefix("https://")
         action = (
             f'<p style="{P}margin-top:20px;">{escape(label)}: <strong>{escape(shown)}</strong></p>'
@@ -421,3 +425,105 @@ def escalation_notice(*, to: str, count: int, web_url: str) -> Notice:
 
 def escalation_email(*, to: str, count: int, web_url: str) -> Email:
     return notice_email(escalation_notice(to=to, count=count, web_url=web_url))
+
+
+# ---------- safe return: to a student's emergency contact ----------
+#
+# The contact has no account and never asked for these, so each one says who chose to send it
+# and why. Plain text only (kinds "safe_return_*" are not in HTML_NOTICES): none of them has
+# had its own inbox test, and an alert about someone being late reads as phishing in HTML (see
+# "late" above).
+
+
+def _contact_reason(student: str) -> str:
+    return (
+        f"{student} gave this address as their emergency contact in Lumiback and chose to let "
+        "you follow this outing"
+    )
+
+
+def safe_return_start_email(
+    *, to: str, contact_name: str | None, student: str, due_at: datetime, link: str
+) -> Email:
+    first = _first(student)
+    return notice_email(
+        Notice(
+            kind="safe_return_start",
+            to=to,
+            subject=f"Lumiback: {student} is out and chose you to follow their way back",
+            greeting=f"Hi {_first(contact_name or '')},",
+            label="Safe return",
+            tone="neutral",
+            heading=f"{first} has left the hostel",
+            paragraphs=(
+                f"{student} checked out of their hostel at Graphic Era and is due back by "
+                f"{_hhmm(due_at)} IST. They chose to let you see their location until they're "
+                "back.",
+                "The link shows where they are while they share it from Lumiback. It stops "
+                "working when they're back, or if they stop sharing. You don't need an account.",
+                "If they're 30 minutes late, we'll email you. We'll also tell you when they're "
+                "back.",
+            ),
+            action=("Follow their way back", link),
+            note="Keep this link to yourself: anyone who has it can see their location until "
+            "they're back.",
+            reason=_contact_reason(student),
+            link="plain",
+        )
+    )
+
+
+def safe_return_overdue_email(
+    *,
+    to: str,
+    contact_name: str | None,
+    student: str,
+    due_at: datetime,
+    phone: str | None,
+    link: str,
+) -> Email:
+    first = _first(student)
+    return notice_email(
+        Notice(
+            kind="safe_return_overdue",
+            to=to,
+            subject=f"Lumiback: {student} is 30 minutes past their return time",
+            greeting=f"Hi {_first(contact_name or '')},",
+            label="Late",
+            tone="alert",
+            heading=f"{first} isn't back yet",
+            paragraphs=(
+                f"{student} was due back at the hostel by {_hhmm(due_at)} IST and hasn't checked "
+                "in yet. Lumiback has asked them if they're OK. If they don't answer, the hostel "
+                "office follows up.",
+                *((f"You can call them on {phone}.",) if phone else ()),
+            ),
+            action=("See where they are", link),
+            note="The map shows a position only while they share it from Lumiback.",
+            reason=_contact_reason(student),
+            link="plain",
+        )
+    )
+
+
+def safe_return_back_email(
+    *, to: str, contact_name: str | None, student: str, returned_at: datetime
+) -> Email:
+    return notice_email(
+        Notice(
+            kind="safe_return_back",
+            to=to,
+            subject=f"Lumiback: {student} is back",
+            greeting=f"Hi {_first(contact_name or '')},",
+            label="Back",
+            tone="good",
+            heading=f"{_first(student)} is back at the hostel",
+            paragraphs=(
+                f"{student} checked back in at {_hhmm(returned_at)} IST. The link to follow "
+                "them has stopped working, and their location is no longer shared with you.",
+            ),
+            action=None,
+            note=None,
+            reason=_contact_reason(student),
+        )
+    )

@@ -3,10 +3,20 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
 
-from app.api.deps import CurrentUser, LimiterDep, SessionDep, SettingsDep, client_ip, enforce
-from app.models import Hostel
+from app.api.deps import (
+    CurrentUser,
+    HubDep,
+    LimiterDep,
+    MailerDep,
+    SessionDep,
+    SettingsDep,
+    client_ip,
+    enforce,
+)
+from app.api.outings import safe_return_ended, safe_return_pepper, safe_return_started
+from app.models import Hostel, ScanDirection
 from app.schemas import CampusOut, GateScanIn, GateScanOut, KioskOut, TodayRulesOut
 from app.security.gate_codes import gate_code, qr_payload, window_at, window_ends_at
 from app.security.rate_limit import Limit
@@ -54,11 +64,21 @@ async def scan(
     session: SessionDep,
     settings: SettingsDep,
     limiter: LimiterDep,
+    hub: HubDep,
+    mailer: MailerDep,
+    tasks: BackgroundTasks,
 ) -> GateScanOut:
     """Tap out (no open outing) or tap in (open outing) by scanning the gate's QR."""
     await enforce(limiter, "scan:user", str(me.id), SCANS_PER_USER)
+    start_safe_return = await safe_return_pepper(body.safe_return, me, limiter, settings)
     try:
-        outcome = await svc.scan(session, me.id, body, settings.code_pepper.get_secret_value())
+        outcome = await svc.scan(
+            session,
+            me.id,
+            body,
+            settings.code_pepper.get_secret_value(),
+            start_safe_return=start_safe_return is not None,
+        )
     except svc.ScanRejected as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.message) from None
     except svc.AlreadyScanned:
@@ -69,6 +89,12 @@ async def scan(
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="You're already checked out."
         ) from None
+    if outcome.direction is ScanDirection.OUT:
+        await safe_return_started(
+            outcome.outing, me, limiter=limiter, mailer=mailer, settings=settings, tasks=tasks
+        )
+    else:
+        await safe_return_ended(outcome.back, hub=hub, mailer=mailer, tasks=tasks)
     return GateScanOut(
         direction=outcome.direction.value,
         gate=outcome.gate.name,

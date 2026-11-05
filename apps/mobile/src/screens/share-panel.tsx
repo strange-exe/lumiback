@@ -44,7 +44,11 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
   const c = useColors();
   const load = useCallback(async () => {
     const [mine, sending] = await Promise.all([api<ShareSession[]>("/sessions/mine"), isSending()]);
-    const active = mine.find((s) => s.source === "app" && s.status === "active") ?? null;
+    // A safe-return share (started by checking out) runs on this phone's service too, so it
+    // counts: otherwise opening Live would stop sending for it below.
+    const running = mine.filter((s) => s.status === "active");
+    const active =
+      running.find((s) => s.source === "app") ?? running.find((s) => s.source === "outing") ?? null;
     // The share ended elsewhere (web, expiry, idle close): make sure the service is off too.
     if (!active && sending) await stopSending();
     // What viewers see: the last position the server has (sharers can read their own).
@@ -264,11 +268,15 @@ function Live({
       <Heading
         eyebrow={sending ? "Sharing live" : "Paused on this phone"}
         tone={sending ? "good" : "accent"}
-        title={`Until ${formatTime(share.ends_at)}`}
+        title={
+          share.source === "outing" ? "Until you're back" : `Until ${formatTime(share.ends_at)}`
+        }
         lede={
-          watching.length === 0
-            ? "Nobody can see you yet. Invite someone below."
-            : `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you.`
+          share.source === "outing" && watching.length > 0
+            ? `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you until you tap back in.`
+            : watching.length === 0
+              ? "Nobody can see you yet. Invite someone below."
+              : `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you.`
         }
       />
 

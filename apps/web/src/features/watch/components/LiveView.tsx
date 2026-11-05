@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Lantern } from "@/components/illustrations/Lantern";
 import { LiveMap } from "@/components/map/LiveMap";
 import { formatTime } from "@/features/outings/time";
+import { claimWatchKey } from "@/features/watch/actions";
 import { TERMINAL, type WatchEvent } from "@/features/watch/events";
 import { ago } from "@/lib/ago";
 import { formatDistance, mockState, type Positions } from "@/lib/mock";
@@ -24,6 +25,8 @@ function endedText(reason: string, name: string): string {
     case "stopped_by_sharer":
     case "tab_closed":
       return `${name} stopped sharing.`;
+    case "returned":
+      return `${name === "They" ? "They're" : `${name} is`} back.`;
     default:
       return "This share has ended.";
   }
@@ -60,22 +63,42 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource(`/api/watch/${sessionId}/stream`);
-    let silentRetries = 0;
-    source.onmessage = (message) => {
-      silentRetries = 0;
-      const event = JSON.parse(message.data as string) as WatchEvent;
-      handle(event);
-      if (TERMINAL.has(event.type)) source.close(); // otherwise EventSource reconnects forever
+    let source: EventSource | null = null;
+    let cancelled = false;
+    const connect = (): void => {
+      if (cancelled) return;
+      const stream = new EventSource(`/api/watch/${sessionId}/stream`);
+      source = stream;
+      let silentRetries = 0;
+      stream.onmessage = (message) => {
+        silentRetries = 0;
+        const event = JSON.parse(message.data as string) as WatchEvent;
+        handle(event);
+        if (TERMINAL.has(event.type)) stream.close(); // otherwise EventSource reconnects forever
+      };
+      stream.onerror = () => {
+        silentRetries += 1;
+        if (stream.readyState === EventSource.CLOSED || silentRetries > MAX_SILENT_RETRIES) {
+          stream.close();
+          setPhase((current) => (current === "ended" || current === "gone" ? current : "offline"));
+        }
+      };
     };
-    source.onerror = () => {
-      silentRetries += 1;
-      if (source.readyState === EventSource.CLOSED || silentRetries > MAX_SILENT_RETRIES) {
-        source.close();
-        setPhase((current) => (current === "ended" || current === "gone" ? current : "offline"));
-      }
+    // A safe-return link carries its key after "#": store it as the guest cookie first, and
+    // take it out of the address bar (and history) before anything else happens.
+    const key = new URLSearchParams(window.location.hash.slice(1)).get("key");
+    if (key) {
+      window.history.replaceState(null, "", window.location.pathname);
+      void claimWatchKey(sessionId, key)
+        .catch(() => false)
+        .finally(connect);
+    } else {
+      connect();
+    }
+    return () => {
+      cancelled = true;
+      source?.close();
     };
-    return () => source.close();
   }, [sessionId, handle, connection]);
 
   const { location } = positions;
@@ -168,7 +191,11 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
           {share ? `${share.sharer.name}'s way back` : "Live location"}
         </h1>
         {share && (
-          <p className="mt-1 text-muted">Shared with you until {formatTime(share.ends_at)}.</p>
+          <p className="mt-1 text-muted">
+            {share.source === "outing"
+              ? "Shared with you as their emergency contact until they're back."
+              : `Shared with you until ${formatTime(share.ends_at)}.`}
+          </p>
         )}
       </div>
       <LiveMap
