@@ -225,16 +225,10 @@ function headerText(text) {
   return /^[\x20-\x7e]*$/.test(text) ? text : `=?UTF-8?B?${base64Lines(text).replace(/\r\n/g, "")}?=`;
 }
 
-// The sender's subject is reflected in the reply; cap it so a huge subject can't ride along.
-const SUBJECT_MAX = 120;
-
-function replySubject(subject) {
-  const oneLine = (subject || "").replace(/[\r\n]+/g, " ").trim();
-  // Code points, not UTF-16 units, so an emoji at the cut is never split in half.
-  const clean = Array.from(oneLine).slice(0, SUBJECT_MAX).join("").trimEnd();
-  if (!clean) return "We've got your message";
-  return /^re:/i.test(clean) ? clean : `Re: ${clean}`;
-}
+// The reply's subject is fixed, never the sender's: DKIM doesn't sign an extra Subject added
+// on top of a signed one, so a replayed message could otherwise put a third party's words in
+// Lumiback's mail to the signer. In-Reply-To and References still thread the reply.
+const REPLY_SUBJECT = "We've got your message";
 
 const TEXT = [
   "Hi,",
@@ -280,14 +274,14 @@ function html() {
 }
 
 /** The raw MIME reply: text and HTML alternatives, threaded under the original message. */
-export function buildReply({ from, to, subject, messageId, now = new Date(), id = crypto.randomUUID() }) {
+export function buildReply({ from, to, messageId, now = new Date(), id = crypto.randomUUID() }) {
   const domain = from.split("@")[1];
   const boundary = `lumiback-${id}`;
   const threadId = safeMessageId(messageId);
   const headers = [
     `From: ${FROM_NAME} <${from}>`,
     `To: ${to}`,
-    `Subject: ${headerText(replySubject(subject))}`,
+    `Subject: ${headerText(REPLY_SUBJECT)}`,
     `Date: ${now.toUTCString()}`,
     `Message-ID: <${id}@${domain}>`,
     ...(threadId ? [`In-Reply-To: ${threadId}`, `References: ${threadId}`] : []),
@@ -563,7 +557,6 @@ export default {
         // address pointed at this Worker must not choose who the reply claims to be from.
         from: SUPPORT_ADDRESS,
         to: message.from,
-        subject: message.headers.get("Subject"),
         messageId: message.headers.get("Message-ID"),
       };
       try {
@@ -600,7 +593,7 @@ function describe(err) {
  * send on 2026-10-09 without saying why. Set RESEND_API_KEY as a secret on the Worker (a
  * sending-only key) to use this; without it, the Worker falls back to Cloudflare's reply().
  */
-export async function sendWithResend({ from, to, subject, messageId }, apiKey, fetcher = fetch) {
+export async function sendWithResend({ from, to, messageId }, apiKey, fetcher = fetch) {
   const threadId = safeMessageId(messageId);
   const headers = {
     "Auto-Submitted": "auto-replied",
@@ -621,7 +614,7 @@ export async function sendWithResend({ from, to, subject, messageId }, apiKey, f
     body: JSON.stringify({
       from: `${FROM_NAME} <${from}>`,
       to: [to],
-      subject: replySubject(subject),
+      subject: REPLY_SUBJECT,
       text: TEXT,
       html: html(),
       headers,

@@ -42,7 +42,7 @@ test("the reply threads under the original, as an RFC 3834 auto-reply", () => {
   });
   assert.match(raw, /^From: Lumiback Support <support@lumiback\.abhinesh\.codes>\r\n/);
   assert.match(raw, /\r\nTo: riya@geu\.ac\.in\r\n/);
-  assert.match(raw, /\r\nSubject: Re: Can't tap out at the gate\r\n/);
+  assert.match(raw, /\r\nSubject: We've got your message\r\n/);
   assert.match(raw, /\r\nIn-Reply-To: <abc123@geu\.ac\.in>\r\n/);
   assert.match(raw, /\r\nReferences: <abc123@geu\.ac\.in>\r\n/);
   assert.match(raw, /\r\nMessage-ID: <test-id@lumiback\.abhinesh\.codes>\r\n/);
@@ -71,14 +71,14 @@ test("both parts carry the same message, and the text part comes first", () => {
   for (const risky of ["<img", "<style", "display:none", "<a "]) assert.ok(!html.text.includes(risky));
 });
 
-test("replies keep an existing Re: and encode non-ASCII subjects", () => {
-  const re = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "RE: hello" });
-  assert.match(re, /\r\nSubject: RE: hello\r\n/);
-  const hindi = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "नमस्ते" });
-  const encoded = hindi.match(/\r\nSubject: =\?UTF-8\?B\?([^?]+)\?=\r\n/)[1];
-  assert.equal(Buffer.from(encoded, "base64").toString("utf8"), "Re: नमस्ते");
-  const injected = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "hi\r\nBcc: x@evil" });
-  assert.ok(!/\r\nBcc:/.test(injected), "a subject can't add headers");
+test("the reply's subject is fixed: the sender's subject is never reflected", () => {
+  // A replayed signed message can carry an extra, unsigned Subject on top, so reflecting it
+  // would let a third party put words in Lumiback's mail to the signer.
+  for (const subject of ["RE: hello", "नमस्ते", "hi\r\nBcc: x@evil", "Buy now at evil.example, Help"]) {
+    const raw = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject });
+    assert.match(raw, /\r\nSubject: We've got your message\r\n/, subject);
+    assert.ok(!/\r\nBcc:/.test(raw) && !raw.includes("evil.example"), subject);
+  }
 });
 
 test("automated mail is forwarded but never answered", () => {
@@ -363,7 +363,7 @@ test("with a Resend key, the reply goes through Resend, threaded and marked as a
   assert.equal(init.headers["Idempotency-Key"], `support-auto-reply-${digest}`);
   assert.equal(body.from, "Lumiback Support <support@lumiback.abhinesh.codes>");
   assert.deepEqual(body.to, ["riya@geu.ac.in"]);
-  assert.equal(body.subject, "Re: Help");
+  assert.equal(body.subject, "We've got your message");
   assert.deepEqual(body.headers, {
     "Auto-Submitted": "auto-replied",
     "X-Auto-Response-Suppress": "All",
@@ -494,18 +494,20 @@ test("the reply always comes from the support address, never the envelope recipi
   assert.match(replies[0].raw, /^From: Lumiback Support <support@lumiback\.abhinesh\.codes>\r\n/);
 });
 
-test("the reflected subject is capped at 120 characters", async () => {
+test("a prepended second Subject is not reflected through Resend either", async () => {
   const { sent, fetcher } = resendRecorder();
   const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
-  const long = "spam ".repeat(400);
-  await emailLogged(incoming([], { extraHeaders: { Subject: long } }), env, fetcher);
-  assert.ok(sent[0].subject.length <= 125, `subject was ${sent[0].subject.length} chars`);
-  assert.ok(sent[0].subject.startsWith("Re: spam spam"));
-  // Code points, not UTF-16 units: an emoji at the cut is never split in half.
-  const emoji = String.fromCodePoint(0x1f600);
-  const raw = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "a".repeat(119) + emoji + emoji });
-  const encoded = raw.match(/\r\nSubject: =\?UTF-8\?B\?([^?]+)\?=\r\n/)[1];
-  assert.equal(Buffer.from(encoded, "base64").toString("utf8"), `Re: ${"a".repeat(119)}${emoji}`);
+  const rawHeaders = new Headers([
+    ["From", "riya@geu.ac.in"],
+    ["Subject", "Buy now at evil.example"],
+    ["Subject", "Help"],
+    ["Message-ID", "<m@geu.ac.in>"],
+    ["Authentication-Results", CF_PASS],
+  ]);
+  await emailLogged(incoming([], { rawHeaders }), env, fetcher);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].subject, "We've got your message");
+  assert.ok(!JSON.stringify(sent[0]).includes("evil.example"));
 });
 
 /** A fetcher that never answers until its signal aborts, like a hung upstream. */
