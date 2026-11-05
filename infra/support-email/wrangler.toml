@@ -1,12 +1,14 @@
-# Email Worker behind support@lumiback.abhinesh.codes (see README "Support email").
+# Email Worker behind support@lumiback.abhinesh.codes (see README "Hosting").
 # FORWARD_TO (a verified Email Routing destination) is set on the Worker in the dashboard,
 # not here, so no personal address lives in the repository.
 name = "lumiback-support-email"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
-# Keeps the API awake during outing hours (see keepAwake in worker.js). Set KEEP_AWAKE_URL
-# (the API's /health) on the Worker; KEEP_AWAKE_FROM/UNTIL (HH:MM IST) narrow the window.
+# Keeps the Render services awake in their windows (see AWAKE_TARGETS in worker.js). Set on the
+# Worker: KEEP_AWAKE_URL (the API's https://...onrender.com/health) and KEEP_AWAKE_WEB_URL (the
+# website's https://...onrender.com/app/android.json). Optional HH:MM IST windows:
+# KEEP_AWAKE_FROM/UNTIL (default 09:30-22:00) and KEEP_AWAKE_WEB_FROM/UNTIL (17:00-22:00).
 [triggers]
 crons = ["*/10 * * * *"]
 

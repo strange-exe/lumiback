@@ -115,23 +115,41 @@ test("the keep-awake window is on the campus (IST) clock", () => {
   assert.equal(worker.inAwakeWindow(at("2026-10-10T06:30:00Z"), "17:30", "22:00"), false); // 12:00
 });
 
-test("keep-awake pings only inside the window, and only when configured", async () => {
+test("keep-awake pings each service only inside its window, and only when configured", async () => {
   const hits = [];
   const fetcher = async (url) => {
     hits.push(url);
     return new Response("ok", { status: 200 });
   };
   const noon = new Date("2026-10-10T06:30:00Z"); // 12:00 IST
+  const evening = new Date("2026-10-10T13:00:00Z"); // 18:30 IST
   const night = new Date("2026-10-10T20:00:00Z"); // 01:30 IST
-  const env = { KEEP_AWAKE_URL: "https://api.example/health" };
-  assert.equal(await worker.keepAwake(noon, {}, fetcher), "keep-awake off (no KEEP_AWAKE_URL)");
-  assert.equal(await worker.keepAwake(night, env, fetcher), "outside the window");
-  assert.equal(await worker.keepAwake(noon, env, fetcher), "pinged: 200");
-  assert.deepEqual(hits, ["https://api.example/health"]);
+  const api = { KEEP_AWAKE_URL: "https://api.example/health" };
+  const both = { ...api, KEEP_AWAKE_WEB_URL: "https://web.example/app/android.json" };
+  assert.equal(
+    await worker.keepAwake(noon, {}, fetcher),
+    "api: off (no KEEP_AWAKE_URL); web: off (no KEEP_AWAKE_WEB_URL)",
+  );
+  assert.equal(await worker.keepAwake(night, both, fetcher), "api: outside the window; web: outside the window");
+  assert.deepEqual(hits, []);
+  // The website's default window is the evening only, to leave free hours for the API.
+  assert.equal(await worker.keepAwake(noon, both, fetcher), "api: pinged 200; web: outside the window");
+  assert.equal(await worker.keepAwake(evening, both, fetcher), "api: pinged 200; web: pinged 200");
+  assert.deepEqual(hits, [
+    "https://api.example/health",
+    "https://api.example/health",
+    "https://web.example/app/android.json",
+  ]);
+  // Each service has its own window.
+  const webAllDay = { ...both, KEEP_AWAKE_WEB_FROM: "10:00", KEEP_AWAKE_WEB_UNTIL: "22:00" };
+  assert.equal(await worker.keepAwake(noon, webAllDay, fetcher), "api: pinged 200; web: pinged 200");
   const failing = async () => {
     throw new TypeError("network down");
   };
-  assert.equal(await worker.keepAwake(noon, env, failing), "ping failed: TypeError: network down");
+  assert.equal(
+    await worker.keepAwake(noon, api, failing),
+    "api: ping failed: TypeError: network down; web: off (no KEEP_AWAKE_WEB_URL)",
+  );
 });
 
 test("web visits get a plain 404, not an exception", async () => {

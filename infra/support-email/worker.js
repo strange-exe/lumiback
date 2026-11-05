@@ -150,9 +150,15 @@ export function buildReply({ from, to, subject, messageId, now = new Date(), id 
 //
 // Render's free plan spins the API down after 15 minutes without traffic, and the late-alert
 // sweep runs inside the API: a student 30 minutes late would get no alert until someone woke
-// it. A Cron Trigger (every 10 minutes) pings the API's /health, only inside the window.
-// Free hours (750/month, shared by the API and the website): 09:30-22:00 IST every day is about
-// 12.5 h x 31 + ~8 h of idle tails = ~396 h for the API, leaving ~354 h for the website.
+// it. A Cron Trigger (every 10 minutes) pings each service inside its own window. The API's
+// /health runs `SELECT 1`, so the daily pings also keep the free Supabase project from pausing.
+// Free hours (750 a month, shared by both services; a service that runs out of hours gets
+// all of them suspended), over a 31-day month, with ~15 minutes of idle tail per wake-up:
+//   API 09:30-22:00 = 12.5 h x 31 = 388 h + ~8 h   = ~396 h
+//   web 17:00-22:00 =  5 h   x 31 = 155 h + ~8 h   = ~163 h
+//   total ~559 h, leaving ~190 h for visits outside the windows.
+// Keep both windows together under ~650 h; widening the web window to 10:00-22:00 would
+// leave about 0 h of headroom.
 
 const IST_OFFSET_MIN = 5 * 60 + 30;
 
@@ -168,22 +174,42 @@ const minutesOf = (hhmm) => {
  * (e.g. 17:00-01:00) runs overnight. Keep `until` at least 40 minutes after the latest "Back by"
  * so the late alert (30 min) and the escalation (40 min) still find the API awake.
  */
-export function inAwakeWindow(now, from = "09:30", until = "22:00") {
-  const start = minutesOf(from) ?? minutesOf("09:30");
-  const end = minutesOf(until) ?? minutesOf("22:00");
+export function inAwakeWindow(now, from, until, fallback = ["09:30", "22:00"]) {
+  const start = minutesOf(from) ?? minutesOf(fallback[0]);
+  const end = minutesOf(until) ?? minutesOf(fallback[1]);
   const ist = (now.getUTCHours() * 60 + now.getUTCMinutes() + IST_OFFSET_MIN) % (24 * 60);
   return start <= end ? ist >= start && ist < end : ist >= start || ist < end;
 }
 
-export async function keepAwake(now, env, fetcher = fetch) {
-  if (!env.KEEP_AWAKE_URL) return "keep-awake off (no KEEP_AWAKE_URL)";
-  if (!inAwakeWindow(now, env.KEEP_AWAKE_FROM, env.KEEP_AWAKE_UNTIL)) return "outside the window";
-  try {
-    const res = await fetcher(env.KEEP_AWAKE_URL, { headers: { "User-Agent": "lumiback-keep-awake" } });
-    return `pinged: ${res.status}`;
-  } catch (err) {
-    return `ping failed: ${describe(err)}`; // a cold start can time out; the next run retries
+/**
+ * What each Render service is pinged at and when. Point both URLs at the services' own
+ * onrender.com addresses, not the Cloudflare domain: a cached answer at the edge never reaches
+ * Render, so it wouldn't keep anything awake. The website is pinged for its small static
+ * `/app/android.json`.
+ */
+export const AWAKE_TARGETS = [
+  { name: "api", url: "KEEP_AWAKE_URL", from: "KEEP_AWAKE_FROM", until: "KEEP_AWAKE_UNTIL", fallback: ["09:30", "22:00"] },
+  { name: "web", url: "KEEP_AWAKE_WEB_URL", from: "KEEP_AWAKE_WEB_FROM", until: "KEEP_AWAKE_WEB_UNTIL", fallback: ["17:00", "22:00"] },
+];
+
+async function ping(target, now, env, fetcher) {
+  const url = env[target.url];
+  if (!url) return `${target.name}: off (no ${target.url})`;
+  if (!inAwakeWindow(now, env[target.from], env[target.until], target.fallback)) {
+    return `${target.name}: outside the window`;
   }
+  try {
+    const res = await fetcher(url, { headers: { "User-Agent": "lumiback-keep-awake" } });
+    return `${target.name}: pinged ${res.status}`;
+  } catch (err) {
+    return `${target.name}: ping failed: ${describe(err)}`; // a cold start can time out; the next run retries
+  }
+}
+
+/** Pings every configured service inside its window; one log line says what happened to each. */
+export async function keepAwake(now, env, fetcher = fetch) {
+  const results = await Promise.all(AWAKE_TARGETS.map((t) => ping(t, now, env, fetcher)));
+  return results.join("; ");
 }
 
 export default {
