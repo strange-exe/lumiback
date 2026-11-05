@@ -1,6 +1,42 @@
-import { gateCode, refusal, toFix } from "@/gate/scan";
+import { confirmCopy, gateCode, refusal, startPhase, toFix } from "@/gate/scan";
 
 const GATE = "61c6a6d7-178a-4cee-ac83-b5c43bb6f783";
+
+describe("startPhase", () => {
+  it("opens the camera when no code came with the screen", () => {
+    expect(startPhase(undefined)).toEqual({ kind: "camera" });
+    expect(startPhase("")).toEqual({ kind: "camera" });
+  });
+
+  it("asks before using a code that arrived by link: nothing is checked or sent yet", () => {
+    const link = `https://lumiback.abhinesh.codes/g/${GATE}.89570238.MMTP1QMYEA`;
+    expect(startPhase(link)).toEqual({ kind: "confirm", qr: link });
+    expect(startPhase(`  ${GATE}.1.ABCDEFGHJK `)).toEqual({
+      kind: "confirm",
+      qr: `${GATE}.1.ABCDEFGHJK`,
+    });
+  });
+
+  it("refuses a link that isn't a gate code", () => {
+    expect(startPhase("https://example.com/menu")).toEqual({
+      kind: "refused",
+      message: "That link isn't a Lumiback gate code.",
+      retry: true,
+      fallback: true,
+    });
+  });
+});
+
+describe("confirmCopy", () => {
+  it("names the direction once it's known, and stays neutral before", () => {
+    expect(confirmCopy(null).title).toBe("Check in or out at this gate?");
+    expect(confirmCopy(false).title).toBe("Tap out at this gate?");
+    expect(confirmCopy(true).title).toBe("Tap back in at this gate?");
+    expect(confirmCopy(false).action).toBe("Tap out");
+    expect(confirmCopy(true).action).toBe("Tap in");
+    expect(confirmCopy(null).action).toBe("Continue");
+  });
+});
 
 describe("gateCode", () => {
   it("accepts the kiosk's URL and the bare triple", () => {

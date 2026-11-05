@@ -13,6 +13,44 @@ export function gateCode(scanned: string): string | null {
   return GATE_QR.test(text) ? text : null;
 }
 
+/**
+ * Where the scan screen starts. A code from the camera is the student's own action; a code that
+ * arrived with the screen (lumiback://scan?qr=..., a gate link) could have been opened by any
+ * link or app, so it waits on a confirm step and nothing is checked or sent until they tap.
+ */
+export function startPhase(
+  linked: string | undefined,
+):
+  | { kind: "camera" }
+  | { kind: "confirm"; qr: string }
+  | { kind: "refused"; message: string; retry: boolean; fallback: boolean } {
+  if (!linked) return { kind: "camera" };
+  const qr = gateCode(linked);
+  if (qr) return { kind: "confirm", qr };
+  return {
+    kind: "refused",
+    message: "That link isn't a Lumiback gate code.",
+    retry: true,
+    fallback: true,
+  };
+}
+
+/**
+ * The confirm step's words. The gate's name is only known after the server checks the code, so
+ * they name the direction instead: out on a trip taps in, otherwise out; neutral until known.
+ */
+export function confirmCopy(out: boolean | null): {
+  title: string;
+  detail: string;
+  action: string;
+} {
+  const detail =
+    "This gate code came from a link, not your camera. Lumiback checks your location once, then the gate.";
+  if (out === true) return { title: "Tap back in at this gate?", detail, action: "Tap in" };
+  if (out === false) return { title: "Tap out at this gate?", detail, action: "Tap out" };
+  return { title: "Check in or out at this gate?", detail, action: "Continue" };
+}
+
 export interface Fix {
   lat: number;
   lng: number;

@@ -7,7 +7,8 @@ import { ActivityIndicator, Linking, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { gateCode, refusal, toFix, type Fix } from "@/gate/scan";
+import { consumeSafeReturn, safeReturnFor } from "@/gate/intent";
+import { confirmCopy, gateCode, refusal, startPhase, toFix, type Fix } from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { safeReturnNotice } from "@/lib/safe-return";
@@ -23,6 +24,8 @@ import { radius, space, type, useColors } from "@/ui/theme";
 
 type Phase =
   | { kind: "camera" }
+  /** A code that came with the screen (a link): nothing happens until the student confirms. */
+  | { kind: "confirm"; qr: string }
   | { kind: "checking"; step: "location" | "server" }
   | { kind: "done"; result: GateScanned; notice: string | null }
   | { kind: "refused"; message: string; retry: boolean; fallback: boolean; settings?: boolean };
@@ -74,31 +77,27 @@ async function freshFix(): Promise<Fix> {
 /**
  * Tap out or back in at a gate: scan the kiosk's code, then the server checks the code is current,
  * the phone is at that gate, and the hostel's outing rules allow it. Also opened as
- * lumiback://scan?qr=... with a code already read.
+ * lumiback://scan?qr=... with a code already read: that one waits for the student to confirm.
  */
 export default function Scan(): ReactNode {
   const { status } = useAuth();
   const c = useColors();
-  // safe=1: Today's "Let my emergency contact follow until I'm back" was ticked.
-  const { qr: linked, safe } = useLocalSearchParams<{ qr?: string; safe?: string }>();
-  const safeReturn = safe === "1";
+  const params = useLocalSearchParams<{ qr?: string; intent?: string }>();
+  const linked = params.qr;
+  // Today's "Let my emergency contact follow until I'm back" was ticked: Today armed an
+  // in-memory intent and passed its id. Any other parameter (safe=1 included) is ignored, and a
+  // code that came by link never asks for safe return. Read once, when the screen opens.
+  const [safeReturn] = useState(() => !linked && safeReturnFor(params));
+  useEffect(() => {
+    consumeSafeReturn(params.intent);
+  }, [params.intent]);
   const [permission, requestPermission] = useCameraPermissions();
-  // A code handed over by a link skips the camera, so it starts out already checking.
-  const [phase, setPhase] = useState<Phase>(() =>
-    !linked
-      ? { kind: "camera" }
-      : gateCode(linked)
-        ? { kind: "checking", step: "location" }
-        : {
-            kind: "refused",
-            message: "That link isn't a Lumiback gate code.",
-            retry: true,
-            fallback: true,
-          },
-  );
+  // A code handed over by a link skips the camera and waits on a confirm step.
+  const [phase, setPhase] = useState<Phase>(() => startPhase(linked));
   // Out on a trip? Then a scan taps in, and the fallback is "I'm back", not logging a trip.
-  // Unknown (offline) reads as at the hostel: Today shows the right card either way.
-  const [out, setOut] = useState(false);
+  // Unknown (loading, offline) is null: the confirm step stays neutral, and the fallback reads
+  // as at the hostel (Today shows the right card either way).
+  const [out, setOut] = useState<boolean | null>(null);
   useEffect(() => {
     if (status !== "signedIn") return;
     let alive = true;
@@ -189,12 +188,19 @@ export default function Scan(): ReactNode {
     void check(qr);
   };
 
-  useEffect(() => {
-    const qr = linked ? gateCode(linked) : null;
-    if (!qr || status !== "signedIn" || busy.current) return;
+  /** The student tapped the confirm step's button for a linked code: only now is it checked. */
+  const confirmLinked = (qr: string): void => {
+    if (busy.current || status !== "signedIn") return;
     busy.current = true;
+    haptic.tap();
+    setPhase({ kind: "checking", step: "location" });
     void check(qr);
-  }, [linked, status, check]);
+  };
+
+  const leave = (): void => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/today");
+  };
 
   const scanAgain = (): void => {
     busy.current = false;
@@ -232,7 +238,7 @@ export default function Scan(): ReactNode {
           }}
         >
           <Text style={[type.headline, { color: c.onHero }]} accessibilityRole="header">
-            {phase.kind === "done" ? "Gate" : "Scan the gate screen"}
+            {phase.kind === "done" || phase.kind === "confirm" ? "Gate" : "Scan the gate screen"}
           </Text>
           <Press
             onPress={() => router.back()}
@@ -256,7 +262,10 @@ export default function Scan(): ReactNode {
           notGate={notGate}
           linked={Boolean(linked)}
           out={out}
+          ready={status === "signedIn"}
           onScanAgain={scanAgain}
+          onConfirm={confirmLinked}
+          onCancel={leave}
         />
       </SafeAreaView>
     </View>
@@ -269,19 +278,48 @@ function Body({
   requestPermission,
   notGate,
   linked,
-  out,
+  out: knownOut,
+  ready,
   onScanAgain,
+  onConfirm,
+  onCancel,
 }: {
   phase: Phase;
   permission: ReturnType<typeof useCameraPermissions>[0];
   requestPermission: ReturnType<typeof useCameraPermissions>[1];
   notGate: boolean;
   linked: boolean;
-  out: boolean;
+  out: boolean | null;
+  /** Signed in, so a confirmed code can be checked. */
+  ready: boolean;
   onScanAgain: () => void;
+  onConfirm: (qr: string) => void;
+  onCancel: () => void;
 }): ReactNode {
   const c = useColors();
+  const out = knownOut === true;
   switch (phase.kind) {
+    case "confirm": {
+      const copy = confirmCopy(knownOut);
+      return (
+        <Panel art>
+          <Title>{copy.title}</Title>
+          <Detail>{copy.detail}</Detail>
+          <Button
+            label={copy.action}
+            variant="onHero"
+            busy={!ready}
+            onPress={() => onConfirm(phase.qr)}
+          />
+          <Button
+            label="Cancel"
+            variant="onHeroOutline"
+            accessibilityLabel="Cancel, don't use this gate code"
+            onPress={onCancel}
+          />
+        </Panel>
+      );
+    }
     case "camera":
       if (linked) return <Working label="Checking the code…" />;
       if (!permission) return <Working label="Starting the camera…" />;

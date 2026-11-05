@@ -12,6 +12,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, TokenPair, User } from "@/lib/types";
+import { stopSending } from "@/location/task";
 import { syncPush } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
@@ -135,6 +136,9 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const signOut = useCallback(async () => {
+    // A share must not keep sending this phone's location (or keep its stored session) after
+    // the student signs out. Best effort: a failure here never keeps them signed in.
+    await stopSending().catch(() => undefined);
     await unregisterPush(); // while still signed in: the server checks who owns the token
     const token = await storedRefreshToken();
     if (token) {
@@ -150,6 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   const deleteAccount = useCallback(async (password: string) => {
     await api("/auth/delete-account", { method: "POST", body: { password } });
+    // Deleted: stop sending location and drop the stored share (best effort, as on sign-out).
+    await stopSending().catch(() => undefined);
     await forgetPushToken();
     await clearTokens();
   }, []);

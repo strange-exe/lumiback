@@ -3,6 +3,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { RefreshControl, Text, View } from "react-native";
 
+import { armSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
@@ -387,8 +388,12 @@ function AtHostel({
             icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onHero} />}
             onPress={() => {
               haptic.tap();
+              // The tick travels as an in-memory intent (src/gate/intent.ts), never as a
+              // parameter a link could set: only this visible box turns safe return on.
               router.push(
-                canGoOut && safeReturn ? { pathname: "/scan", params: { safe: "1" } } : "/scan",
+                canGoOut && safeReturn
+                  ? { pathname: "/scan", params: { intent: armSafeReturn() } }
+                  : "/scan",
               );
             }}
           />
