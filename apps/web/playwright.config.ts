@@ -47,7 +47,8 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: true,
       timeout: 120_000,
-      env: { BACKEND_URL: "http://127.0.0.1:8100" },
+      // E2E_FAULTS=1: tests may make the server's own API calls fail (src/lib/test-faults.ts).
+      env: { BACKEND_URL: "http://127.0.0.1:8100", E2E_FAULTS: "1" },
     },
   ],
 });

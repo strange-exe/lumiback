@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 
 import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
 import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
+import { FAULT_HEADER, faultsEnabled, shouldFail } from "@/lib/test-faults";
 
 export class ApiError extends Error {
   constructor(
@@ -38,7 +39,23 @@ function detailOf(payload: unknown, status: number): string {
   return "Something went wrong. Try again.";
 }
 
+/** E2E only (see test-faults.ts): fail this call if the test asked for it. */
+async function injectedFault(path: string): Promise<boolean> {
+  try {
+    return shouldFail(path, (await headers()).get(FAULT_HEADER));
+  } catch {
+    return false; // outside a request (no headers to read)
+  }
+}
+
 export async function callBackend<T>(path: string, options: CallOptions = {}): Promise<T> {
+  const faults = faultsEnabled({
+    NODE_ENV: process.env.NODE_ENV,
+    E2E_FAULTS: process.env.E2E_FAULTS,
+  });
+  if (faults && (await injectedFault(path))) {
+    throw new ApiError(503, "Test failure requested by the e2e suite.");
+  }
   const requestHeaders: Record<string, string> = { Accept: "application/json" };
   if (options.body !== undefined) requestHeaders["Content-Type"] = "application/json";
   if (options.token) requestHeaders.Authorization = `Bearer ${options.token}`;
