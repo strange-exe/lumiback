@@ -4,7 +4,8 @@
 // variable on the Worker), and the sender gets one automatic "we've got it" reply, threaded
 // under their message. The reply goes through Resend when the RESEND_API_KEY secret is set
 // (recommended), otherwise through Cloudflare's reply(). Automated mail (bounces, mailing lists,
-// other auto-replies) is forwarded but never answered, so two auto-responders can't loop.
+// other auto-replies) is forwarded but never answered, so two auto-responders can't loop, and
+// auto-replies are rate-limited per sender and in total (see "limiting auto-replies" below).
 // Its Cron Trigger also keeps the Render services awake and emails FORWARD_TO when one of them
 // is down or the API's sweep is stale (see "alerting the owner" below).
 // Docs: https://developers.cloudflare.com/email-routing/email-workers/reply-email-workers/
@@ -66,8 +67,13 @@ function headerText(text) {
   return /^[\x20-\x7e]*$/.test(text) ? text : `=?UTF-8?B?${base64Lines(text).replace(/\r\n/g, "")}?=`;
 }
 
+// The sender's subject is reflected in the reply; cap it so a huge subject can't ride along.
+const SUBJECT_MAX = 120;
+
 function replySubject(subject) {
-  const clean = (subject || "").replace(/[\r\n]+/g, " ").trim();
+  const oneLine = (subject || "").replace(/[\r\n]+/g, " ").trim();
+  // Code points, not UTF-16 units, so an emoji at the cut is never split in half.
+  const clean = Array.from(oneLine).slice(0, SUBJECT_MAX).join("").trimEnd();
   if (!clean) return "We've got your message";
   return /^re:/i.test(clean) ? clean : `Re: ${clean}`;
 }
@@ -198,6 +204,14 @@ export const AWAKE_TARGETS = [
 
 const TEN_MINUTES = 10 * 60 * 1000;
 
+/**
+ * How long each outbound fetch may take before it is aborted (AbortSignal.timeout). A timeout
+ * rejects like a network error ("TimeoutError: ..."), so it is handled the same way. Pings get
+ * room for a Render cold start (~30 s or more); that first ping never alerts anyway, and Render
+ * still wakes when the Worker stops waiting. Resend normally answers in well under a second.
+ */
+export const FETCH_TIMEOUT_MS = { ping: 30_000, resend: 10_000 };
+
 /** The API's /health "sweep" field ("ok", "stale" or "off"), or null when the body isn't JSON. */
 async function sweepOf(res) {
   try {
@@ -221,7 +235,10 @@ async function ping(target, now, env, fetcher) {
   const settled = inWindow(new Date(now.getTime() - TEN_MINUTES));
   const report = (line, problem) => ({ line, problem: settled ? problem : null });
   try {
-    const res = await fetcher(url, { headers: { "User-Agent": "lumiback-keep-awake" } });
+    const res = await fetcher(url, {
+      headers: { "User-Agent": "lumiback-keep-awake" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS.ping),
+    });
     if (!res.ok) {
       return report(`${target.name}: pinged ${res.status}`, `${target.name} answered ${res.status} (${url})`);
     }
@@ -303,6 +320,7 @@ export async function sendAlert(problems, now, env, fetcher = fetch) {
       text,
       headers: { "Auto-Submitted": "auto-generated" },
     }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS.resend),
   });
   if (!res.ok) throw new Error(`Resend answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
@@ -325,6 +343,32 @@ export async function monitor(now, env, fetcher = fetch) {
   }
 }
 
+// ---------- limiting auto-replies ----------
+//
+// Every auto-reply is a Resend send, and the owner's health alerts share that key and quota, so
+// a flood of inbound mail must not be able to spend it. Two Workers Rate Limiting bindings
+// (wrangler.toml [[ratelimits]]) cap replies per sender and in total. Their counts are per
+// Cloudflare location, per 60-second window and eventually consistent, so this bounds the RATE
+// of replies, not a daily total. Over a limit, without the bindings, or when a check fails, the
+// sender gets no auto-reply; the email itself is still forwarded.
+// Docs: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+
+/** Why this sender must not get an auto-reply right now, or null when it may. */
+export async function rateLimitReason(from, env) {
+  const sender = env.AUTO_REPLY_SENDER_LIMIT;
+  const global = env.AUTO_REPLY_GLOBAL_LIMIT;
+  if (!sender) return "rate limit: AUTO_REPLY_SENDER_LIMIT binding missing";
+  if (!global) return "rate limit: AUTO_REPLY_GLOBAL_LIMIT binding missing";
+  try {
+    // The sender first, so one noisy sender doesn't also use up everyone's allowance.
+    if (!(await sender.limit({ key: from.toLowerCase() })).success) return "rate limit: this sender";
+    if (!(await global.limit({ key: "all" })).success) return "rate limit: all senders";
+    return null;
+  } catch (err) {
+    return `rate limit check failed: ${describe(err)}`;
+  }
+}
+
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(monitor(new Date(event.scheduledTime), env).then((r) => console.log(r)));
@@ -344,12 +388,15 @@ export default {
     // always runs and a person always gets the message. One log line per email says what
     // happened, so the Worker's Logs tab answers "why no auto-reply?".
     let outcome;
-    const skip = automatedReason(message.from, message.headers);
+    const skip =
+      automatedReason(message.from, message.headers) ?? (await rateLimitReason(message.from, env));
     if (skip) {
       outcome = `no auto-reply (${skip})`;
     } else {
       const reply = {
-        from: message.to,
+        // The fixed support address, never the envelope recipient: a catch-all route or another
+        // address pointed at this Worker must not choose who the reply claims to be from.
+        from: SUPPORT_ADDRESS,
         to: message.from,
         subject: message.headers.get("Subject"),
         messageId: message.headers.get("Message-ID"),
@@ -360,7 +407,7 @@ export default {
           outcome = `auto-reply sent through Resend to ${message.from}`;
         } else {
           const raw = buildReply(reply);
-          await message.reply(new EmailMessage(message.to, message.from, raw));
+          await message.reply(new EmailMessage(SUPPORT_ADDRESS, message.from, raw));
           outcome = `auto-reply sent through Cloudflare to ${message.from}`;
         }
       } catch (err) {
@@ -410,6 +457,7 @@ export async function sendWithResend({ from, to, subject, messageId }, apiKey, f
       html: html(),
       headers,
     }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS.resend),
   });
   if (!res.ok) {
     // Resend's error names the problem (bad key, unverified domain); it holds no secrets.

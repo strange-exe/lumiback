@@ -292,9 +292,27 @@ test("web visits get a plain 404, not an exception", async () => {
   assert.match(await res.text(), /only receives email/);
 });
 
-const incoming = (calls, { failReply = false, extraHeaders = {} } = {}) => ({
-  from: "riya@geu.ac.in",
-  to: "support@lumiback.abhinesh.codes",
+/** A stand-in for a Workers Rate Limiting binding: allows `limit` calls per key, records keys. */
+function limiter(limit = Infinity) {
+  const counts = new Map();
+  const keys = [];
+  return {
+    keys,
+    async limit({ key }) {
+      keys.push(key);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return { success: counts.get(key) <= limit };
+    },
+  };
+}
+const limiters = (sender = limiter(), global = limiter()) => ({
+  AUTO_REPLY_SENDER_LIMIT: sender,
+  AUTO_REPLY_GLOBAL_LIMIT: global,
+});
+
+const incoming = (calls, { failReply = false, extraHeaders = {}, from = "riya@geu.ac.in", to } = {}) => ({
+  from,
+  to: to || "support@lumiback.abhinesh.codes",
   headers: headers({ Subject: "Help", "Message-ID": "<m@geu.ac.in>", ...extraHeaders }),
   forward: async (to) => calls.push(["forward", to]),
   reply: async (msg) => {
@@ -305,7 +323,7 @@ const incoming = (calls, { failReply = false, extraHeaders = {} } = {}) => ({
 
 test("replies once, then forwards (Cloudflare's order)", async () => {
   const calls = [];
-  await worker.default.email(incoming(calls), { FORWARD_TO: "me@example.com" });
+  await worker.default.email(incoming(calls), { FORWARD_TO: "me@example.com", ...limiters() });
   assert.deepEqual(calls, [
     ["reply", "riya@geu.ac.in"],
     ["forward", "me@example.com"],
@@ -314,7 +332,7 @@ test("replies once, then forwards (Cloudflare's order)", async () => {
 
 test("a refused reply still forwards the email", async () => {
   const calls = [];
-  await worker.default.email(incoming(calls, { failReply: true }), { FORWARD_TO: "me@example.com" });
+  await worker.default.email(incoming(calls, { failReply: true }), { FORWARD_TO: "me@example.com", ...limiters() });
   assert.deepEqual(calls, [
     ["reply", "riya@geu.ac.in"],
     ["forward", "me@example.com"],
@@ -328,7 +346,7 @@ test("with a Resend key, the reply goes through Resend, threaded and marked as a
     sent.push({ url, init, body: JSON.parse(init.body) });
     return new Response(JSON.stringify({ id: "re_1" }), { status: 200 });
   };
-  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test" };
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
   await worker.default.email(incoming(calls), env, {}, fetcher);
   assert.deepEqual(calls, [["forward", "me@example.com"]]); // Cloudflare's reply() not used
   const [{ url, init, body }] = sent;
@@ -355,7 +373,7 @@ test("a Resend refusal is logged with its reason, and the email is still forward
   console.log = (line) => logged.push(line);
   try {
     const fetcher = async () => new Response('{"message":"API key is invalid"}', { status: 401 });
-    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "bad" };
+    const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "bad", ...limiters() };
     await worker.default.email(incoming(calls), env, {}, fetcher);
   } finally {
     console.log = original;
@@ -369,4 +387,149 @@ test("automated mail is only forwarded", async () => {
   const message = incoming(calls, { extraHeaders: { "Auto-Submitted": "auto-replied" } });
   await worker.default.email(message, { FORWARD_TO: "me@example.com" });
   assert.deepEqual(calls, [["forward", "me@example.com"]]);
+});
+
+// ---------- auto-reply limits, fixed sender, timeouts ----------
+
+/** Runs email() with console.log captured; returns the log lines. */
+async function emailLogged(message, env, fetcher) {
+  const logged = [];
+  const original = console.log;
+  console.log = (line) => logged.push(line);
+  try {
+    await worker.default.email(message, env, {}, fetcher);
+  } finally {
+    console.log = original;
+  }
+  return logged;
+}
+
+const resendRecorder = () => {
+  const sent = [];
+  const fetcher = async (url, init) => {
+    sent.push(JSON.parse(init.body));
+    return new Response('{"id":"x"}', { status: 200 });
+  };
+  return { sent, fetcher };
+};
+
+test("one sender gets at most the per-sender limit of auto-replies; every email is still forwarded", async () => {
+  const { sent, fetcher } = resendRecorder();
+  const sender = limiter(1);
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters(sender) };
+  const calls = [];
+  await emailLogged(incoming(calls, { from: "Riya@GEU.ac.in" }), env, fetcher);
+  const logged = await emailLogged(incoming(calls, { from: "riya@geu.ac.in" }), env, fetcher);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sender.keys, ["riya@geu.ac.in", "riya@geu.ac.in"], "the key is the lowercased sender");
+  assert.deepEqual(calls, [
+    ["forward", "me@example.com"],
+    ["forward", "me@example.com"],
+  ]);
+  assert.match(logged.at(-1), /^forwarded to inbox; no auto-reply \(rate limit: this sender\)$/);
+});
+
+test("the global limit stops auto-replies across senders, through Cloudflare too", async () => {
+  const global = limiter(2);
+  const env = { FORWARD_TO: "me@example.com", ...limiters(limiter(), global) };
+  const calls = [];
+  for (const from of ["a@x.in", "b@x.in", "c@x.in"]) await emailLogged(incoming(calls, { from }), env);
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "reply").map(([, to]) => to),
+    ["a@x.in", "b@x.in"],
+  );
+  assert.equal(calls.filter(([kind]) => kind === "forward").length, 3);
+  assert.deepEqual(global.keys, ["all", "all", "all"]);
+});
+
+test("a sender over its own limit doesn't use up the global allowance", async () => {
+  const global = limiter();
+  const env = { FORWARD_TO: "me@example.com", ...limiters(limiter(0), global) };
+  await emailLogged(incoming([]), env);
+  assert.deepEqual(global.keys, []);
+});
+
+test("without the rate-limit bindings (or when one throws), no auto-reply, but the email is forwarded", async () => {
+  const { sent, fetcher } = resendRecorder();
+  const calls = [];
+  const logged = await emailLogged(
+    incoming(calls),
+    { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test" },
+    fetcher,
+  );
+  assert.deepEqual(sent, []);
+  assert.deepEqual(calls, [["forward", "me@example.com"]]);
+  assert.match(logged.at(-1), /no auto-reply \(rate limit: AUTO_REPLY_SENDER_LIMIT binding missing\)$/);
+  const broken = { async limit() { throw new Error("limiter down"); } };
+  const logged2 = await emailLogged(
+    incoming(calls),
+    { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters(limiter(), broken) },
+    fetcher,
+  );
+  assert.deepEqual(sent, []);
+  assert.match(logged2.at(-1), /no auto-reply \(rate limit check failed: Error: limiter down\)$/);
+});
+
+test("the reply always comes from the support address, never the envelope recipient", async () => {
+  const { sent, fetcher } = resendRecorder();
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
+  await emailLogged(incoming([], { to: "attacker@evil.example" }), env, fetcher);
+  assert.equal(sent[0].from, "Lumiback Support <support@lumiback.abhinesh.codes>");
+  // The Cloudflare reply() fallback too.
+  const replies = [];
+  const message = {
+    ...incoming([], { to: "billing@lumiback.abhinesh.codes" }),
+    reply: async (msg) => replies.push(msg),
+  };
+  await emailLogged(message, { FORWARD_TO: "me@example.com", ...limiters() });
+  assert.equal(replies[0].from, "support@lumiback.abhinesh.codes");
+  assert.match(replies[0].raw, /^From: Lumiback Support <support@lumiback\.abhinesh\.codes>\r\n/);
+});
+
+test("the reflected subject is capped at 120 characters", async () => {
+  const { sent, fetcher } = resendRecorder();
+  const env = { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() };
+  const long = "spam ".repeat(400);
+  await emailLogged(incoming([], { extraHeaders: { Subject: long } }), env, fetcher);
+  assert.ok(sent[0].subject.length <= 125, `subject was ${sent[0].subject.length} chars`);
+  assert.ok(sent[0].subject.startsWith("Re: spam spam"));
+  // Code points, not UTF-16 units: an emoji at the cut is never split in half.
+  const emoji = String.fromCodePoint(0x1f600);
+  const raw = worker.buildReply({ from: "s@x.y", to: "a@b.c", subject: "a".repeat(119) + emoji + emoji });
+  const encoded = raw.match(/\r\nSubject: =\?UTF-8\?B\?([^?]+)\?=\r\n/)[1];
+  assert.equal(Buffer.from(encoded, "base64").toString("utf8"), `Re: ${"a".repeat(119)}${emoji}`);
+});
+
+/** A fetcher that never answers until its signal aborts, like a hung upstream. */
+const hanging = (seen) => (url, init) =>
+  new Promise((_, reject) => {
+    seen.push(url);
+    if (!init?.signal) return; // no signal: hangs forever (the test's own timeout catches it)
+    init.signal.addEventListener("abort", () => reject(init.signal.reason));
+  });
+
+test("every outbound fetch carries a timeout, and a timeout fails like any other fetch error", async (t) => {
+  const saved = { ...worker.FETCH_TIMEOUT_MS };
+  Object.assign(worker.FETCH_TIMEOUT_MS, { ping: 20, resend: 20 });
+  t.after(() => Object.assign(worker.FETCH_TIMEOUT_MS, saved));
+  const seen = [];
+  // A ping that hangs is reported as a failed ping and alerts as before; a hung alert send is
+  // logged as not sent.
+  const line = await worker.monitor(NOON, API_ONLY, hanging(seen));
+  assert.match(line, /^api: ping failed: TimeoutError: .+; web: off \(no KEEP_AWAKE_WEB_URL\); alert NOT sent: TimeoutError: /);
+  assert.deepEqual(seen, ["https://api.example/health", "https://api.resend.com/emails"]);
+  // A hung Resend auto-reply is logged as not sent, and the email is still forwarded.
+  const calls = [];
+  const logged = await emailLogged(
+    incoming(calls),
+    { FORWARD_TO: "me@example.com", RESEND_API_KEY: "re_test", ...limiters() },
+    hanging([]),
+  );
+  assert.deepEqual(calls, [["forward", "me@example.com"]]);
+  assert.match(logged.at(-1), /^forwarded to inbox; auto-reply NOT sent: TimeoutError: /);
+});
+
+test("the real timeouts leave a Render cold start room to answer", () => {
+  assert.ok(worker.FETCH_TIMEOUT_MS.ping >= 25_000, "a cold start can take ~30 s; a ping must not cut it short");
+  assert.ok(worker.FETCH_TIMEOUT_MS.resend <= 15_000);
 });

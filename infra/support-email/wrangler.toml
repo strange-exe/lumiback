@@ -23,6 +23,29 @@ KEEP_AWAKE_WEB_URL = "https://lumiback-web.onrender.com/app/android.json"
 [triggers]
 crons = ["*/10 * * * *"]
 
+# Auto-reply limits (Workers Rate Limiting; needs Wrangler 4.36.0 or later). Every auto-reply is a
+# Resend send, and the health alerts share that key and quota, so mail floods must not spend it.
+# Over a limit, or without these bindings, the sender gets no auto-reply; the email is still
+# forwarded. Counts are per Cloudflare location and per 60-second window (period must be 10 or
+# 60), so this caps the rate of replies, not a daily total. namespace_id is any positive integer
+# (as a string) that no other rate limiter in the account uses.
+# Docs: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+[[ratelimits]]
+name = "AUTO_REPLY_SENDER_LIMIT"
+namespace_id = "4101"
+
+  [ratelimits.simple]
+  limit = 1
+  period = 60
+
+[[ratelimits]]
+name = "AUTO_REPLY_GLOBAL_LIMIT"
+namespace_id = "4102"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
 # Keeps Workers Logs on, so each email's auto-reply decision is visible in the dashboard.
 [observability]
 enabled = true
