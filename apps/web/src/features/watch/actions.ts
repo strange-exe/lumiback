@@ -34,7 +34,7 @@ export async function joinWithCode(_: FormState, form: FormData): Promise<FormSt
       method: "POST",
       token,
       clientIp: await visitorIp(),
-      body: token ? { code } : { code, guest_label: name.slice(0, 40) },
+      body: token ? { code } : { code, guest_label: [...name].slice(0, 40).join("") },
     });
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
