@@ -4,6 +4,10 @@
 name = "lumiback-support-email"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+# FORWARD_TO and the KEEP_AWAKE_* variables live in the dashboard. Without this, every
+# `wrangler deploy` (or Git build) would replace them with this file's (none) and email
+# forwarding would stop.
+keep_vars = true
 
 # Keeps the Render services awake in their windows (see AWAKE_TARGETS in worker.js). Set on the
 # Worker: KEEP_AWAKE_URL (the API's https://...onrender.com/health) and KEEP_AWAKE_WEB_URL (the
