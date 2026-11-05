@@ -109,6 +109,11 @@ body {
   border-radius: 6px;
 }
 
+/* A heading focused by script (an error page announcing itself) isn't a control: no ring. */
+h1[tabindex="-1"]:focus {
+  outline: none;
+}
+
 /* The lantern lights when you go out; the only decorative motion in the app. */
 @keyframes lantern-light {
   from {
