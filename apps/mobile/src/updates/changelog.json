@@ -8,7 +8,8 @@
       "Profile has Download my data: a file with your profile, outings, requests, shares and gate scans.",
       "The hostel office shows an error with Try again when it can't load, instead of zero counts. Staff can see the gate scans log, and head wardens and admins can add and remove holidays.",
       "New passwords are checked against known data breaches, and push notifications are retried and checked for delivery.",
-      "Safer sharing: a gate code opened from a link asks before tapping you in or out, removing your emergency contact from a share stops their emails too, and a browser only sends your location after you tap Share location from this browser."
+      "Safer sharing: a gate code opened from a link asks before tapping you in or out, removing your emergency contact from a share stops their emails too, and a browser only sends your location after you tap Share location from this browser.",
+      "Signing out stops sending your location and ends a share you started in the app; safe return keeps running so your contact still hears if you're late. Updates now show how far the download has got."
     ]
   },
   {
