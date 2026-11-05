@@ -1,6 +1,7 @@
 /** The hostel office's API calls. The server checks the role on every call, and limits a
  * warden to their own hostels' students. */
 import { api } from "@/lib/api";
+import { scanQuery } from "@/lib/office";
 import type {
   Escalation,
   Gate,
@@ -11,9 +12,11 @@ import type {
   OfficeOverview,
   OfficeRequest,
   OfficeStudent,
+  OfficeScanPage,
   Person,
   Role,
   RuleSet,
+  ScanResult,
 } from "@/lib/types";
 
 export const office = {
@@ -57,6 +60,18 @@ export const office = {
   /** Read-only here; a warden gets just the sets their hostels follow. */
   ruleSets: () => api<RuleSet[]>("/admin/rule-sets"),
   holidays: (year: number) => api<Holiday[]>(`/admin/holidays?year=${year}`),
+  /** Admins and head wardens only, like removing one. Adding an existing date renames it. */
+  setHoliday: (holiday: Holiday) =>
+    api<Holiday>(`/admin/holidays/${encodeURIComponent(holiday.day)}`, {
+      method: "PUT",
+      body: holiday,
+    }),
+  removeHoliday: (day: string) =>
+    api<void>(`/admin/holidays/${encodeURIComponent(day)}`, { method: "DELETE" }),
+
+  /** Gate scans, newest first, a page at a time; a warden sees their hostels' students only. */
+  scans: (filter: { before?: number | null; gateId?: string | null; result?: ScanResult | null }) =>
+    api<OfficeScanPage>(`/admin/scans?${scanQuery(filter)}`),
 
   gates: () => api<Gate[]>("/admin/gates"),
   /** Admins only, like the two below. */

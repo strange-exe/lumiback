@@ -399,6 +399,51 @@ export function FormError({ message }: { message: string | null }): ReactNode {
   );
 }
 
+/** A first load failed (usually offline): say so and offer a retry, and show nothing made up. */
+export function LoadFailed({
+  title,
+  message,
+  after,
+  busy,
+  onRetry,
+}: {
+  title: string;
+  message: string | null;
+  /** What appears here once it loads. */
+  after: string;
+  busy: boolean;
+  onRetry: () => Promise<void>;
+}): ReactNode {
+  const c = useColors();
+  return (
+    <View
+      accessibilityRole="alert"
+      style={{
+        gap: space(3),
+        backgroundColor: c.surface,
+        borderColor: c.line,
+        borderWidth: 1,
+        borderRadius: radius.sheet,
+        borderCurve: "continuous",
+        padding: space(5),
+      }}
+    >
+      <Ionicons name="cloud-offline-outline" size={28} color={c.muted} />
+      <T tone="headline">{title}</T>
+      <T tone="muted">
+        {message ?? "Something went wrong."} {after}
+      </T>
+      <Button
+        label="Try again"
+        variant="secondary"
+        busy={busy}
+        busyLabel="Loading…"
+        onPress={() => void onRetry()}
+      />
+    </View>
+  );
+}
+
 export function Notice({
   children,
   tone = "good",

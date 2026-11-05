@@ -1,4 +1,64 @@
-import { canEditRules, clock, dayLine, formatPhone, isStaff, kioskLink } from "@/lib/office";
+import {
+  campusToday,
+  canEditRules,
+  clock,
+  dayLine,
+  formatPhone,
+  isStaff,
+  kioskLink,
+  parseHolidayDate,
+  scanDistance,
+  scanQuery,
+} from "@/lib/office";
+
+describe("scanQuery", () => {
+  it("asks for 30 a page and adds only the filters that are set", () => {
+    expect(scanQuery({})).toBe("limit=30");
+    expect(scanQuery({ before: 120, gateId: "g 1", result: "too_far" })).toBe(
+      "limit=30&before=120&gate_id=g+1&result=too_far",
+    );
+    expect(scanQuery({ before: null, gateId: null, result: null })).toBe("limit=30");
+  });
+});
+
+describe("scanDistance", () => {
+  it("says how far from the gate, with the GPS accuracy when known", () => {
+    const scan = { distance_m: 12.4, accuracy_m: 8.6 };
+    expect(scanDistance(scan)).toBe("12 m from the gate (GPS ±9 m)");
+    expect(scanDistance({ ...scan, accuracy_m: null })).toBe("12 m from the gate");
+    expect(scanDistance({ distance_m: null, accuracy_m: 5 })).toBeNull();
+  });
+});
+
+describe("campusToday", () => {
+  it("is the date on the campus clock (IST), not the device's", () => {
+    // 20:00 UTC on 31 Dec is already 1 Jan in India.
+    expect(campusToday(new Date("2026-12-31T20:00:00Z"))).toBe("2027-01-01");
+    expect(campusToday(new Date("2026-12-31T18:00:00Z"))).toBe("2026-12-31");
+  });
+});
+
+describe("parseHolidayDate", () => {
+  const today = "2026-11-05";
+
+  it("reads day/month/year the way people in India write it, and ISO dates", () => {
+    expect(parseHolidayDate("25/12/2026", today)).toEqual({ day: "2026-12-25" });
+    expect(parseHolidayDate(" 1-1-2027 ", today)).toEqual({ day: "2027-01-01" });
+    expect(parseHolidayDate("5.11.2026", today)).toEqual({ day: "2026-11-05" });
+    expect(parseHolidayDate("2026-12-25", today)).toEqual({ day: "2026-12-25" });
+  });
+
+  it("refuses dates that don't exist, that have passed, or that aren't dates", () => {
+    expect(parseHolidayDate("31/02/2027", today)).toHaveProperty("error");
+    expect(parseHolidayDate("4/11/2026", today)).toEqual({
+      error: "That date has passed. Pick today or a later date.",
+    });
+    expect(parseHolidayDate("", today)).toHaveProperty("error");
+    expect(parseHolidayDate("Diwali", today)).toHaveProperty("error");
+    expect(parseHolidayDate("25/12/26", today)).toHaveProperty("error");
+    expect(parseHolidayDate("25/12/2101", today)).toHaveProperty("error");
+  });
+});
 
 describe("canEditRules", () => {
   it("is admins and head wardens; wardens only read the rules", () => {

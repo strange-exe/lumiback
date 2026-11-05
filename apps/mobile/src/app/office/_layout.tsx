@@ -23,9 +23,9 @@ export default function OfficeLayout(): ReactNode {
         animation: "none", // switching sections replaces the screen in place
       }}
     >
-      {/* The hub's own heading already says "Hostel office". */}
-      <Stack.Screen name="index" options={{ title: "" }} />
+      {/* Staff open the office from Today (OfficeHome); it has no hub screen of its own. */}
       <Stack.Screen name="students" options={{ animation: "default" }} />
+      <Stack.Screen name="scans" options={{ animation: "default" }} />
       <Stack.Screen name="rules" options={{ animation: "default" }} />
       <Stack.Screen name="gates" options={{ animation: "default" }} />
     </Stack>

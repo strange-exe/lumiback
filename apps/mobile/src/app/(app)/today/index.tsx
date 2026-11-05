@@ -26,7 +26,17 @@ import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { RequestSheet } from "@/screens/outing-request";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Clock, Field, FormError, Press, Screen, StatusChip, T } from "@/ui/kit";
+import {
+  Button,
+  Clock,
+  Field,
+  FormError,
+  LoadFailed,
+  Press,
+  Screen,
+  StatusChip,
+  T,
+} from "@/ui/kit";
 import { FadeIn } from "@/ui/motion";
 import { OutingRow } from "@/ui/OutingRow";
 import { Sheet } from "@/ui/sheet";
@@ -62,7 +72,7 @@ function StaffToday(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
   const load = useCallback(() => office.overview(), []);
-  const { data, refreshing, reload, refetch } = useData(load);
+  const { data, error, loading, refreshing, reload, refetch } = useData(load);
   // Keep the counts current while Today is on screen, like the website's register.
   useFocusEffect(
     useCallback(() => {
@@ -84,7 +94,14 @@ function StaffToday(): ReactNode {
     >
       <Greeting name={user?.name ?? ""} role={user?.role} />
       <T tone="muted">{officeScope(user?.role)}</T>
-      <OfficeHome role={user?.role} overview={data} />
+      <OfficeHome
+        role={user?.role}
+        overview={data}
+        error={error}
+        loading={loading}
+        refreshing={refreshing}
+        onRetry={reload}
+      />
     </Screen>
   );
 }
@@ -175,7 +192,13 @@ function StudentToday(): ReactNode {
       ) : !data ? (
         // Never loaded (offline at launch): we don't know if the student is out, so don't
         // offer to tap out.
-        <LoadFailed message={error} busy={refreshing} onRetry={reload} />
+        <LoadFailed
+          title="Couldn't load Today"
+          message={error}
+          after="Your trip and today's hours show here once Lumiback can be reached."
+          busy={refreshing}
+          onRetry={reload}
+        />
       ) : (
         <AtHostel
           rules={data.rules}
@@ -264,47 +287,6 @@ function approved(request: OutingRequest | null): boolean {
 function freeEveningNote(rules: TodayRules, now: number): string {
   const from = freeEveningAhead(rules, now);
   return from ? ` From ${formatTime(from)} you can go out without one.` : "";
-}
-
-/** Today's first load failed (usually offline): say so and offer a retry, nothing else. */
-function LoadFailed({
-  message: text,
-  busy,
-  onRetry,
-}: {
-  message: string | null;
-  busy: boolean;
-  onRetry: () => Promise<void>;
-}): ReactNode {
-  const c = useColors();
-  return (
-    <View
-      accessibilityRole="alert"
-      style={{
-        gap: space(3),
-        backgroundColor: c.surface,
-        borderColor: c.line,
-        borderWidth: 1,
-        borderRadius: radius.sheet,
-        borderCurve: "continuous",
-        padding: space(5),
-      }}
-    >
-      <Ionicons name="cloud-offline-outline" size={28} color={c.muted} />
-      <T tone="headline">Couldn&apos;t load Today</T>
-      <T tone="muted">
-        {text ?? "Something went wrong."} Your trip and today&apos;s hours show here once Lumiback
-        can be reached.
-      </T>
-      <Button
-        label="Try again"
-        variant="secondary"
-        busy={busy}
-        busyLabel="Loading…"
-        onPress={() => void onRetry()}
-      />
-    </View>
-  );
 }
 
 function AtHostel({

@@ -5,26 +5,32 @@ import { View } from "react-native";
 
 import { canEditRules, everyHostel } from "@/lib/office";
 import type { OfficeOverview, Role } from "@/lib/types";
-import { Row, Section, StatusChip } from "@/ui/kit";
+import { FormError, LoadFailed, Row, Section, StatusChip, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
 /** What the office does, in two groups: today's work, then the hostels and their setup.
- * Shown as a staff member's Today, and as the office's own first screen. */
+ * Shown as a staff member's Today. Counts come only from a loaded overview: offline or on a
+ * server error it says so, never "0 escalations". */
 export function OfficeHome({
   role,
   overview: data,
+  error,
+  loading,
+  refreshing,
+  onRetry,
 }: {
   role: Role | undefined;
   overview: OfficeOverview | undefined;
+  error: string | null;
+  loading: boolean;
+  refreshing: boolean;
+  onRetry: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
   const all = everyHostel(role);
   const rulesEditor = canEditRules(role);
-  const escalations = data?.open_escalations ?? 0;
-  const requests = data?.pending_requests ?? 0;
-  const late = data?.overdue ?? 0;
 
   const icon = (name: IconName, tone: string = c.accent): ReactNode => (
     <View
@@ -53,37 +59,61 @@ export function OfficeHome({
   const open = (section: "requests" | "escalations" | "out"): void =>
     router.push({ pathname: "/office/[section]", params: { section } });
 
+  let today: ReactNode;
+  if (data) {
+    const escalations = data.open_escalations ?? 0;
+    const requests = data.pending_requests ?? 0;
+    const late = data.overdue;
+    today = (
+      <>
+        <Section title="Today">
+          <Row
+            leading={icon("alert-circle-outline", escalations > 0 ? c.danger : c.accent)}
+            title="Escalations"
+            detail={
+              escalations > 0
+                ? `${escalations} late ${escalations === 1 ? "student needs" : "students need"} follow-up`
+                : "Late students who don't answer or aren't back"
+            }
+            trailing={count(escalations, "danger")}
+            onPress={() => open("escalations")}
+          />
+          <Row
+            leading={icon("document-text-outline")}
+            title="Outing requests"
+            detail={requests > 0 ? `${requests} waiting for you` : "Today's forms"}
+            trailing={count(requests, "accent")}
+            onPress={() => open("requests")}
+          />
+          <Row
+            leading={icon("walk-outline")}
+            title="Who's out"
+            detail={`${data.out_now + late} out${late > 0 ? `, ${late} late` : ""}`}
+            trailing={chevron}
+            onPress={() => open("out")}
+          />
+        </Section>
+        {/* A refresh failed: these are the last counts that loaded. */}
+        <FormError message={error} />
+      </>
+    );
+  } else if (loading) {
+    today = <T tone="muted">Loading today&apos;s counts…</T>;
+  } else {
+    today = (
+      <LoadFailed
+        title="Couldn't load the office"
+        message={error}
+        after="Escalations, requests and who's out show here once Lumiback can be reached."
+        busy={refreshing}
+        onRetry={onRetry}
+      />
+    );
+  }
+
   return (
     <>
-      <Section title="Today">
-        <Row
-          leading={icon("alert-circle-outline", escalations > 0 ? c.danger : c.accent)}
-          title="Escalations"
-          detail={
-            escalations > 0
-              ? `${escalations} late ${escalations === 1 ? "student needs" : "students need"} follow-up`
-              : "Late students who don't answer or aren't back"
-          }
-          trailing={count(escalations, "danger")}
-          onPress={() => open("escalations")}
-        />
-        <Row
-          leading={icon("document-text-outline")}
-          title="Outing requests"
-          detail={requests > 0 ? `${requests} waiting for you` : "Today's forms"}
-          trailing={count(requests, "accent")}
-          onPress={() => open("requests")}
-        />
-        <Row
-          leading={icon("walk-outline")}
-          title="Who's out"
-          detail={
-            data ? `${data.out_now + late} out${late > 0 ? `, ${late} late` : ""}` : undefined
-          }
-          trailing={chevron}
-          onPress={() => open("out")}
-        />
-      </Section>
+      {today}
       <Section title={all ? "Hostels and setup" : "Your hostels"}>
         <Row
           leading={icon("people-outline")}
@@ -99,10 +129,19 @@ export function OfficeHome({
           onPress={() => router.push("/office/students")}
         />
         <Row
+          leading={icon("scan-outline")}
+          title="Gate scans"
+          detail="Every scan, including refused ones"
+          trailing={chevron}
+          onPress={() => router.push("/office/scans")}
+        />
+        <Row
           leading={icon("time-outline")}
           title="Rules"
           detail={
-            rulesEditor ? "Outing hours and holidays" : "Your hostel's outing hours (view only)"
+            rulesEditor
+              ? "Outing hours, and add or remove holidays"
+              : "Your hostel's outing hours and holidays (view only)"
           }
           trailing={chevron}
           onPress={() => router.push("/office/rules")}
