@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from tests.helpers import create_gate, kiosk_qr, make_admin, signup
+from tests.helpers import create_gate, ist_now_minutes, kiosk_qr, make_admin, signup
 
 AT_GATE = {"lat": 30.2683, "lng": 77.9950, "accuracy_m": 8}
 
@@ -355,6 +355,9 @@ def test_bootstrap_script_makes_the_first_admin(client, test_db_url):
 
 
 def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
+    if ist_now_minutes() < 60:  # like set_rules: the returns below were due up to 50 min ago
+        pytest.skip("too soon after midnight IST for returns due earlier to be today's")
+
     def student(email: str, name: str) -> dict:
         headers = signup(client, email, name)[1]
         assert client.post("/outings", json={}, headers=headers).status_code == 201

@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from app.jobs.expiry import sweep
 from app.push import MemoryPushSender
+from app.services.rules import ist_date
 from tests.helpers import make_admin, set_rules, signup
 
 FORM = {
@@ -237,7 +238,7 @@ def test_the_register_shows_only_the_wardens_hostels(client, db, admin, warden, 
     scans = client.get("/admin/scans", headers=warden).json()["items"]
     assert [s["name"] for s in scans] == ["Anna"]
 
-    today = datetime.now(UTC).date().isoformat()
+    today = ist_date(datetime.now(UTC)).isoformat()  # the register's days are IST days
     r = client.get("/admin/outings.csv", params={"from": today, "to": today}, headers=warden)
     rows = list(csv.reader(io.StringIO(r.text)))[1:]
     assert [row[0] for row in rows] == ["Anna"]
@@ -275,7 +276,7 @@ def test_records_stay_with_the_hostel_the_outing_happened_in(
     )
     assert r.status_code == 200, r.text
     # Anna lives in B now, but the outing she took from A stays in A's register.
-    today = datetime.now(UTC).date().isoformat()
+    today = ist_date(datetime.now(UTC)).isoformat()  # the register's days are IST days
     r = client.get("/admin/outings.csv", params={"from": today, "to": today}, headers=warden)
     assert [row[0] for row in list(csv.reader(io.StringIO(r.text)))[1:]] == ["Anna"]
     # ...and she's no longer one of A's students.
