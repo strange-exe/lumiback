@@ -146,7 +146,7 @@ def _html(m: CodeEmail, *, boxed_code: bool = True) -> str:
 <h1 style="margin:12px 0 8px;font-family:{SANS};font-size:22px;line-height:28px;font-weight:bold;color:{INK};">{escape(m.heading)}</h1>
 <p style="{P}">{escape(m.purpose)}:</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 10px;"><tr>
-<td align="center" style="{code_style}font-family:{MONO};font-size:32px;line-height:38px;letter-spacing:6px;font-weight:bold;color:{ACCENT};">{escape(m.code)}</td>
+<td align="center" style="{code_style}-webkit-user-select:all;user-select:all;font-family:{MONO};font-size:32px;line-height:38px;letter-spacing:6px;font-weight:bold;color:{ACCENT};">{escape(m.code)}</td>
 </tr></table>
 <p style="{SMALL}">It expires in {m.minutes} minutes. Requested at {escape(m.when)}.</p>
 <p style="{P}margin-top:20px;">Lumiback will never ask for this code by phone, chat or email. Don't share it.</p>
@@ -230,8 +230,11 @@ def password_reset_email(
 #   HTML reads as phishing. Plain text reached the Inbox, and a missed alert is worse than a
 #   plain one, so it stays plain text.
 # - "declined" (same shape as "approved"): Inbox.
+# - "safe_return_start" (to the emergency contact, button for the follow link): Inbox at GEU
+#   Microsoft 365 and Gmail, like both plain-text controls sent before and after it
+#   (2026-11-06, .claude/scripts/safe_return_inbox_test.py).
 
-HTML_NOTICES = frozenset({"approved", "declined", "escalation"})
+HTML_NOTICES = frozenset({"approved", "declined", "escalation", "safe_return_start"})
 
 GOOD = "#187349"
 DANGER = "#b8322a"
@@ -430,9 +433,9 @@ def escalation_email(*, to: str, count: int, web_url: str) -> Email:
 # ---------- safe return: to a student's emergency contact ----------
 #
 # The contact has no account and never asked for these, so each one says who chose to send it
-# and why. Plain text only (kinds "safe_return_*" are not in HTML_NOTICES): none of them has
-# had its own inbox test, and an alert about someone being late reads as phishing in HTML (see
-# "late" above).
+# and why. The start email is HTML with a button (inbox-tested, see HTML_NOTICES). The overdue
+# and back emails stay plain text: neither has had its own inbox test, and an alert about
+# someone being late reads as phishing in HTML (see "late" above).
 
 
 def _contact_reason(student: str) -> str:
@@ -468,7 +471,6 @@ def safe_return_start_email(
             note="Keep this link to yourself: anyone who has it can see their location until "
             "they're back.",
             reason=_contact_reason(student),
-            link="plain",
         )
     )
 

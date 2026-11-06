@@ -152,7 +152,9 @@ def test_ticked_without_an_emergency_email_still_checks_out(client, db, riya):
 def test_ticked_emails_the_contact_one_working_link(client, db, riya):
     outing = go_out(client, riya, safe_return=True)
     [email] = to_contact(client)
-    assert email.html is None  # plain text only
+    # Inbox-tested as HTML (2026-11-06): the link is a button, with the same words as the text.
+    assert email.html and 'border-radius:10px;"><a href="' in email.html
+    assert "Follow their way back" in email.html
     assert "Riya Verma" in email.subject
     assert email.body.startswith("Hi Sunita,")
     assert "chose to let you follow" in email.body  # why they got it, and that she chose it

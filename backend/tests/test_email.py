@@ -95,6 +95,13 @@ def test_no_links_in_code_email():
     assert "http://" not in body and "https://" not in body
 
 
+def test_one_tap_selects_the_whole_code():
+    """No email can run a copy button; where the client honours user-select, one tap on the
+    code selects all of it (and nothing else), ready to copy."""
+    cell = make().html.split("048291")[0].rsplit("<td", 1)[1]
+    assert "user-select:all" in cell and "-webkit-user-select:all" in cell
+
+
 def test_html_email_is_multipart_with_text_first():
     email = Email(to="a@geu.ac.in", subject="s", body="hello", html="<p>hello</p>")
     message = build_message(email, "Lumiback <no-reply@outing.example.com>")
@@ -228,8 +235,9 @@ def test_late_alert_says_when_and_where_to_answer():
 
 
 def test_only_inbox_tested_notices_send_html():
-    """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09)."""
-    assert HTML_NOTICES == {"approved", "declined", "escalation"}
+    """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09, and
+    safe_return_start at GEU and Gmail on 2026-11-06)."""
+    assert HTML_NOTICES == {"approved", "declined", "escalation", "safe_return_start"}
     late = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
     assert late.html is None  # every HTML version went to Junk: the safety alert stays plain
     declined = request_decision_email(
