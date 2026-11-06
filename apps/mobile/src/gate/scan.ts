@@ -67,6 +67,13 @@ export function confirmCopy(out: boolean | null): {
   return { title: "Check in or out at this gate?", detail, action: "Continue" };
 }
 
+/**
+ * Shown when Android refused a tap on the confirm button because another app was drawing over
+ * Lumiback (a chat bubble, screen filter or a hidden overlay trying to steer the tap).
+ */
+export const blockedTapCopy =
+  "That tap didn't count: another app is showing something over Lumiback. Close any bubbles, screen filters or overlays, then tap again.";
+
 export interface Fix {
   lat: number;
   lng: number;

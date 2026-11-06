@@ -1,4 +1,12 @@
-import { confirmCopy, gateCode, phaseForNewLink, refusal, startPhase, toFix } from "@/gate/scan";
+import {
+  blockedTapCopy,
+  confirmCopy,
+  gateCode,
+  phaseForNewLink,
+  refusal,
+  startPhase,
+  toFix,
+} from "@/gate/scan";
 
 const GATE = "61c6a6d7-178a-4cee-ac83-b5c43bb6f783";
 
@@ -73,6 +81,15 @@ describe("confirmCopy", () => {
     expect(confirmCopy(false).action).toBe("Tap out");
     expect(confirmCopy(true).action).toBe("Tap in");
     expect(confirmCopy(null).action).toBe("Continue");
+  });
+});
+
+describe("blockedTapCopy", () => {
+  it("says the tap was refused, why, and what to do next, in plain words", () => {
+    expect(blockedTapCopy).toMatch(/didn't count/);
+    expect(blockedTapCopy).toMatch(/another app is showing something over Lumiback/);
+    expect(blockedTapCopy).toMatch(/then tap again\.$/);
+    expect(blockedTapCopy).not.toMatch(/overlay attack|tapjack|FLAG_|obscured/i);
   });
 });
 
