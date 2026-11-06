@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.9.0",
+    "date": "2026-11-06",
+    "title": "Another outing, and accounts the office sets up",
+    "points": [
+      "After using today's approved outing, you can ask the hostel office for another. It still needs their approval.",
+      "Hostel office admins can add students in bulk on the website. Each student gets an email to choose their password, and admins can send a student a link to choose a new password."
+    ]
+  },
+  {
     "version": "1.8.1",
     "date": "2026-11-06",
     "title": "Safer links",
