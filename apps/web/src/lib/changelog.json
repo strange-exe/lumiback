@@ -4,7 +4,8 @@
     "date": "2026-11-06",
     "title": "Safer taps",
     "points": [
-      "Taps are refused while another app draws over Lumiback, so a hidden screen on top can't steer you into tapping in or out with a gate code from a link. If a chat bubble or screen filter is in the way, Lumiback tells you; close it and tap again."
+      "Taps are refused while another app draws over Lumiback, so a hidden screen on top can't steer you into tapping in or out with a gate code from a link. If a chat bubble or screen filter is in the way, Lumiback tells you; close it and tap again.",
+      "Send my location asks to turn location on, and offers the settings that fix it."
     ]
   },
   {
