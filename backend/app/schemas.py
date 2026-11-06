@@ -195,6 +195,8 @@ class ViewerOut(BaseModel):
     id: uuid.UUID
     kind: Literal["user", "guest"]
     name: str
+    # The safe-return emergency contact, as the server knows it (the label can be copied).
+    contact: bool = False
     status: str
     requested_at: datetime
     granted_at: datetime | None
@@ -257,6 +259,7 @@ class AccessLogEntry(BaseModel):
     viewer_id: uuid.UUID | None  # None for an admin following up an escalation
     viewer_name: str
     kind: Literal["user", "guest", "admin"]
+    contact: bool = False  # see ViewerOut.contact
     channel: str
     viewed_at: datetime
 

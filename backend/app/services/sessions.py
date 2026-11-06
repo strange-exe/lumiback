@@ -142,6 +142,7 @@ async def sharer_view(session: AsyncSession, share: ShareSession) -> SessionOut:
             id=v.id,
             kind="user" if v.viewer_user_id else "guest",
             name=name if v.viewer_user_id else (v.guest_label or "Guest"),
+            contact=v.is_contact,
             status=v.status.value,
             requested_at=v.requested_at,
             granted_at=v.granted_at,

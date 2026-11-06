@@ -168,17 +168,33 @@ def test_ticked_emails_the_contact_one_working_link(client, db, riya):
     # The student sees the contact as a viewer, and every look in the access log.
     mine = client.get(f"/sessions/{session_id}", headers=riya).json()
     assert mine["ends_when"] == "until_return"
-    assert [(v["name"], v["kind"], v["status"]) for v in mine["viewers"]] == [
-        ("Sunita Sharma (emergency contact)", "guest", "granted")
+    assert [(v["name"], v["kind"], v["status"], v["contact"]) for v in mine["viewers"]] == [
+        ("Sunita Sharma (emergency contact)", "guest", "granted", True)
     ]
     log = client.get(f"/sessions/{session_id}/access-log", headers=riya).json()
-    assert [(e["viewer_name"], e["kind"]) for e in log] == [
-        ("Sunita Sharma (emergency contact)", "guest")
+    assert [(e["viewer_name"], e["kind"], e["contact"]) for e in log] == [
+        ("Sunita Sharma (emergency contact)", "guest", True)
     ]
     # Only its hash is stored.
     assert token.encode() not in b"".join(
         db.execute(text("SELECT guest_token_hash FROM share_viewers")).scalars()
     )
+
+
+def test_only_the_real_contact_is_marked_as_the_contact(client, riya):
+    """A code guest can borrow letters from another script to copy the contact's label; the
+    server's own mark, not the label, is what tells the student which one is real."""
+    session_id = go_out(client, riya, safe_return=True)["safe_return_session_id"]
+    code = client.post(f"/sessions/{session_id}/codes", headers=riya).json()["code"]
+    look_alike = "Sunita Sharma (" + chr(0x0435) + "mergency contact)"  # Cyrillic ie
+    r = client.post("/codes/redeem", json={"code": code, "guest_label": look_alike})
+    assert r.status_code == 200, r.text
+
+    viewers = client.get(f"/sessions/{session_id}", headers=riya).json()["viewers"]
+    assert [(v["name"], v["status"], v["contact"]) for v in viewers] == [
+        ("Sunita Sharma (emergency contact)", "granted", True),
+        (look_alike, "pending", False),
+    ]
 
 
 def test_the_link_opens_only_its_own_outing(client, riya):

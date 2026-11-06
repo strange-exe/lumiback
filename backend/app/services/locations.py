@@ -139,6 +139,7 @@ async def access_log(
                 viewer_id=viewer.id,
                 viewer_name=name if viewer.viewer_user_id else (viewer.guest_label or "Guest"),
                 kind="user" if viewer.viewer_user_id else "guest",
+                contact=viewer.is_contact,
                 channel=entry.channel.value,
                 viewed_at=entry.viewed_at,
             )

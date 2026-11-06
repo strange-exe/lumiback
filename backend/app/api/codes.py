@@ -73,14 +73,16 @@ async def redeem(
     if result.status == ViewerStatus.PENDING:
         share = await session.get(ShareSession, result.session_id)
         if share is not None:  # tell the sharer even if their app is closed
-            who = user.name if user else (body.guest_label or "Someone")
+            # Say who is asking: a name or label alone can be made to look like anyone's,
+            # and the emergency contact (granted at check-out) never sends a request.
+            if user:
+                who, about = user.name, "A Lumiback student. Open Lumiback to approve or decline."
+            else:
+                who = f"{body.guest_label or 'Someone'} (guest)"
+                about = "Joined with a code, no account. Your emergency contact never has to ask."
             push.to_user(
                 share.sharer_id,
-                PushMessage(
-                    title=f"{who} wants to follow you",
-                    body="Open Lumiback to approve or decline.",
-                    url="/live",
-                ),
+                PushMessage(title=f"{who} wants to follow you", body=about, url="/live"),
             )
     return RedeemOut(
         session_id=result.session_id,

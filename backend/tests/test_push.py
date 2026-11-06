@@ -112,7 +112,7 @@ def test_follow_request_and_approval_are_pushed(client, push):
             [TOKEN],
             PushMessage(
                 title="Arjun wants to follow you",
-                body="Open Lumiback to approve or decline.",
+                body="A Lumiback student. Open Lumiback to approve or decline.",
                 url="/live",
             ),
         )
@@ -130,6 +130,26 @@ def test_follow_request_and_approval_are_pushed(client, push):
             channel="share-status",
         ),
     )
+
+
+def test_a_guest_request_says_it_is_a_guest_and_not_the_contact(client, push):
+    """The emergency contact never asks: a request pushed to the student is never them."""
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya, TOKEN)
+    share = open_share(client, riya)
+    code = client.post(f"/sessions/{share['id']}/codes", headers=riya).json()["code"]
+    label = "Sunita (" + chr(0x0435) + "mergency contact)"  # a look-alike of the contact
+    assert client.post("/codes/redeem", json={"code": code, "guest_label": label}).is_success
+    assert push.outbox == [
+        (
+            [TOKEN],
+            PushMessage(
+                title=f"{label} (guest) wants to follow you",
+                body="Joined with a code, no account. Your emergency contact never has to ask.",
+                url="/live",
+            ),
+        )
+    ]
 
 
 def test_guests_get_no_push_and_users_without_devices_are_skipped(client, push):

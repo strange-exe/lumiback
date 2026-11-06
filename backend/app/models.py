@@ -678,6 +678,9 @@ class ShareViewer(Base):
     )
     guest_label: Mapped[str | None] = mapped_column(String(40))
     guest_token_hash: Mapped[bytes | None] = mapped_column(LargeBinary, unique=True)
+    # The safe-return emergency contact (set only by the server, at check-out): the mark the
+    # student sees, since a code guest can make their label look like the contact's.
+    is_contact: Mapped[bool] = mapped_column(server_default=text("false"))
     status: Mapped[ViewerStatus] = mapped_column(
         str_enum(ViewerStatus, "viewer_status"), server_default=ViewerStatus.PENDING.value
     )
