@@ -113,6 +113,8 @@ export interface AccessLogEntry {
   viewer_id: string | null;
   viewer_name: string;
   kind: "user" | "guest" | "admin";
+  /** The safe-return emergency contact, as the server knows it. */
+  contact: boolean;
   channel: string;
   viewed_at: string;
 }
@@ -145,6 +147,8 @@ export interface Viewer {
   id: string;
   kind: "user" | "guest";
   name: string;
+  /** The safe-return emergency contact, as the server knows it (a label can be copied). */
+  contact: boolean;
   status: ViewerStatus;
   requested_at: string;
   granted_at: string | null;

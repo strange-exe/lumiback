@@ -419,7 +419,9 @@ function WhoLooked({ looks }: { looks: AccessLogEntry[] }): ReactNode {
           />
           <View style={{ flex: 1 }}>
             <T tone="label" numberOfLines={1}>
-              {entry.viewer_name}
+              {entry.kind === "guest" && !entry.contact
+                ? `${entry.viewer_name} (guest)`
+                : entry.viewer_name}
             </T>
             <T tone="caption">
               {entry.kind === "admin"
@@ -455,7 +457,14 @@ function PersonRow({ viewer, children }: { viewer: Viewer; children: ReactNode }
         <T tone="label" numberOfLines={1}>
           {viewer.name}
         </T>
-        <T tone="caption">{viewer.kind === "guest" ? "Guest, no account" : "Lumiback student"}</T>
+        {/* Only the server's mark says who the contact is: a guest can copy their name. */}
+        <T tone="caption">
+          {viewer.contact
+            ? "Your emergency contact"
+            : viewer.kind === "guest"
+              ? "Guest, no account"
+              : "Lumiback student"}
+        </T>
       </View>
       {children}
     </View>
