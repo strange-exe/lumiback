@@ -71,12 +71,16 @@ const CLOUDFLARE_AUTHSERV_ID = "mx.cloudflare.net";
  * may echo a sender's envelope local part, with ";" and "," in it) are kept whole, and
  * (nested) comments are dropped, so no sender text is read as structure (RFC 8601, RFC 5322
  * quoted-string and comment). An unclosed quote or comment makes it unreadable: no reply.
+ * `opened` is the index of the part where the first quoted string or comment began (-1 when
+ * there is none).
  */
 function firstResultParts(joined) {
   const parts = [];
   let part = "";
   let depth = 0; // comment nesting
   let quoted = false;
+  let opened = -1;
+  const done = () => ({ parts, opened });
   for (let i = 0; i < joined.length; i++) {
     const c = joined[i];
     if ((quoted || depth > 0) && c === "\\") {
@@ -91,20 +95,22 @@ function firstResultParts(joined) {
       if (depth === 0) part += " ";
     } else if (c === '"') {
       quoted = true;
+      if (opened === -1) opened = parts.length;
       part += c;
     } else if (c === "(") {
       depth = 1;
+      if (opened === -1) opened = parts.length;
     } else if (c === ";" || c === ",") {
       parts.push(part.trim());
       part = "";
-      if (c === ",") return parts; // the end of the first header
+      if (c === ",") return done(); // the end of the first header
     } else {
       part += c;
     }
   }
   if (quoted || depth > 0) return null;
   parts.push(part.trim());
-  return parts;
+  return done();
 }
 
 /**
@@ -115,8 +121,9 @@ function firstResultParts(joined) {
 function cloudflareDmarc(headers) {
   const joined = headers.get("Authentication-Results");
   if (!joined) return { reason: "no Authentication-Results header" };
-  const parts = firstResultParts(joined);
-  if (!parts) return { reason: "unreadable Authentication-Results (an unclosed quote or comment)" };
+  const read = firstResultParts(joined);
+  if (!read) return { reason: "unreadable Authentication-Results (an unclosed quote or comment)" };
+  const { parts, opened } = read;
   const [id, ...results] = parts;
   // The authserv-id may be followed by a version number ("mx.cloudflare.net 1").
   if (id.split(/\s+/)[0].toLowerCase() !== CLOUDFLARE_AUTHSERV_ID) {
@@ -125,6 +132,15 @@ function cloudflareDmarc(headers) {
   const dmarc = results.filter((r) => /^dmarc\s*=/i.test(r));
   if (dmarc.length === 0) return { reason: "no dmarc result" };
   if (dmarc.length > 1) return { reason: "more than one dmarc result" };
+  // Cloudflare writes its DKIM results, then DMARC, then SPF and ARC; its comments and quoted
+  // values (an SPF explanation, the remote IP) all come after the DMARC result. A quote or
+  // comment opening at or before it could only come from sender text Cloudflare echoed
+  // unquoted (a DKIM selector, say), and could hide Cloudflare's real result so that a
+  // dmarc= written later by the sender looks like the only one. So the DMARC result must be
+  // plain text that comes before any quote or comment. Seen on a real header 2026-11-06.
+  if (opened !== -1 && opened <= parts.indexOf(dmarc[0])) {
+    return { reason: "a quote or comment at or before the dmarc result" };
+  }
   const verdict = /^dmarc\s*=\s*([a-z]*)/i.exec(dmarc[0])[1].toLowerCase();
   if (verdict !== "pass") return { reason: `dmarc=${verdict}` };
   // Quoted values are blanked first, so text echoed inside one can't pose as the property.
