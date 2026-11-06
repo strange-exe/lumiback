@@ -6,6 +6,9 @@ web-build/
 # Anchored, so a local module's own native code (modules/*/android) is kept.
 /android/
 /ios/
+# A local Android build's output inside a local module
+/modules/*/android/build/
+/modules/*/android/.cxx/
 *.apk
 *.aab
 .env
