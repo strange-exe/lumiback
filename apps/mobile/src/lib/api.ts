@@ -73,8 +73,12 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
 
   let response = await send(path, options, token);
   if (auth && response.status === 401) {
+    // Another sign-in (or a sign-out) since this request began: never renew or retry it with
+    // the next session's tokens.
+    const stale = (): boolean => sessionGeneration() !== began;
+    if (stale()) throw new ApiError(401, "Please sign in again.");
     token = await renewing(refresh);
-    if (!token) throw new ApiError(401, "Please sign in again.");
+    if (!token || stale()) throw new ApiError(401, "Please sign in again.");
     response = await send(path, options, token);
     if (response.status === 401) {
       if (sessionGeneration() === began) await clearTokens();

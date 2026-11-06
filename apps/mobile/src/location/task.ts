@@ -54,7 +54,8 @@ async function endedElsewhere(share: ActiveShare): Promise<void> {
   endingId = share.sessionId;
   // Already stopped on this phone (signed out, or another student signed in): a tick that
   // was under way has nothing to explain, and the next student must not see it.
-  if ((await activeShare())?.sessionId !== share.sessionId) return;
+  // A storage error reads as "still this share": ending it must never get stuck here.
+  if ((await activeShare().catch(() => share))?.sessionId !== share.sessionId) return;
   const view = await api<ShareSession>(`/sessions/${share.sessionId}`).catch(() => null);
   await stopSending();
   // Past ends_at the server reports "ended" before its sweep has recorded a reason.

@@ -188,6 +188,29 @@ test("a request begun before another sign-in never signs the new student out", a
   off();
 });
 
+test("a request begun before another sign-in is never renewed with the new session", async () => {
+  await storeTokens({
+    access_token: "a1",
+    token_type: "bearer",
+    expires_in: 900,
+    refresh_token: "r1",
+  }); // student A
+  let release!: (r: Response) => void;
+  fetchMock.mockReturnValueOnce(new Promise((resolve) => (release = resolve))); // A's request
+  const request = api("/sessions/s1").catch((error: unknown) => error);
+  for (let i = 0; i < 200 && fetchMock.mock.calls.length < 1; i++) await Promise.resolve();
+  await storeTokens({
+    access_token: "b1",
+    token_type: "bearer",
+    expires_in: 900,
+    refresh_token: "rb",
+  }); // student B signs in while it runs
+  release(reply(401));
+  expect(((await request) as ApiError).status).toBe(401);
+  expect(fetchMock).toHaveBeenCalledTimes(1); // no refresh of B's login, no retry with B's token
+  expect(await storedRefreshToken()).toBe("rb");
+});
+
 test("opening the app offline is a network error (status 0), never a sign-out (401)", async () => {
   fetchMock.mockRejectedValue(new TypeError("Network request failed"));
   const failure = await api("/auth/me").catch((error: unknown) => error);
