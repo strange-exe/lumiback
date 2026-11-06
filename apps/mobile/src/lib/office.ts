@@ -1,5 +1,5 @@
 /** Hostel office helpers with no app dependencies (unit-tested). API calls: office-api.ts. */
-import type { DayRule, OfficeScan, Role, ScanResult } from "@/lib/types";
+import type { AccountState, DayRule, OfficeScan, Role, ScanResult } from "@/lib/types";
 
 /** What each scan result means, in the website's words. */
 export const SCAN_RESULT_LABEL: Record<ScanResult, string> = {
@@ -118,6 +118,41 @@ export const ROLE_LABEL: Record<Role, string> = {
   head_warden: "Head warden",
   admin: "Admin",
 };
+
+/** A student's account in words, or null when it's in use (nothing to say). */
+export function accountLabel(account: AccountState): string | null {
+  return account === "invited"
+    ? "Invited, not set up"
+    : account === "reset"
+      ? "Password reset sent"
+      : null;
+}
+
+/**
+ * The "Send password link" confirmation, by what the server will do (see
+ * POST /admin/users/{id}/password-link): an invited student gets their set-up link again; any
+ * other gets a reset link, which for an active account stops their password working now.
+ */
+export function passwordLinkCopy(account: AccountState): { title: string; message: string } {
+  if (account === "invited") {
+    return {
+      title: "Send the set-up link again?",
+      message: "Sends their set-up link again (valid 7 days).",
+    };
+  }
+  if (account === "reset") {
+    return {
+      title: "Send a new password link?",
+      message:
+        "Sends them a new link to choose a password (valid 24 hours). The link sent before stops working.",
+    };
+  }
+  return {
+    title: "Reset their password?",
+    message:
+      "Their current password stops working now and they're signed out everywhere. They get an email to choose a new one (valid 24 hours).",
+  };
+}
 
 /** "+919876543210" -> "+91 98765 43210"; anything else is shown as stored. */
 export function formatPhone(phone: string): string {

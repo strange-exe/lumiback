@@ -1,4 +1,5 @@
 import {
+  accountLabel,
   campusToday,
   canEditRules,
   clock,
@@ -7,6 +8,7 @@ import {
   isStaff,
   kioskLink,
   parseHolidayDate,
+  passwordLinkCopy,
   scanDistance,
   scanQuery,
 } from "@/lib/office";
@@ -109,5 +111,41 @@ describe("formatPhone", () => {
   it("groups Indian mobile numbers and leaves anything else as stored", () => {
     expect(formatPhone("+919876543210")).toBe("+91 98765 43210");
     expect(formatPhone("+441632960123")).toBe("+441632960123");
+  });
+});
+
+describe("accountLabel", () => {
+  it("says nothing for an account in use, and names the other two states", () => {
+    expect(accountLabel("active")).toBeNull();
+    expect(accountLabel("invited")).toBe("Invited, not set up");
+    expect(accountLabel("reset")).toBe("Password reset sent");
+  });
+});
+
+describe("passwordLinkCopy", () => {
+  it("warns that an active account's password stops working now", () => {
+    const { message } = passwordLinkCopy("active");
+    expect(message).toBe(
+      "Their current password stops working now and they're signed out everywhere. They get an email to choose a new one (valid 24 hours).",
+    );
+  });
+
+  it("only resends the set-up link to an invited student, with its 7-day validity", () => {
+    const { message } = passwordLinkCopy("invited");
+    expect(message).toBe("Sends their set-up link again (valid 7 days).");
+    expect(message).not.toMatch(/stops working now/);
+  });
+
+  it("replaces an earlier reset link, valid 24 hours", () => {
+    const { message } = passwordLinkCopy("reset");
+    expect(message).toMatch(/valid 24 hours/);
+    expect(message).toMatch(/link sent before stops working/);
+  });
+
+  it("gives each state its own title", () => {
+    const titles = new Set(
+      (["active", "invited", "reset"] as const).map((a) => passwordLinkCopy(a).title),
+    );
+    expect(titles.size).toBe(3);
   });
 });

@@ -25,11 +25,14 @@ function message(e: unknown): string {
 export function RequestSheet({
   open,
   rules,
+  again = false,
   onClose,
   onSent,
 }: {
   open: boolean;
   rules: TodayRules;
+  /** Today's approved outing was used: this asks for another one (approved the same way). */
+  again?: boolean;
   onClose: () => void;
   onSent: () => Promise<void>;
 }): ReactNode {
@@ -97,10 +100,16 @@ export function RequestSheet({
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={`Ask for today's outing`}>
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={again ? "Ask for another outing" : "Ask for today's outing"}
+    >
       <T tone="muted">
-        {rules.label} outings need the hostel office&apos;s OK. They&apos;ll see this form, and you
-        get a notification when they decide.
+        {again
+          ? "You've used today's approved outing. Another one needs the hostel office's OK too. "
+          : `${rules.label} outings need the hostel office's OK. `}
+        They&apos;ll see this form, and you get a notification when they decide.
       </T>
       <Field
         label="Where and why"

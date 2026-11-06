@@ -88,6 +88,8 @@ export interface OutingRequest {
   decided_at: string | null;
   created_at: string;
   used: boolean;
+  /** Asked after an earlier approval that day was used: another outing the same day. */
+  again: boolean;
 }
 
 export interface Profile {
@@ -246,6 +248,8 @@ export interface OfficeRequest {
   decided_at: string | null;
   created_at: string;
   used: boolean;
+  /** Another outing after the student's approved one today was used. */
+  again: boolean;
 }
 
 export interface LastSeen {
@@ -296,6 +300,17 @@ export interface OfficeStudent {
   emergency_phone: string | null;
   /** Right now. */
   status: "in" | "out" | "overdue";
+  account: AccountState;
+}
+
+/** invited: added by the office, hasn't chosen a password yet; reset: a password link was
+ * sent and they haven't chosen a new one yet. */
+export type AccountState = "active" | "invited" | "reset";
+
+/** POST /admin/users/{id}/password-link. reset: their old password stopped working. */
+export interface PasswordLinkSent {
+  kind: "invite" | "reset";
+  email: string;
 }
 
 export interface OfficeHostel {

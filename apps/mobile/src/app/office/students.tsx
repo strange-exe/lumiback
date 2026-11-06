@@ -4,7 +4,7 @@ import { Alert, Pressable, RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { everyHostel, ROLE_LABEL } from "@/lib/office";
+import { accountLabel, everyHostel, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { OfficeHostel, OfficeStudent, Role } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -109,6 +109,8 @@ export default function Students(): ReactNode {
               student={s}
               first={i === 0}
               onChangeRole={admin ? () => setRoleFor(s) : undefined}
+              // Admins only, for anyone but themselves (their own goes through Forgot password).
+              onLinkSent={admin && s.id !== user?.id ? () => void refetch() : undefined}
               onMove={
                 s.role === "student" && (hostels.data ?? []).some((h) => h.id !== s.hostel_id)
                   ? () => setMoveFor(s)
@@ -150,15 +152,19 @@ function StudentRow({
   first,
   onChangeRole,
   onMove,
+  onLinkSent,
 }: {
   student: OfficeStudent;
   first: boolean;
   onChangeRole?: () => void;
   onMove?: () => void;
+  /** Set when the viewer may send this student a password link; refreshes the list. */
+  onLinkSent?: () => void;
 }): ReactNode {
   const c = useColors();
   const [open, setOpen] = useState(false);
   const status = STATUS[s.status];
+  const account = accountLabel(s.account);
   return (
     <View style={first ? undefined : { borderTopWidth: 1, borderTopColor: c.line }}>
       <Pressable
@@ -167,7 +173,7 @@ function StudentRow({
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`${s.name}, ${
           s.role === "student" ? status.label : ROLE_LABEL[s.role]
-        }. ${open ? "Hide" : "Show"} contacts`}
+        }${account ? `, ${account}` : ""}. ${open ? "Hide" : "Show"} contacts`}
         android_ripple={{ color: c.line }}
         style={{ padding: space(4), gap: space(1) }}
       >
@@ -185,6 +191,7 @@ function StudentRow({
         <T tone="caption" numberOfLines={1}>
           {[s.roll_no, s.hostel, s.email].filter(Boolean).join(" · ")}
         </T>
+        {account ? <T tone="caption">{account}</T> : null}
       </Pressable>
       {open ? (
         <View style={{ paddingHorizontal: space(4), paddingBottom: space(4), gap: space(3) }}>
@@ -197,11 +204,68 @@ function StudentRow({
           {onMove ? (
             <Button label="Move to another hostel" variant="secondary" onPress={onMove} />
           ) : null}
+          {onLinkSent ? <PasswordLink student={s} onSent={onLinkSent} /> : null}
           {onChangeRole ? (
             <Button label="Change role" variant="secondary" onPress={onChangeRole} />
           ) : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** Admins only: email a student a link to choose a password, confirmed in words first. */
+function PasswordLink({
+  student,
+  onSent,
+}: {
+  student: OfficeStudent;
+  onSent: () => void;
+}): ReactNode {
+  const c = useColors();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
+  const copy = passwordLinkCopy(student.account);
+
+  const send = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    setSent(null);
+    try {
+      const result = await office.sendPasswordLink(student.id);
+      haptic.success();
+      setSent(`Sent to ${result.email}`);
+      onSent();
+    } catch (e) {
+      haptic.warning();
+      // The server says why: their own account, the email failing, or too many links.
+      setError(e instanceof ApiError ? e.detail : "Couldn't send the link. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: space(2) }}>
+      <Button
+        label="Send password link"
+        variant="secondary"
+        busy={busy}
+        busyLabel="Sending…"
+        onPress={() =>
+          Alert.alert(copy.title, copy.message, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Send", onPress: () => void send() },
+          ])
+        }
+      />
+      {sent ? (
+        <T tone="label" accessibilityRole="alert" style={{ color: c.good }}>
+          {sent}
+        </T>
+      ) : null}
+      <FormError message={error} />
     </View>
   );
 }

@@ -60,7 +60,11 @@ export function RequestCard({
       <View style={{ gap: space(1) }}>
         <T tone="headline">{request.name}</T>
         <T tone="caption">{[request.roll_no, request.hostel].filter(Boolean).join(" · ")}</T>
-        <StatusChip label={status.label} tone={status.tone} />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+          <StatusChip label={status.label} tone={status.tone} />
+          {/* Their approved outing today was already used: this is a second one. */}
+          {request.again ? <StatusChip label="Another outing today" tone="muted" /> : null}
+        </View>
       </View>
       <View style={{ gap: space(1) }}>
         <T>{request.purpose}</T>

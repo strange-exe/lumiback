@@ -1,9 +1,11 @@
 import {
+  asksAgain,
   canAskAt,
   formNeededAt,
   freeEveningAhead,
   lengthOptions,
   plannedReturn,
+  requestStep,
   rulesLine,
 } from "./rules";
 import type { TodayRules } from "./types";
@@ -159,4 +161,38 @@ test("planned return matches the server's rule", () => {
   const noMax: TodayRules = { ...sunday, max_minutes: null };
   expect(plannedReturn(noMax, ms("11:00"), { requestedMinutes: 60 }).getTime()).toBe(ms("12:00"));
   expect(plannedReturn(noMax, ms("11:00")).getTime()).toBe(ms("20:00"));
+});
+
+describe("today's request", () => {
+  const request = (
+    status: "pending" | "approved" | "declined" | "cancelled",
+    used = false,
+    again = false,
+  ) => ({ status, used, again });
+
+  it("steps through ask, pending, approved and used", () => {
+    expect(requestStep(null)).toBe("ask");
+    expect(requestStep(request("cancelled"))).toBe("ask");
+    expect(requestStep(request("pending"))).toBe("pending");
+    expect(requestStep(request("declined"))).toBe("declined");
+    expect(requestStep(request("approved"))).toBe("approved");
+    expect(requestStep(request("approved", true))).toBe("used");
+  });
+
+  it("once today's approved outing is used, the next ask is for another outing", () => {
+    expect(asksAgain(request("approved", true))).toBe(true);
+    // The second request, and what becomes of it, stays "another outing".
+    expect(asksAgain(request("pending", false, true))).toBe(true);
+    expect(asksAgain(request("approved", false, true))).toBe(true);
+    expect(asksAgain(request("declined", false, true))).toBe(true);
+    expect(asksAgain(request("cancelled", false, true))).toBe(true);
+  });
+
+  it("the first outing of the day is not another one", () => {
+    expect(asksAgain(null)).toBe(false);
+    expect(asksAgain(request("pending"))).toBe(false);
+    expect(asksAgain(request("approved"))).toBe(false);
+    expect(asksAgain(request("declined"))).toBe(false);
+    expect(asksAgain(request("cancelled"))).toBe(false);
+  });
 });

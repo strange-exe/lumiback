@@ -1,5 +1,25 @@
 import { formatMinutes, formatTime } from "@/lib/time";
-import type { TodayRules } from "@/lib/types";
+import type { OutingRequest, TodayRules } from "@/lib/types";
+
+/** Where today's outing request stands, as Today shows it ("used": approved and gone out on). */
+export type RequestStep = "ask" | "declined" | "pending" | "approved" | "used";
+
+export function requestStep(request: Pick<OutingRequest, "status" | "used"> | null): RequestStep {
+  if (!request || request.status === "cancelled") return "ask";
+  if (request.status === "approved") return request.used ? "used" : "approved";
+  return request.status;
+}
+
+/**
+ * Is the next (or this) request for another outing today? Once today's approved outing is used
+ * the student can ask the hostel office for another, which needs approval like the first; the
+ * server marks such a request `again`.
+ */
+export function asksAgain(
+  request: Pick<OutingRequest, "status" | "used" | "again"> | null,
+): boolean {
+  return requestStep(request) === "used" || (request?.again ?? false);
+}
 
 /**
  * Today's outing rules, in words. The server decides (backend/app/services/rules.py); this only

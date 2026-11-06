@@ -8,7 +8,15 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
-import { canAskAt, formNeededAt, freeEveningAhead, plannedReturn, rulesLine } from "@/lib/rules";
+import {
+  asksAgain,
+  canAskAt,
+  formNeededAt,
+  freeEveningAhead,
+  plannedReturn,
+  requestStep,
+  rulesLine,
+} from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
   Campus,
@@ -329,7 +337,7 @@ function AtHostel({
   const line = rules ? rulesLine(rules, now) : null;
   const formNeeded = rules !== null && formNeededAt(rules, now);
   const needsApproval = formNeeded && !approved(request);
-  const used = request?.status === "approved" && request.used;
+  const used = requestStep(request) === "used";
   // Rules not loaded (offline): the server decides, so offer everything. Not set up at all:
   // there's nothing to tap out against, so the hero steps back like on a closed day.
   const canGoOut = rulesStatus !== "none" && (!line || (line.open && !needsApproval));
@@ -362,7 +370,7 @@ function AtHostel({
           ? request?.status === "pending"
             ? "Your request is with the hostel office. Once they approve it, scan at the gate."
             : used
-              ? `You've used today's approved outing. You get one approved outing a day.${freeEveningNote(rules!, now)}`
+              ? `You've used today's approved outing. You can ask the hostel office for another below; it needs their OK too.${freeEveningNote(rules!, now)}`
               : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
           : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
 
@@ -688,6 +696,10 @@ function RulesCard({
   // Asking works from the morning, before outings open, so it can be approved in time.
   const canAsk = canAskAt(rules, now);
   const live = request && request.status !== "cancelled" ? request : null;
+  const step = requestStep(request);
+  // After using today's approved outing, the next ask is for another one (approved the same way).
+  const again = asksAgain(request);
+  const askLabel = again ? "Ask for another outing" : "Ask for today's outing";
 
   const cancel = async (id: string): Promise<void> => {
     setBusy(true);
@@ -759,11 +771,11 @@ function RulesCard({
         </Press>
       ) : null}
 
-      {canAsk && !(live?.used ?? false) ? (
+      {canAsk ? (
         <View
           style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
         >
-          {!live || live.status === "declined" ? (
+          {!live || step === "ask" || step === "declined" ? (
             <>
               {live?.status === "declined" ? (
                 <T tone="small" style={{ color: c.danger }}>
@@ -771,14 +783,22 @@ function RulesCard({
                 </T>
               ) : null}
               <Button
-                label="Ask for today's outing"
+                label={askLabel}
                 variant={live ? "secondary" : "primary"}
                 onPress={() => setAsking(true)}
               />
             </>
+          ) : step === "used" ? (
+            <>
+              <StatusChip label="Used today" tone="accent" />
+              <T tone="small">
+                {`Your approved outing for today is done. You can ask the hostel office for another; it needs their OK like the first.${freeEveningNote(rules, now)}`}
+              </T>
+              <Button label={askLabel} variant="secondary" onPress={() => setAsking(true)} />
+            </>
           ) : live.status === "pending" ? (
             <>
-              <StatusChip label="Waiting for approval" tone="accent" />
+              <RequestChips again={live.again} label="Waiting for approval" tone="accent" />
               <T tone="small">
                 {sentence(live.purpose)} You&apos;ll get a notification when the hostel office
                 decides.
@@ -793,7 +813,7 @@ function RulesCard({
             </>
           ) : (
             <>
-              <StatusChip label="Approved" tone="good" />
+              <RequestChips again={live.again} label="Approved" tone="good" />
               <T tone="small">
                 {line.closed === "before"
                   ? `Scan at the gate when you leave, from ${formatTime(rules.opens_at)}.`
@@ -814,24 +834,42 @@ function RulesCard({
           )}
           <FormError message={error} />
         </View>
-      ) : formNeeded && live?.used ? (
+      ) : formNeeded && step === "used" ? (
+        // Too late to ask for another today: just say it's done.
         <View
           style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
         >
           <StatusChip label="Used today" tone="accent" />
-          <T tone="small">
-            {`Your approved outing for today is done. You get one approved outing a day.${freeEveningNote(rules, now)}`}
-          </T>
+          <T tone="small">Your approved outing for today is done.</T>
         </View>
       ) : null}
       {rules.needs_form ? (
         <RequestSheet
           open={asking}
           rules={rules}
+          again={again}
           onClose={() => setAsking(false)}
           onSent={onChange}
         />
       ) : null}
+    </View>
+  );
+}
+
+/** A request's status chip, after an "Another outing" one when it's a second outing today. */
+function RequestChips({
+  again,
+  label,
+  tone,
+}: {
+  again: boolean;
+  label: string;
+  tone: "accent" | "good";
+}): ReactNode {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
+      {again ? <StatusChip label="Another outing" tone="muted" /> : null}
+      <StatusChip label={label} tone={tone} />
     </View>
   );
 }

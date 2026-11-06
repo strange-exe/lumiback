@@ -13,6 +13,7 @@ import type {
   OfficeRequest,
   OfficeStudent,
   OfficeScanPage,
+  PasswordLinkSent,
   Person,
   Role,
   RuleSet,
@@ -55,6 +56,13 @@ export const office = {
     api<Person>(`/admin/users/${encodeURIComponent(userId)}/role`, {
       method: "POST",
       body: { role, hostel_ids: role === "warden" ? hostelIds : [] },
+    }),
+  /** Admins only, students only: emails a link to choose a password. For an active account
+   * it's a reset (the old password stops working and they're signed out everywhere); for an
+   * invited one, the set-up link again. */
+  sendPasswordLink: (userId: string) =>
+    api<PasswordLinkSent>(`/admin/users/${encodeURIComponent(userId)}/password-link`, {
+      method: "POST",
     }),
 
   /** Read-only here; a warden gets just the sets their hostels follow. */
