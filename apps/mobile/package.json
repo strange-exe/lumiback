@@ -44,6 +44,9 @@
     "prettier": "^3.9.9",
     "typescript": "~6.0.3"
   },
+  "overrides": {
+    "node-forge": "^1.4.3"
+  },
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
