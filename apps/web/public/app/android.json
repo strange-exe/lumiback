@@ -1,51 +1,51 @@
 {
   "preview": {
-    "build": 2,
+    "build": 3,
     "min_build": 1,
     "url": "https://lumiback.abhinesh.codes/download",
-    "notes": "From now on, the app updates itself.",
-    "size": 123997429,
-    "md5": "78a9ed2676917a3034cfffcbfac9f755",
+    "notes": "Safer taps, and Send my location asks to turn location on.",
+    "size": 124047997,
+    "md5": "28f2f8a93eea1483bf6bd36a669d4ff6",
     "apks": {
       "arm64-v8a": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-arm64-v8a.apk",
-        "size": 54455108,
-        "md5": "794dda573e37ed999be79f633314594d"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback-arm64-v8a.apk",
+        "size": 54505676,
+        "md5": "a23d02df12208bf629a6474584ca2579"
       },
       "armeabi-v7a": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-armeabi-v7a.apk",
-        "size": 47015786,
-        "md5": "84dfad4af8022ce00148948aabe317be"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback-armeabi-v7a.apk",
+        "size": 47066354,
+        "md5": "9b7220695acf200a8afa53035c49a691"
       },
       "universal": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
-        "size": 123997429,
-        "md5": "78a9ed2676917a3034cfffcbfac9f755"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback.apk",
+        "size": 124047997,
+        "md5": "28f2f8a93eea1483bf6bd36a669d4ff6"
       }
     }
   },
   "production": {
-    "build": 2,
+    "build": 3,
     "min_build": 1,
     "url": "https://lumiback.abhinesh.codes/download",
-    "notes": "From now on, the app updates itself.",
-    "size": 123997429,
-    "md5": "78a9ed2676917a3034cfffcbfac9f755",
+    "notes": "Safer taps, and Send my location asks to turn location on.",
+    "size": 124047997,
+    "md5": "28f2f8a93eea1483bf6bd36a669d4ff6",
     "apks": {
       "arm64-v8a": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-arm64-v8a.apk",
-        "size": 54455108,
-        "md5": "794dda573e37ed999be79f633314594d"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback-arm64-v8a.apk",
+        "size": 54505676,
+        "md5": "a23d02df12208bf629a6474584ca2579"
       },
       "armeabi-v7a": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback-armeabi-v7a.apk",
-        "size": 47015786,
-        "md5": "84dfad4af8022ce00148948aabe317be"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback-armeabi-v7a.apk",
+        "size": 47066354,
+        "md5": "9b7220695acf200a8afa53035c49a691"
       },
       "universal": {
-        "url": "https://github.com/strange-exe/lumiback/releases/download/build-2/lumiback.apk",
-        "size": 123997429,
-        "md5": "78a9ed2676917a3034cfffcbfac9f755"
+        "url": "https://github.com/strange-exe/lumiback/releases/download/build-3/lumiback.apk",
+        "size": 124047997,
+        "md5": "28f2f8a93eea1483bf6bd36a669d4ff6"
       }
     }
   }
