@@ -447,11 +447,31 @@ export interface AdminUser {
   /** The hostel they live in (students), so the office can move them. */
   home_hostel_id?: string | null;
   home_hostel?: string | null;
-  /** invited: added from a CSV, no password chosen yet; reset: an admin sent a password link. */
+  /**
+   * invited: added (CSV or one at a time), no password chosen yet; reset: an admin sent a
+   * password link; off: the hostel office turned the account off.
+   */
   account?: AccountState;
 }
 
-export type AccountState = "active" | "invited" | "reset";
+export type AccountState = "active" | "invited" | "reset" | "off";
+
+/** GET /admin/students: someone the office looks after (a warden: their hostels' students). */
+export interface OfficeStudent {
+  id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  role: Role;
+  hostel_id: string | null;
+  hostel: string | null;
+  phone: string | null;
+  emergency_name: string | null;
+  emergency_relation: string | null;
+  emergency_phone: string | null;
+  status: "in" | "out" | "overdue";
+  account: AccountState;
+}
 
 // ---------- adding students from a CSV, set-password links ----------
 

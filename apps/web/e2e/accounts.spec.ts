@@ -39,7 +39,8 @@ test.describe("as an admin", () => {
     await expect(page.getByText(/^Added 1\./)).toBeVisible();
 
     await page.goto(`/admin/people?q=${id}`);
-    await expect(page.getByText("Invited, not set up")).toBeVisible();
+    const isha = page.getByRole("listitem").filter({ hasText: "Isha Rao" });
+    await expect(isha.getByText("Hasn't set up")).toBeVisible();
     await expect(page.getByRole("button", { name: "Send password link" })).toBeVisible();
     expect(errors).toEqual([]);
   });

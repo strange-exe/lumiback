@@ -32,7 +32,13 @@ export async function signIn(_: FormState, form: FormData): Promise<FormState> {
       clientIp: await visitorIp(),
     });
   } catch (error) {
-    if (error instanceof ApiError && error.status === 403) {
+    // 403 is either "Email not verified" (send them to enter their code) or an account the
+    // hostel office turned off, whose message is shown as the backend wrote it.
+    if (
+      error instanceof ApiError &&
+      error.status === 403 &&
+      error.detail === "Email not verified"
+    ) {
       redirect(`/verify?email=${encodeURIComponent(email)}`);
     }
     return failure(error, { email });

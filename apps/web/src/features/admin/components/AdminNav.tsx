@@ -22,7 +22,8 @@ const SECTIONS: readonly Section[] = [
   { href: "/admin/hostel", label: "My hostel", for: ["warden"] },
   { href: "/admin/gates", label: "Gates", for: ["admin"] },
   { href: "/admin/rules", label: "Rules", for: ["admin", "head_warden"] },
-  { href: "/admin/people", label: "People", for: ["admin"] },
+  // Wardens see their own hostels' students there (details, turning an account off).
+  { href: "/admin/people", label: "People", for: "staff" },
   { href: "/admin/settings", label: "Settings", for: ["admin"] },
 ];
 

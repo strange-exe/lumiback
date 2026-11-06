@@ -1,11 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
+import { accountFilter, editBody, personBody } from "@/features/admin/accounts";
 import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
 import { correctionBody } from "@/features/outings/corrections";
 import { callBackend } from "@/lib/backend";
-import type { FormState, GateCreated, PasswordLinkSent, StudentImportResult } from "@/lib/types";
+import type {
+  AdminUser,
+  FormState,
+  GateCreated,
+  PasswordLinkSent,
+  StudentImportResult,
+  StudentImportRow,
+} from "@/lib/types";
 
 /** Gate forms also hand back a kiosk token, the one time it exists in plain text. */
 export interface GateFormState extends FormState {
@@ -284,4 +293,127 @@ export async function sendPasswordLink(_: FormState, form: FormData): Promise<Fo
   if ("error" in result) return result.error;
   revalidatePath("/admin/people");
   return { error: null, notice: `Sent to ${result.ok.email}` };
+}
+
+// ---------- account controls, adding one person ----------
+
+/**
+ * Corrects someone's name, roll no., phone, or (admins) email. Wardens may do this for their own
+ * hostels' students; the backend decides who may change what.
+ */
+export async function editAccount(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "user_id");
+  const fields = {
+    name: text(form, "name"),
+    roll_no: text(form, "roll_no"),
+    phone: text(form, "phone"),
+    email: text(form, "email"),
+  };
+  const checked = editBody({
+    name: fields.name,
+    rollNo: fields.roll_no,
+    phone: fields.phone,
+    phoneKnown: text(form, "phone_known") === "true",
+    email: fields.email,
+    emailWas: text(form, "email_was"),
+  });
+  if ("error" in checked) return { error: checked.error, fields };
+  const result = await attempt(
+    () =>
+      callBackend<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        token,
+        body: checked.body,
+      }),
+    fields,
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  return { error: null, notice: "Details saved." };
+}
+
+/** Turns an account off (signed out everywhere, history kept) or back on. */
+export async function setAccountOn(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "user_id");
+  const on = text(form, "on") === "true";
+  const result = await attempt(() =>
+    callBackend<AdminUser>(`/admin/users/${encodeURIComponent(id)}/active`, {
+      method: "POST",
+      token,
+      body: { on },
+    }),
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  revalidatePath("/admin");
+  return { error: null, notice: on ? "Turned on." : "Turned off." };
+}
+
+/**
+ * Removes an account nobody has set up yet (admins only); its emailed link stops working. The
+ * row goes from the list, so the page says it was done (a fixed message, nothing from the
+ * address bar is shown).
+ */
+export async function cancelInvite(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "user_id");
+  const result = await attempt(() =>
+    callBackend<void>(`/admin/users/${encodeURIComponent(id)}/invite`, {
+      method: "DELETE",
+      token,
+    }),
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  const back = new URLSearchParams({ cancelled: "1" });
+  const q = text(form, "q").slice(0, 100);
+  const account = accountFilter(text(form, "account"));
+  if (q) back.set("q", q);
+  if (account) back.set("account", account);
+  redirect(`/admin/people?${back.toString()}`);
+}
+
+/** What adding one person hands back: who was added, for the message beside the button. */
+export interface AddPersonState extends FormState {
+  added?: { name: string; email: string } | null;
+}
+
+/** Adds one student or staff member (admins only) and emails them a link to set up. */
+export async function addPerson(_: AddPersonState, form: FormData): Promise<AddPersonState> {
+  const token = await tokenOrSignIn();
+  const fields = {
+    name: text(form, "name"),
+    role: text(form, "role"),
+    student_id: text(form, "student_id"),
+    email: text(form, "email"),
+    hostel_id: text(form, "hostel_id"),
+    phone: text(form, "phone"),
+    parent_name: text(form, "parent_name"),
+    parent_phone: text(form, "parent_phone"),
+  };
+  const checked = personBody({
+    name: fields.name,
+    role: fields.role,
+    studentId: fields.student_id,
+    email: fields.email,
+    hostelId: fields.hostel_id,
+    phone: fields.phone,
+    parentName: fields.parent_name,
+    parentPhone: fields.parent_phone,
+  });
+  if ("error" in checked) return { error: checked.error, fields };
+  const result = await attempt(
+    () =>
+      callBackend<StudentImportRow>("/admin/people", {
+        method: "POST",
+        token,
+        body: checked.body,
+      }),
+    fields,
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  return { error: null, added: { name: result.ok.name, email: result.ok.email } };
 }

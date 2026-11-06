@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-import { ADMIN_STATE } from "../playwright.config";
+import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
 
 import {
   allowLocation,
@@ -27,8 +27,8 @@ test.describe.configure({ timeout: 60_000 });
 
 interface Screen {
   name: string;
-  /** true: the seeded student; "admin": the seeded admin; false: signed out. */
-  auth: boolean | "admin";
+  /** true: the seeded student; "admin"/"warden": that seeded staff member; false: signed out. */
+  auth: boolean | "admin" | "warden";
   prepare: (page: Page) => Promise<void>;
   /** The one thing that must be visible without scrolling. */
   primary: (page: Page) => ReturnType<Page["getByRole"] | Page["getByText"]>;
@@ -207,6 +207,24 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("button", { name: "Search" }),
   },
   {
+    name: "admin-people-invited",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/people?account=invited")),
+    primary: (page) => page.getByRole("link", { name: "Hasn't set up" }),
+  },
+  {
+    name: "admin-people-off",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/people?account=off")),
+    primary: (page) => page.getByRole("link", { name: "Turned off" }),
+  },
+  {
+    name: "warden-people",
+    auth: "warden",
+    prepare: async (page) => void (await page.goto("/admin/people")),
+    primary: (page) => page.getByRole("button", { name: "Search" }),
+  },
+  {
     name: "admin-people-import",
     auth: "admin",
     prepare: async (page) => void (await page.goto("/admin/people/import")),
@@ -251,8 +269,11 @@ for (const viewport of VIEWPORTS) {
         page: studentPage,
         browser,
       }) => {
-        const adminContext =
-          screen.auth === "admin" ? await browser.newContext({ storageState: ADMIN_STATE }) : null;
+        const staffState =
+          screen.auth === "admin" ? ADMIN_STATE : screen.auth === "warden" ? WARDEN_STATE : null;
+        const adminContext = staffState
+          ? await browser.newContext({ storageState: staffState })
+          : null;
         const page = adminContext ? await adminContext.newPage() : studentPage;
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.emulateMedia({ colorScheme: scheme });

@@ -369,14 +369,20 @@ test.describe("as a warden", () => {
     const errors = watchForErrors(page);
     await page.goto("/admin");
     const nav = page.getByRole("navigation", { name: "Hostel office" });
-    for (const name of ["Register", "Requests", "Escalations", "Scans", "My hostel"]) {
+    // People: their own hostels' students (account controls), not roles or adding people.
+    for (const name of ["Register", "Requests", "Escalations", "Scans", "My hostel", "People"]) {
       await expect(nav.getByRole("link", { name })).toBeVisible();
     }
-    for (const name of ["Gates", "Rules", "People", "Settings"]) {
+    for (const name of ["Gates", "Rules", "Settings"]) {
       await expect(nav.getByRole("link", { name })).toHaveCount(0);
     }
     expect(errors).toEqual([]);
-    for (const path of ["/admin/gates", "/admin/rules", "/admin/people", "/admin/settings"]) {
+    for (const path of [
+      "/admin/gates",
+      "/admin/rules",
+      "/admin/people/import",
+      "/admin/settings",
+    ]) {
       expect((await page.goto(path))?.status(), path).toBe(404);
     }
   });
@@ -397,23 +403,23 @@ test.describe("as a warden", () => {
 test.describe("as a head warden", () => {
   test.use({ storageState: HEAD_WARDEN_STATE });
 
-  test("sees every hostel's office and the rules, not gates, people or settings", async ({
+  test("sees every hostel's office, the rules and students, not gates or settings", async ({
     page,
   }) => {
     const errors = watchForErrors(page);
     await page.goto("/admin");
     await expect(page.getByText("Head warden", { exact: true })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Hostel office" });
-    for (const name of ["Register", "Requests", "Escalations", "Scans", "Rules"]) {
+    for (const name of ["Register", "Requests", "Escalations", "Scans", "Rules", "People"]) {
       await expect(nav.getByRole("link", { name })).toBeVisible();
     }
-    for (const name of ["Gates", "People", "Settings", "My hostel"]) {
+    for (const name of ["Gates", "Settings", "My hostel"]) {
       await expect(nav.getByRole("link", { name })).toHaveCount(0);
     }
     await nav.getByRole("link", { name: "Rules" }).click();
     await expect(page.getByRole("heading", { name: "Outing rules" })).toBeVisible();
     expect(errors).toEqual([]);
-    for (const path of ["/admin/gates", "/admin/people", "/admin/settings"]) {
+    for (const path of ["/admin/gates", "/admin/people/import", "/admin/settings"]) {
       expect((await page.goto(path))?.status(), path).toBe(404);
     }
   });

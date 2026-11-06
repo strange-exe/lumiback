@@ -13,6 +13,7 @@ import type {
   Gate,
   Holiday,
   Hostel,
+  OfficeStudent,
   RuleSet,
   ScanResult,
 } from "@/lib/types";
@@ -52,6 +53,22 @@ export const adminApi = {
 
   users(token: string, q: string): Promise<AdminUser[]> {
     return callBackend<AdminUser[]>(`/admin/users?q=${encodeURIComponent(q)}`, { token });
+  },
+
+  /**
+   * People the office looks after, with their phone numbers: a warden's own hostels' students,
+   * or (for an admin) anyone matching `q`. `account`: only those who haven't set up, or only
+   * accounts turned off (for an admin, staff too).
+   */
+  students(
+    token: string,
+    filters: { q?: string; account?: "invited" | "off" },
+  ): Promise<OfficeStudent[]> {
+    const query = new URLSearchParams();
+    if (filters.q) query.set("q", filters.q);
+    if (filters.account) query.set("account", filters.account);
+    const search = query.toString();
+    return callBackend<OfficeStudent[]>(`/admin/students${search ? `?${search}` : ""}`, { token });
   },
 
   requests(token: string): Promise<AdminRequest[]> {
