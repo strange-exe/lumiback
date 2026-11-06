@@ -128,6 +128,7 @@ async def recipients(session: AsyncSession, hostels: list[uuid.UUID | None]) -> 
             .outerjoin(WardenHostel, WardenHostel.user_id == User.id)
             .where(
                 User.email_verified_at.is_not(None),
+                User.deactivated_at.is_(None),
                 or_(
                     User.role.in_(EVERY_HOSTEL),
                     and_(User.role == UserRole.WARDEN, WardenHostel.hostel_id.in_(hostels)),

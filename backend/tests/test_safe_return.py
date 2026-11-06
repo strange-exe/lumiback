@@ -244,7 +244,7 @@ def test_return_ends_the_link_and_says_back_once(client, db, riya):
     assert watch(client, session_id, token).status_code == 403
     back = to_contact(client)[1:]
     assert [m.subject for m in back] == ["Lumiback: Riya Verma is back"]
-    assert back[0].html is None
+    assert back[0].html and "is back at the hostel" in back[0].html
     mine = client.get(f"/sessions/{session_id}", headers=riya).json()
     assert (mine["status"], mine["ended_reason"]) == ("ended", "returned")
     # The contact's address is forgotten once the outing is over.
@@ -280,7 +280,8 @@ def test_overdue_emails_the_contact_once_with_the_link(client, db, riya):
     late_by(db, 31)
     assert run_sweep(client).overdue_notified == 1
     overdue = to_contact(client)[1:]
-    assert len(overdue) == 1 and "30 minutes past" in overdue[0].subject
+    assert len(overdue) == 1 and " was due back at " in overdue[0].subject
+    assert "minutes ago" not in (overdue[0].html or "")  # a time, never a relative phrase
     assert link_in(overdue[0]) == (session_id, token)  # the same link
     assert "+919876543210" in overdue[0].body  # her number, to call
     html = overdue[0].html or ""  # formatted, inbox-tested 2026-11-06

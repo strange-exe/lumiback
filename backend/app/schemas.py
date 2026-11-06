@@ -90,6 +90,18 @@ class RegisteredOut(BaseModel):
 class LoginIn(Input):
     email: EmailStr
     password: str = Field(max_length=1024)
+    # For the signed-in devices list (services/device_label.py): the app names itself
+    # ("Lumiback app on Android 14"); the website passes the browser's user agent, which is
+    # reduced to "Chrome on Windows" and never stored as is.
+    device: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=60),
+            BeforeValidator(_no_control_characters),
+        ]
+        | None
+    ) = None
+    user_agent: str | None = Field(default=None, max_length=512)
 
 
 class EmailIn(Input):
@@ -114,6 +126,16 @@ class DeleteAccountIn(Input):
 
 class RefreshIn(Input):
     refresh_token: str = Field(min_length=1, max_length=200)
+
+
+class DeviceOut(BaseModel):
+    """One signed-in device (a sign-in that's still on)."""
+
+    id: uuid.UUID
+    device: str | None  # None: signed in before devices were named, or not recognised
+    signed_in_at: datetime
+    last_active_at: datetime
+    current: bool  # the device asking
 
 
 class TokenOut(BaseModel):
@@ -752,8 +774,9 @@ class AdminUser(BaseModel):
     hostels: list[str] = []
     home_hostel_id: uuid.UUID | None = None  # the hostel they live in (students), to move them
     home_hostel: str | None = None
-    # invited: imported, hasn't chosen a password; reset: password reset, not chosen yet
-    account: Literal["active", "invited", "reset"] = "active"
+    # invited: imported, hasn't chosen a password; reset: password reset, not chosen yet;
+    # off: turned off by the hostel office
+    account: Literal["active", "invited", "reset", "off"] = "active"
 
 
 class StudentOut(BaseModel):
@@ -771,7 +794,7 @@ class StudentOut(BaseModel):
     emergency_relation: str | None
     emergency_phone: str | None
     status: Literal["in", "out", "overdue"]  # right now
-    account: Literal["active", "invited", "reset"] = "active"  # see AdminUser
+    account: Literal["active", "invited", "reset", "off"] = "active"  # see AdminUser
 
 
 class StudentHostelIn(Input):
@@ -786,12 +809,51 @@ class RoleIn(Input):
     hostel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 
 
+def _roll_no(value: str) -> str:
+    if not (3 <= len(value) <= 32 and value.isascii() and value.isalnum()):
+        raise ValueError("A roll no. is 3 to 32 letters or digits.")
+    return value
+
+
+RollNo = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=64), AfterValidator(_roll_no)
+]
+
+
+class AccountEditIn(Input):
+    """Corrects the details someone was set up with. Only the fields sent change; send
+    `roll_no` or `phone` as null to clear it. Changing `email` is for admins only."""
+
+    name: Name | None = None
+    email: ContactEmail | None = None
+    roll_no: RollNo | None = None
+    phone: Phone | None = None
+
+
+class AccountOn(Input):
+    on: bool
+
+
 # ---------- adding students in bulk, set-password links ----------
 
 
 class StudentImportIn(Input):
     csv: str = Field(min_length=1, max_length=600_000)  # the service caps it at 512 KB
     confirm: bool = False  # False: only check the rows
+
+
+class PersonIn(Input):
+    """One person, added from a form: the same columns and checks as a row of the CSV import
+    (the service validates the values). They're emailed a link to choose a password."""
+
+    name: str = Field(max_length=200)
+    role: Literal["student", "warden", "head_warden", "admin"] = "student"
+    student_id: str | None = Field(default=None, max_length=64)  # required for students
+    email: str | None = Field(default=None, max_length=254)  # defaults from the student ID
+    hostel_id: uuid.UUID | None = None  # a student's hostel; the one a warden looks after
+    phone: str | None = Field(default=None, max_length=32)
+    parent_name: str | None = Field(default=None, max_length=200)
+    parent_phone: str | None = Field(default=None, max_length=32)
 
 
 class StudentImportRow(BaseModel):

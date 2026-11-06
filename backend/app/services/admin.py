@@ -361,10 +361,15 @@ async def person(session: AsyncSession, u: User) -> AdminUser:
 
 
 async def students(
-    session: AsyncSession, staff: Staff, hostel_id: uuid.UUID | None, q: str | None
+    session: AsyncSession,
+    staff: Staff,
+    hostel_id: uuid.UUID | None,
+    q: str | None,
+    account: str | None = None,
 ) -> list[StudentOut]:
     """People the office looks after: a hostel's students, or a search. A warden sees their
-    own hostels' students only; an admin's search also finds staff (to change their role)."""
+    own hostels' students only; an admin's search (or `account` list) also finds staff.
+    `account`: "invited" (haven't set up yet) or "off" (turned off) only."""
     query = (
         select(User, Hostel.name)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
@@ -383,8 +388,12 @@ async def students(
                 func.lower(func.coalesce(User.roll_no, "")).like(pattern),
             )
         )
-    elif hostel_id is None and staff.every_hostel:
+    elif hostel_id is None and staff.every_hostel and account is None:
         query = query.where(User.hostel_id.is_not(None))  # no filter: everyone in a hostel
+    if account == "invited":
+        query = query.where(User.email_verified_at.is_(None), User.deactivated_at.is_(None))
+    elif account == "off":
+        query = query.where(User.deactivated_at.is_not(None))
     rows = (await session.execute(query)).all()
     now = datetime.now(UTC)
     open_outings = {
@@ -418,7 +427,10 @@ def _student_out(u: User, hostel: str | None, open_: Outing | None, now: datetim
 
 def account_state(u: User) -> str:
     """invited: imported, no password chosen yet. reset: an admin reset the password and the
-    student hasn't chosen a new one. (Self sign-ups are verified before their row exists.)"""
+    student hasn't chosen a new one. (Self sign-ups are verified before their row exists.)
+    off: the hostel office turned the account off (whatever its password state)."""
+    if u.deactivated_at is not None:
+        return "off"
     if u.email_verified_at is None:
         return "invited"
     return "active" if has_password(u) else "reset"

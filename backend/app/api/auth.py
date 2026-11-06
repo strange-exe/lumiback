@@ -1,5 +1,7 @@
 """Authentication: register, verify email, login, refresh, logout, me, delete account."""
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 
@@ -19,6 +21,7 @@ from app.models import LinkPurpose, SessionStatus, ShareSession, ShareViewer, Us
 from app.realtime import AccessChanged
 from app.schemas import (
     DeleteAccountIn,
+    DeviceOut,
     EmailIn,
     LinkInfoOut,
     LinkTokenIn,
@@ -37,7 +40,13 @@ from app.security.breached import BREACHED
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
-from app.services import account_links, password_reset, refresh_tokens, verification
+from app.services import (
+    account_links,
+    device_label,
+    password_reset,
+    refresh_tokens,
+    verification,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -53,10 +62,15 @@ FORGOT_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
 FORGOT_PER_IP = Limit(max_hits=10, window_seconds=3600)
 RESET_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 LINK_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
+DEVICE_SIGN_OUTS = Limit(max_hits=30, window_seconds=3600)
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 NOT_VERIFIED = HTTPException(status.HTTP_403_FORBIDDEN, detail="Email not verified")
+TURNED_OFF = HTTPException(
+    status.HTTP_403_FORBIDDEN,
+    detail="This account has been turned off. Ask your hostel office to turn it back on.",
+)
 INVALID_CODE = HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
 LINK_FAILED = HTTPException(
     status.HTTP_404_NOT_FOUND,
@@ -64,9 +78,11 @@ LINK_FAILED = HTTPException(
 )
 
 
-def _token_pair(settings: SettingsDep, user: User, refresh: str) -> TokenOut:
+def _token_pair(settings: SettingsDep, user: User, refresh: str, family_id: uuid.UUID) -> TokenOut:
     return TokenOut(
-        access_token=create_access_token(user.id, settings.jwt_secret.get_secret_value()),
+        access_token=create_access_token(
+            user.id, settings.jwt_secret.get_secret_value(), session_id=family_id
+        ),
         expires_in=int(ACCESS_TTL.total_seconds()),
         refresh_token=refresh,
     )
@@ -320,13 +336,18 @@ async def login(
     assert user is not None
 
     await limiter.reset("login:email", email)
+    if not user.active:
+        raise TURNED_OFF  # only revealed after the correct password; first, so a turned-off
+        # account that was never verified isn't sent to the verify page
     if not user.email_verified:
-        raise NOT_VERIFIED  # only revealed after the correct password
+        raise NOT_VERIFIED  # likewise
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
-    refresh = await refresh_tokens.issue(session, user.id)
+    family = uuid.uuid4()  # this sign-in: one entry in the signed-in devices list
+    device = device_label.label(body.device, body.user_agent or request.headers.get("user-agent"))
+    refresh = await refresh_tokens.issue(session, user.id, family_id=family, device=device)
     await session.commit()
-    return _token_pair(settings, user, refresh)
+    return _token_pair(settings, user, refresh, family)
 
 
 @router.post("/refresh")
@@ -339,19 +360,71 @@ async def refresh(
 ) -> TokenOut:
     await enforce(limiter, "refresh:ip", client_ip(request), REFRESH_PER_IP)
     try:
-        user_id, successor = await refresh_tokens.rotate(session, body.refresh_token)
+        rotated = await refresh_tokens.rotate(session, body.refresh_token)
     except InvalidToken:
         raise INVALID_REFRESH from None
-    user = await session.get(User, user_id)
-    if user is None:
+    user = await session.get(User, rotated.user_id)
+    if user is None or not user.active:  # turning off revokes these; defense in depth
         raise INVALID_REFRESH
-    return _token_pair(settings, user, successor)
+    return _token_pair(settings, user, rotated.token, rotated.family_id)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(body: RefreshIn, session: SessionDep) -> Response:
     await refresh_tokens.revoke_by_token(session, body.refresh_token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- signed-in devices (a lost phone) ----------
+
+
+def _current(request: Request) -> uuid.UUID | None:
+    return getattr(request.state, "session_id", None)
+
+
+@router.get("/devices")
+async def list_devices(user: CurrentUser, request: Request, session: SessionDep) -> list[DeviceOut]:
+    """Where this account is signed in, most recently active first."""
+    current = _current(request)
+    found = await refresh_tokens.devices(session, user.id)
+    await session.commit()
+    return [
+        DeviceOut(
+            id=d.id,
+            device=d.device,
+            signed_in_at=d.signed_in_at,
+            last_active_at=d.last_active_at,
+            current=d.id == current,
+        )
+        for d in found
+    ]
+
+
+@router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def sign_out_device(
+    device_id: uuid.UUID, user: CurrentUser, session: SessionDep, limiter: LimiterDep
+) -> Response:
+    """Signs that device out at once: its sign-in stops working and it gets no more pushes.
+    For a lost phone, also change the password (that signs out everywhere)."""
+    await enforce(limiter, "devices:user", str(user.id), DEVICE_SIGN_OUTS)
+    if not await refresh_tokens.sign_out_device(session, user.id, device_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such device")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/devices/sign-out-others")
+async def sign_out_other_devices(
+    user: CurrentUser, request: Request, session: SessionDep, limiter: LimiterDep
+) -> dict[str, int]:
+    """Every device except this one. Older apps' tokens (no device id) are all signed out."""
+    await enforce(limiter, "devices:user", str(user.id), DEVICE_SIGN_OUTS)
+    current = _current(request)
+    if current is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Sign out and back in on this device first, then try again.",
+        )
+    return {"signed_out": await refresh_tokens.sign_out_others(session, user.id, current)}
 
 
 @router.get("/me")

@@ -21,9 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.email import Mailer
 from app.email_templates import account_link_email
-from app.models import AccountLink, LinkPurpose, PasswordReset, RefreshToken, User
+from app.models import AccountLink, LinkPurpose, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
 from app.security.passwords import hash_password, password_problem
+from app.services.refresh_tokens import sign_out_everywhere
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ async def reset(
     purpose = LinkPurpose.RESET if user.email_verified else LinkPurpose.INVITE
     if purpose is LinkPurpose.RESET:
         user.password_hash = NO_PASSWORD
-        await _sign_out_everywhere(session, user.id, datetime.now(UTC))
+        await sign_out_everywhere(session, user.id, datetime.now(UTC))
     token = await issue(session, user.id, purpose, pepper, created_by)
     await session.commit()
     return purpose, token
@@ -184,18 +185,10 @@ async def finish(
         user.email_verified_at = now  # the link reached their inbox
     await session.execute(delete(AccountLink).where(AccountLink.user_id == user.id))
     await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
-    await _sign_out_everywhere(session, user.id, now)
+    await sign_out_everywhere(session, user.id, now)
     await session.commit()
     await session.refresh(user)
     return user
-
-
-async def _sign_out_everywhere(session: AsyncSession, user_id: uuid.UUID, now: datetime) -> None:
-    await session.execute(
-        update(RefreshToken)
-        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
-        .values(revoked_at=now)
-    )
 
 
 async def delete_expired(session: AsyncSession, now: datetime) -> int:

@@ -195,11 +195,17 @@ class User(Base):
     # watch link for that outing). Never emailed otherwise.
     emergency_email: Mapped[str | None] = mapped_column(String(254))
     email_verified_at: Mapped[datetime | None]
+    # Turned off by the hostel office: can't sign in, refresh or get pushes; history is kept.
+    deactivated_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
 
     @property
     def email_verified(self) -> bool:
         return self.email_verified_at is not None
+
+    @property
+    def active(self) -> bool:
+        return self.deactivated_at is None
 
 
 class Outing(Base):
@@ -523,6 +529,9 @@ class PushToken(Base):
     platform: Mapped[str] = mapped_column(String(16))
     # Notification channels the student switched off in the app (e.g. "follow-requests").
     muted: Mapped[list[str]] = mapped_column(ARRAY(String(32)), server_default=text("'{}'"))
+    # The sign-in (refresh-token family) that registered it: signing that device out drops it,
+    # so a lost phone stops getting notifications. Null for apps that registered before.
+    family_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     created_at: Mapped[datetime] = created_at()
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -676,6 +685,11 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime]
     revoked_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
+    # The signed-in device a family belongs to, carried along every rotation: a short label
+    # ("Chrome on Windows", "Lumiback app on Android"; never the raw user agent) and when that
+    # sign-in happened. Null for tokens issued before 2026-11-07.
+    device: Mapped[str | None] = mapped_column(String(80))
+    signed_in_at: Mapped[datetime | None]
 
 
 class Contact(Base):

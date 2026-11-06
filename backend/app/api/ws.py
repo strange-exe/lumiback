@@ -28,6 +28,7 @@ from app.realtime import Event, Hub, LocationUpdated
 from app.security.codes import hash_guest_token
 from app.security.tokens import InvalidToken, decode_access_token
 from app.services import locations as loc_svc
+from app.services import refresh_tokens
 from app.services.authz import Access, Principal, Role, is_live, resolve_access
 
 router = APIRouter()
@@ -196,8 +197,13 @@ async def _authenticate(websocket: WebSocket, message: dict) -> Connection | Non
         except InvalidToken:
             return None
         async with websocket.app.state.sessionmaker() as db:
-            if await db.get(User, claims.user_id) is None:
+            user = await db.get(User, claims.user_id)
+            if user is None or not user.active:
                 return None
+            if claims.session_id is not None and not await refresh_tokens.is_live(
+                db, user.id, claims.session_id
+            ):
+                return None  # that device was signed out
         return Connection(websocket, Principal(user_id=claims.user_id), claims.expires_at)
     if isinstance(guest := message.get("guest_token"), str) and 0 < len(guest) <= 200:
         return Connection(websocket, Principal(guest_token_hash=hash_guest_token(guest)), None)

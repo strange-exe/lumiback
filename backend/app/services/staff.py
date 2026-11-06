@@ -67,7 +67,11 @@ async def staff_of(session: AsyncSession, user: User) -> Staff | None:
 async def _verified(session: AsyncSession, role: UserRole) -> list[User]:
     return list(
         await session.scalars(
-            select(User).where(User.role == role, User.email_verified_at.is_not(None))
+            select(User).where(
+                User.role == role,
+                User.email_verified_at.is_not(None),
+                User.deactivated_at.is_(None),
+            )
         )
     )
 
@@ -84,6 +88,7 @@ async def office_for(session: AsyncSession, hostel_id: uuid.UUID | None) -> list
                     WardenHostel.hostel_id == hostel_id,
                     User.role == UserRole.WARDEN,
                     User.email_verified_at.is_not(None),
+                    User.deactivated_at.is_(None),  # turned off: their hostel falls back
                 )
             )
         )

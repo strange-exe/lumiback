@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     AdminUser,
+    HubDep,
     LimiterDep,
     MailerDep,
     SessionDep,
@@ -17,8 +18,11 @@ from app.api.deps import (
     StaffUser,
     enforce,
 )
-from app.models import Gate, ScanResult, User, UserRole
+from app.models import Gate, Hostel, ScanResult, User, UserRole
+from app.realtime import AccessChanged
 from app.schemas import (
+    AccountEditIn,
+    AccountOn,
     AdminOuting,
     AdminOverview,
     AdminScanPage,
@@ -28,6 +32,7 @@ from app.schemas import (
     GateOut,
     GatePatch,
     PasswordLinkOut,
+    PersonIn,
     RoleIn,
     StudentHostelIn,
     StudentImportIn,
@@ -40,7 +45,7 @@ from app.schemas import (
 )
 from app.security.gate_codes import new_kiosk_token
 from app.security.rate_limit import Limit
-from app.services import account_links, student_import
+from app.services import account_links, accounts, student_import
 from app.services import admin as svc
 from app.services.gates import campus_settings
 
@@ -49,6 +54,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 IMPORT_CHECKS = Limit(max_hits=60, window_seconds=3600)
 IMPORT_CONFIRMS = Limit(max_hits=10, window_seconds=3600)
 PASSWORD_LINKS = Limit(max_hits=30, window_seconds=3600)
+PEOPLE_ADDED = Limit(max_hits=60, window_seconds=3600)
 
 NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 NAME_TAKEN = HTTPException(status.HTTP_409_CONFLICT, detail="A gate with that name already exists")
@@ -221,11 +227,13 @@ async def list_students(
     session: SessionDep,
     hostel_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(min_length=2, max_length=100)] = None,
+    account: Literal["invited", "off"] | None = None,
 ) -> list[StudentOut]:
-    """A hostel's students (a warden: their own hostels only), with contacts and who's out."""
+    """A hostel's students (a warden: their own hostels only), with contacts and who's out.
+    `account`: only those who haven't set up yet, or only accounts turned off."""
     if hostel_id is not None and staff.hostels is not None and hostel_id not in staff.hostels:
         raise NOT_FOUND
-    return await svc.students(session, staff, hostel_id, q)
+    return await svc.students(session, staff, hostel_id, q, account)
 
 
 @router.post("/students/{user_id}/hostel")
@@ -302,6 +310,68 @@ async def import_students(
     )
 
 
+@router.post("/people", status_code=status.HTTP_201_CREATED)
+async def add_person(
+    body: PersonIn,
+    me: AdminUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    request: Request,
+    tasks: BackgroundTasks,
+) -> StudentImportRow:
+    """Adds one person (a student or staff), checked exactly like a row of the CSV import, and
+    emails them a link to choose a password after the response."""
+    await enforce(limiter, "people:add", str(me.id), PEOPLE_ADDED)
+    hostel_name = ""
+    if body.hostel_id is not None:
+        hostel = await session.get(Hostel, body.hostel_id)
+        if hostel is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown hostel")
+        hostel_name = hostel.name
+    fields = {
+        "_line": "1",
+        "name": body.name,
+        "role": body.role.replace("_", " "),
+        "student_id": body.student_id or "",
+        "email": body.email or "",
+        "hostel": hostel_name,
+        "phone": body.phone or "",
+        "parent_name": body.parent_name or "",
+        "parent_phone": body.parent_phone or "",
+    }
+    raw = {k: v.strip() for k, v in fields.items()}
+    [row] = await student_import.check_rows(session, [raw], settings)
+    if row.status == "error":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=row.error)
+    pepper = settings.code_pepper.get_secret_value()
+    created = (
+        await student_import.save(session, [row], pepper, me.id) if row.status == "new" else []
+    )
+    if not created:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="An account already uses this email")
+    svc.audit(session, me, "people:add", f"{row.email} ({row.role.value})")
+    await session.commit()
+    tasks.add_task(
+        student_import.send_invites,
+        request.app.state.sessionmaker,
+        request.app.state.mailer,
+        created,
+        settings.web_url,
+        pepper,
+    )
+    return StudentImportRow(
+        line=1,
+        student_id=row.student_id,
+        name=row.name,
+        email=row.email,
+        hostel=row.hostel,
+        status="added",
+        error=None,
+        role=row.role.value,
+    )
+
+
 @router.post("/users/{user_id}/password-link")
 async def send_password_link(
     user_id: uuid.UUID,
@@ -322,6 +392,10 @@ async def send_password_link(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail="To change your own password, use Forgot password on the sign-in page",
+        )
+    if not target.active:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail="This account is turned off. Turn it on first."
         )
     await enforce(limiter, "password-link:admin", str(me.id), PASSWORD_LINKS)
     pepper = settings.code_pepper.get_secret_value()
@@ -368,3 +442,64 @@ async def set_role(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose at least one hostel for a warden"
         ) from None
     return await svc.person(session, target)
+
+
+# ---------- account controls (see services/accounts.py for who may do what) ----------
+
+
+@router.patch("/users/{user_id}")
+async def edit_account(
+    user_id: uuid.UUID,
+    body: AccountEditIn,
+    staff: StaffUser,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> AdminUserOut:
+    """Corrects someone's name, roll no., phone or (admins only) email."""
+    sent = body.model_fields_set
+    if "name" in sent and body.name is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="A name is needed")
+    if "email" in sent and body.email is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="An email is needed")
+    changes = accounts.Changes(
+        name=body.name,
+        email=body.email,
+        roll_no=body.roll_no,
+        roll_no_sent="roll_no" in sent,
+        phone=body.phone,
+        phone_sent="phone" in sent,
+    )
+    try:
+        target = await accounts.edit(session, staff, user_id, changes, settings)
+    except accounts.Refused as e:
+        raise HTTPException(e.status, detail=str(e)) from None
+    return await svc.person(session, target)
+
+
+@router.post("/users/{user_id}/active")
+async def turn_account(
+    user_id: uuid.UUID, body: AccountOn, staff: StaffUser, session: SessionDep, hub: HubDep
+) -> AdminUserOut:
+    """Turns an account off (signed out everywhere, history kept) or back on."""
+    try:
+        if body.on:
+            await accounts.reactivate(session, staff, user_id)
+        else:
+            for share_id in await accounts.deactivate(session, staff, user_id):
+                await hub.publish(AccessChanged(share_id))  # open streams re-check and end
+    except accounts.Refused as e:
+        raise HTTPException(e.status, detail=str(e)) from None
+    target = await session.get(User, user_id)
+    if target is None:
+        raise NOT_FOUND
+    return await svc.person(session, target)
+
+
+@router.delete("/users/{user_id}/invite", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_invite(user_id: uuid.UUID, staff: StaffUser, session: SessionDep) -> Response:
+    """Deletes an imported account nobody has set up yet (a wrong row, someone who left)."""
+    try:
+        await accounts.cancel_invite(session, staff, user_id)
+    except accounts.Refused as e:
+        raise HTTPException(e.status, detail=str(e)) from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

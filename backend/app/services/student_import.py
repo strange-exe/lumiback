@@ -169,7 +169,14 @@ def read(data: str) -> list[dict[str, str]]:
 
 async def check(session: AsyncSession, data: str, settings: Settings) -> list[Row]:
     """Every row with its status: new, exists (an account already uses the email), or error."""
-    raw = read(data)
+    return await check_rows(session, read(data), settings)
+
+
+async def check_rows(
+    session: AsyncSession, raw: list[dict[str, str]], settings: Settings
+) -> list[Row]:
+    """Like `check`, for rows already read ({column: value}, plus "_line"). Adding one person
+    from a form goes through here too, so it follows exactly the rules of a CSV row."""
     hostels = {_hostel_key(h.name): h for h in (await session.scalars(select(Hostel))).all()}
     domain = settings.allowed_email_domains[0] if settings.allowed_email_domains else None
     out: list[Row] = []

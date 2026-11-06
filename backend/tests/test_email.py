@@ -13,6 +13,7 @@ from pydantic import SecretStr
 from app.email import Email, ResendMailer, build_message
 from app.email_templates import (
     HTML_NOTICES,
+    account_link_email,
     escalation_email,
     ist_stamp,
     late_alert_email,
@@ -223,7 +224,7 @@ DUE = datetime(2026, 10, 9, 14, 30, tzinfo=UTC)  # 8:00 PM IST
 
 def test_late_alert_says_when_and_where_to_answer():
     email = late_alert_email(to="riya@geu.ac.in", name="Riya Sharma", due_at=DUE, web_url=WEB)
-    assert email.subject == "Lumiback: are you OK? You're 30 minutes past your return time"
+    assert email.subject == "Lumiback: are you OK? You were due back at 8:00 PM IST"
     assert email.body.startswith("Hi Riya,")
     assert "You were due back at 8:00 PM" in email.body
     assert "Answer in the Lumiback app or at: https://lumiback.test/home" in email.body
@@ -244,7 +245,16 @@ def test_only_inbox_tested_notices_send_html():
         "escalation",
         "safe_return_start",
         "safe_return_overdue",
+        "account_invite",
+        "account_reset",
+        "safe_return_back",
     }
+    for invite in (True, False):
+        link = account_link_email(
+            to="riya@geu.ac.in", name="Riya", invite=invite, link=f"{WEB}/set-password#t=abc"
+        )
+        assert link.html and 'href="https://lumiback.test/set-password#t=abc"' in link.html
+        assert "/set-password#t=abc" in link.body  # the text part keeps the link too
     late = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
     assert late.html is None  # every HTML version went to Junk: the safety alert stays plain
     declined = request_decision_email(

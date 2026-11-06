@@ -237,9 +237,22 @@ def password_reset_email(
 #   number and follow link, no button): Inbox at GEU Microsoft 365 and Gmail, like both
 #   plain-text controls (2026-11-06, .claude/scripts/safe_return_overdue_formatted_inbox_test.py).
 #   Unlike "late", it goes to someone who asked to follow the outing.
+# - "account_invite", "account_reset" and "safe_return_back": switched to HTML on 2026-11-07 at
+#   the owner's request ("the password link email isn't formatted"), in the shape that passed
+#   above (brand-first subject, short paragraphs, one button or none). Not inbox-tested on their
+#   own yet: run .claude/scripts/html_inbox_test.py for them before a large import.
 
 HTML_NOTICES = frozenset(
-    {"approved", "declined", "escalation", "safe_return_start", "safe_return_overdue"}
+    {
+        "approved",
+        "declined",
+        "escalation",
+        "safe_return_start",
+        "safe_return_overdue",
+        "account_invite",
+        "account_reset",
+        "safe_return_back",
+    }
 )
 
 GOOD = "#187349"
@@ -288,6 +301,12 @@ class Notice:
 def _hhmm(moment: datetime) -> str:
     t = moment.astimezone(IST)
     return f"{t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'}"
+
+
+def _day(moment: datetime) -> str:
+    """'Sat 7 Nov' in IST (portable: no platform-specific strftime flags)."""
+    t = moment.astimezone(IST)
+    return f"{t.strftime('%a')} {t.day} {t.strftime('%b')}"
 
 
 def _notice_text(n: Notice) -> str:
@@ -384,7 +403,8 @@ def late_alert_notice(*, to: str, name: str, due_at: datetime, web_url: str) -> 
     return Notice(
         kind="late",
         to=to,
-        subject="Lumiback: are you OK? You're 30 minutes past your return time",
+        # A time, not "30 minutes ago": that's wrong by the time the email is read.
+        subject=f"Lumiback: are you OK? You were due back at {_hhmm(due_at)} IST",
         greeting=f"Hi {_first(name)},",
         label="Late check-in",
         tone="alert",
@@ -488,7 +508,7 @@ def escalation_email(*, to: str, count: int, web_url: str) -> Email:
 
 # ---------- set-password links an admin sends (imported students, admin resets) ----------
 #
-# Plain text until each kind has had its own inbox test (see HTML_NOTICES). No password is
+# HTML with a button, plus the same words as plain text (see HTML_NOTICES). No password is
 # ever in these emails: the student picks one through the link.
 
 
@@ -538,8 +558,8 @@ def account_link_email(*, to: str, name: str, invite: bool, link: str) -> Email:
 #
 # The contact has no account and never asked for these, so each one says who chose to send it
 # and why. The start email is HTML with a button, and the overdue email HTML with a details
-# table and no button (both inbox-tested, see HTML_NOTICES). The back email stays plain text
-# until it has had its own inbox test.
+# table and no button (both inbox-tested, see HTML_NOTICES). The back email is HTML with no
+# button (see HTML_NOTICES).
 
 
 def _contact_reason(student: str) -> str:
@@ -611,7 +631,7 @@ def safe_return_overdue_notice(
 ) -> Notice:
     first = _first(student)
     details = (
-        Detail("Due back", ", 30 minutes ago", value_strong=f"{_hhmm(due_at)} IST"),
+        Detail("Due back", f", {_day(due_at)}", value_strong=f"{_hhmm(due_at)} IST"),
         *((Detail("Phone", phone, href=f"tel:{phone.replace(' ', '')}"),) if phone else ()),
         Detail(
             "Location",
@@ -623,7 +643,7 @@ def safe_return_overdue_notice(
     return Notice(
         kind="safe_return_overdue",
         to=to,
-        subject=f"Lumiback: {student} is 30 minutes past their return time",
+        subject=f"Lumiback: {student} was due back at {_hhmm(due_at)} IST",
         greeting=f"Hi {_first(contact_name or '')},",
         label="Late",
         tone="alert",
