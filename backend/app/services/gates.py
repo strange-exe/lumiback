@@ -203,7 +203,10 @@ async def scan(
                 safe_return_pepper=pepper if start_safe_return else None,
             )
         except rules.Refused as e:  # at the gate, but not allowed out now: worth a log entry
-            # (the rules refuse before check_out writes anything, so nothing to undo)
+            # The rules refuse before check_out writes anything, but an earlier day's outing
+            # closed above (going out again) must stay open: undo that, keep only the log.
+            await session.rollback()
+            await session.refresh(gate)  # the rollback expired it; the log entry reads it
             raise await reject(gate, ScanResult.NOT_ALLOWED, e.message) from None
     await _record(session, user_id, gate, direction, ScanResult.ACCEPTED, body, outing.id)
     await session.commit()

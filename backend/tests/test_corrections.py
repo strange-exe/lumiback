@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import text
 
 from app.push import MemoryPushSender
-from tests.helpers import GATE, create_gate, kiosk_qr, make_admin, signup
+from tests.helpers import GATE, create_gate, kiosk_qr, make_admin, set_rules, signup
 from tests.test_wardens import student
 
 AT_GATE = {"lat": GATE["lat"], "lng": GATE["lng"], "accuracy_m": 8}
@@ -329,6 +329,19 @@ def test_the_gate_asks_before_closing_yesterdays_outing(client, db, office, riya
     )
     assert fixed.status_code == 200, fixed.text
     assert client.get("/admin/corrections", headers=office).json()["unrecorded"] == []
+
+
+def test_a_refused_tap_out_leaves_yesterdays_outing_open(client, db, riya, gate):
+    """Going out again, but the rules don't allow it right now: nothing changes. The earlier
+    outing stays open (not closed as an unrecorded return); only the refusal is logged."""
+    old = go_out(client, db, riya, hours_ago=26)
+    set_rules(db, "not_yet")
+    r = scan(client, riya, gate, intent="out")
+    assert r.status_code == 422, r.text
+    assert tuple(outing_row(db, old["id"]))[1:] == (None, None)
+    assert client.get("/outings/current", headers=riya).json()["id"] == old["id"]
+    logged = db.execute(text("SELECT direction, result FROM gate_scans")).all()
+    assert [tuple(row) for row in logged] == [("out", "not_allowed")]
 
 
 def test_coming_back_in_closes_yesterdays_outing_normally(client, db, riya, gate):
