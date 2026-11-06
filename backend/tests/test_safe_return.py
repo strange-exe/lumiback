@@ -195,6 +195,12 @@ def test_only_the_real_contact_is_marked_as_the_contact(client, riya):
         ("Sunita Sharma (emergency contact)", "granted", True),
         (look_alike, "pending", False),
     ]
+    # The student's data export keeps the same mark.
+    (share,) = client.get("/profile/export", headers=riya).json()["share_sessions"]
+    assert [(v["name"], v["contact"]) for v in share["viewers"]] == [
+        ("Sunita Sharma (emergency contact)", True),
+        (look_alike, False),
+    ]
 
 
 def test_the_link_opens_only_its_own_outing(client, riya):

@@ -142,6 +142,7 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             {
                 "name": _viewer_name(v, name, None),
                 "kind": "user" if v.viewer_user_id else "guest",
+                "contact": v.is_contact,  # the safe-return contact, as the server marked it
                 "status": v.status.value,
                 "requested_at": v.requested_at,
                 "granted_at": v.granted_at,
@@ -162,6 +163,7 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             {
                 "viewer_name": _viewer_name(v, name, admin_name),
                 "kind": "admin" if v is None else ("user" if v.viewer_user_id else "guest"),
+                "contact": v is not None and v.is_contact,
                 "channel": entry.channel.value,
                 "viewed_at": entry.viewed_at,
             }
