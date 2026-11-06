@@ -16,6 +16,7 @@ interface Section {
 const SECTIONS: readonly Section[] = [
   { href: "/admin", label: "Register", for: "staff" },
   { href: "/admin/requests", label: "Requests", for: "staff" },
+  { href: "/admin/corrections", label: "Corrections", for: "staff" },
   { href: "/admin/escalations", label: "Escalations", for: "staff" },
   { href: "/admin/scans", label: "Scans", for: "staff" },
   { href: "/admin/hostel", label: "My hostel", for: ["warden"] },

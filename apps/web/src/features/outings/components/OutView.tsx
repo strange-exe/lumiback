@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { LateReply, ReturnButton } from "@/features/outings/components/OutingControls";
@@ -64,6 +65,18 @@ export function OutView({
       ) : null}
       <SafeReturnNote sessionId={outing.safe_return_session_id ?? null} state={safeReturn} />
       <ReturnButton />
+      {outing.correction?.status === "pending" ? (
+        <p className="text-center text-sm text-muted">
+          You asked the hostel office to correct this outing. Waiting for their answer.
+        </p>
+      ) : (
+        <Link
+          href={`/history?fix=${encodeURIComponent(outing.id)}#outing-${encodeURIComponent(outing.id)}`}
+          className="flex min-h-11 items-center justify-center self-center px-2 text-sm font-bold text-accent underline-offset-4 hover:underline"
+        >
+          Forgot to tap in?
+        </Link>
+      )}
     </section>
   );
 }

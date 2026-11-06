@@ -56,6 +56,48 @@ export function formatMinutes(total: number): string {
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
 }
 
+// ---------- datetime-local inputs, always IST ----------
+
+const IST_OFFSET_MS = 330 * 60_000;
+const LOCAL_INPUT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/** An instant as IST wall time for a datetime-local input: "2026-11-06T19:40". */
+export function istInputValue(when: string | Date): string {
+  return new Date(new Date(when).getTime() + IST_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+/** An instant as an ISO string in IST: "2026-11-06T19:40:00+05:30". */
+export function istIso(ms: number): string {
+  return `${new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 19)}+05:30`;
+}
+
+/**
+ * A datetime-local value read as IST wall time (whatever the browser's timezone), as an ISO
+ * string with +05:30; null if it isn't a real date and time.
+ *
+ * The input only has minutes, so a time in the same minute as `notBefore` (e.g. when they
+ * left, at 7:40:30 PM) that falls before it means `notBefore` itself, not "before they left".
+ */
+export function istInputToIso(value: string, notBefore?: string | null): string | null {
+  const match = LOCAL_INPUT.exec(value.trim());
+  if (!match) return null;
+  const [y, mo, d, h, mi, s] = match.slice(1).map((part) => Number(part ?? "0"));
+  if (h > 23 || mi > 59 || s > 59) return null;
+  const wall = Date.UTC(y, mo - 1, d, h, mi, s);
+  const check = new Date(wall);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) {
+    return null; // e.g. 31 November
+  }
+  const at = wall - IST_OFFSET_MS;
+  if (notBefore) {
+    const floor = Date.parse(notBefore); // whole milliseconds: the server keeps microseconds
+    if (Number.isFinite(floor) && at <= floor && istInputValue(new Date(floor)) === value.trim()) {
+      return notBefore; // exactly as the server sent it, so it is never a moment too early
+    }
+  }
+  return istIso(at);
+}
+
 /** Fraction of the planned outing that has elapsed, clamped to [0, 1]. */
 export function progress(leftAt: string, expectedAt: string, now: Date = new Date()): number {
   const start = new Date(leftAt).getTime();

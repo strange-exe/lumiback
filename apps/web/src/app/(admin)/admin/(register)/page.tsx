@@ -4,8 +4,10 @@ import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
+import { CorrectionDialog } from "@/features/admin/components/CorrectionForms";
 import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
+import { inViaLabel } from "@/features/outings/corrections";
 import { formatMinutes } from "@/features/outings/time";
 import { requireStaff } from "@/lib/session";
 import type { AdminOuting } from "@/lib/types";
@@ -32,6 +34,8 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
     adminApi.outings(token, state),
     adminApi.lateToday(token),
   ]);
+  // Rendered per request: the server's clock is "now" for the correction forms.
+  const nowIso = new Date().toISOString();
 
   const stats = [
     { label: "Out now", value: overview.out_now, alert: false },
@@ -56,6 +60,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
         <NeedsAction
           escalations={overview.open_escalations ?? 0}
           requests={overview.pending_requests ?? 0}
+          corrections={overview.corrections ?? 0}
         />
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-sheet border border-line bg-line sm:grid-cols-4">
           {stats.map((stat) => (
@@ -98,18 +103,18 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
               : "Nobody is out right now. Students appear here when they tap out at a gate or check out in the app or on the website."}
           </p>
         ) : (
-          <OutingsTable outings={outings} />
+          <OutingsTable outings={outings} nowIso={nowIso} />
         )}
       </section>
 
-      <LateToday late={late} />
+      <LateToday late={late} nowIso={nowIso} />
 
       <ExportForm />
     </div>
   );
 }
 
-function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
+function OutingsTable({ outings, nowIso }: { outings: AdminOuting[]; nowIso: string }): ReactNode {
   return (
     <table className="block w-full text-left md:table">
       <thead className="hidden border-b border-line text-sm text-muted md:table-header-group">
@@ -123,8 +128,11 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
           <th scope="col" className="py-2 pr-4 font-normal">
             Due back
           </th>
-          <th scope="col" className="py-2 font-normal">
+          <th scope="col" className="py-2 pr-4 font-normal">
             Status
+          </th>
+          <th scope="col" className="py-2 font-normal">
+            <span className="sr-only">Correct</span>
           </th>
         </tr>
       </thead>
@@ -147,7 +155,7 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
               <span className="text-muted md:hidden">Due </span>
               {formatWhen(o.expected_return_at)}
             </td>
-            <td className="col-span-2 text-sm font-bold md:py-3.5">
+            <td className="text-sm font-bold md:py-3.5 md:pr-4">
               <span className="flex flex-wrap gap-1.5">
                 {o.status === "overdue" ? (
                   <span className="inline-flex rounded-full bg-danger-soft px-2.5 py-1 text-danger">
@@ -170,6 +178,9 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
                 ) : null}
               </span>
             </td>
+            <td className="text-right md:py-3.5">
+              <CorrectionDialog outing={o} kind="return" nowIso={nowIso} />
+            </td>
           </tr>
         ))}
       </tbody>
@@ -178,7 +189,7 @@ function OutingsTable({ outings }: { outings: AdminOuting[] }): ReactNode {
 }
 
 /** Tonight's latecomers: back after their return time, or still out past it. */
-function LateToday({ late }: { late: AdminOuting[] }): ReactNode {
+function LateToday({ late, nowIso }: { late: AdminOuting[]; nowIso: string }): ReactNode {
   return (
     <section aria-labelledby="late-heading" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -208,14 +219,27 @@ function LateToday({ late }: { late: AdminOuting[] }): ReactNode {
                   {formatWhen(o.expected_return_at)}
                   {o.returned_at ? `, back ${formatWhen(o.returned_at)}` : ", not back yet"}
                 </p>
+                {inViaLabel(o.in_via) ? (
+                  <p className="text-sm text-muted">{inViaLabel(o.in_via)}</p>
+                ) : null}
               </div>
-              <span
-                className={`inline-flex rounded-full px-2.5 py-1 text-sm font-bold ${
-                  o.returned_at ? "bg-accent-soft text-accent" : "bg-danger-soft text-danger"
-                }`}
-              >
-                {formatMinutes(o.late_minutes)} late
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-sm font-bold ${
+                    o.returned_at ? "bg-accent-soft text-accent" : "bg-danger-soft text-danger"
+                  }`}
+                >
+                  {formatMinutes(o.late_minutes)} late
+                </span>
+                {o.returned_at ? (
+                  <>
+                    <CorrectionDialog outing={o} kind="return_time" nowIso={nowIso} />
+                    <CorrectionDialog outing={o} kind="cancel" nowIso={nowIso} />
+                  </>
+                ) : (
+                  <CorrectionDialog outing={o} kind="return" nowIso={nowIso} />
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -228,11 +252,13 @@ function LateToday({ late }: { late: AdminOuting[] }): ReactNode {
 function NeedsAction({
   escalations,
   requests,
+  corrections,
 }: {
   escalations: number;
   requests: number;
+  corrections: number;
 }): ReactNode {
-  if (!escalations && !requests) return null;
+  if (!escalations && !requests && !corrections) return null;
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
       {escalations ? (
@@ -250,6 +276,15 @@ function NeedsAction({
           className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-accent-soft px-4 font-bold text-accent hover:brightness-95"
         >
           {requests} outing {requests === 1 ? "request" : "requests"} to decide
+          <span aria-hidden="true">→</span>
+        </Link>
+      ) : null}
+      {corrections ? (
+        <Link
+          href="/admin/corrections"
+          className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-accent-soft px-4 font-bold text-accent hover:brightness-95"
+        >
+          {corrections} {corrections === 1 ? "outing" : "outings"} to correct
           <span aria-hidden="true">→</span>
         </Link>
       ) : null}

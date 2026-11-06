@@ -10,12 +10,13 @@ import { requireUser } from "@/lib/session";
 export const metadata: Metadata = { title: "History" };
 
 interface PageProps {
-  searchParams: Promise<{ before?: string }>;
+  /** fix: the outing whose "Something wrong?" starts open (Today's "Forgot to tap in?"). */
+  searchParams: Promise<{ before?: string; fix?: string }>;
 }
 
 export default async function HistoryPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireUser();
-  const { before } = await searchParams;
+  const { before, fix } = await searchParams;
   const [page, summary] = await Promise.all([
     outingsApi.history(token, before),
     outingsApi.summary(token),
@@ -54,7 +55,8 @@ export default async function HistoryPage({ searchParams }: PageProps): Promise<
           </div>
         ))}
       </dl>
-      <HistoryLedger items={page.items} />
+      {/* Rendered per request: the server's clock decides what can still be asked about. */}
+      <HistoryLedger items={page.items} nowIso={new Date().toISOString()} openId={fix} />
       {page.next_before && (
         <Link
           href={`/history?before=${encodeURIComponent(page.next_before)}`}

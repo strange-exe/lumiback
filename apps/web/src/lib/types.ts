@@ -44,11 +44,42 @@ export interface Outing {
   duration_minutes: number | null;
   /** "gate": scanned at a gate with a GPS check; "self": the student logged it. */
   out_via: "self" | "gate";
-  in_via: "self" | "gate" | null;
+  in_via: InVia | null;
   /** The answer to "you're late, are you OK?". */
   late_reply?: LateReply | null;
   /** Safe return: the share the emergency contact follows until the student is back. */
   safe_return_session_id?: string | null;
+  /** The latest correction of this outing (asked by the student or made by the office). */
+  correction?: Correction | null;
+}
+
+/**
+ * How an outing was closed. staff: the hostel office recorded or corrected the return.
+ * unrecorded: closed when the student tapped out again on a later day, so when they came back
+ * isn't known.
+ */
+export type InVia = "self" | "gate" | "staff" | "unrecorded";
+
+/**
+ * return: they came back at `returned_at` (an open outing). return_time: they came back at
+ * `returned_at` instead (a closed one). cancel: the tap was a mistake, there was no trip.
+ */
+export type CorrectionKind = "return" | "return_time" | "cancel";
+
+export interface Correction {
+  id: string;
+  kind: CorrectionKind;
+  status: RequestStatus;
+  /** IST (+05:30). Null for cancel. */
+  returned_at: string | null;
+  reason: string;
+  /** The office made it (else the student asked). */
+  by_staff: boolean;
+  /** What the record said before, once applied. */
+  old_returned_at: string | null;
+  /** The office's reply to a student's ask. */
+  note: string | null;
+  created_at: string;
 }
 
 /** GET /campus: today's outing rules for this student (their hostel's, or the default). */
@@ -215,6 +246,8 @@ export interface AdminOverview {
   active_gates: number;
   pending_requests?: number;
   open_escalations?: number;
+  /** Students' correction asks plus unrecorded returns to fix. */
+  corrections?: number;
 }
 
 export interface AdminOuting {
@@ -238,6 +271,20 @@ export interface AdminOuting {
   late_reply?: LateReply | null;
   /** An outing on a day that needs approval, which an admin approved. */
   on_request?: boolean;
+  in_via?: InVia | null;
+}
+
+/** GET /admin/corrections: a student's ask, with the outing as it stands. */
+export interface CorrectionAsk {
+  correction: Correction;
+  outing: AdminOuting;
+}
+
+export interface CorrectionQueue {
+  /** Oldest first. */
+  asks: CorrectionAsk[];
+  /** Returns the gate never saw (in_via "unrecorded"), from the last 30 days. */
+  unrecorded: AdminOuting[];
 }
 
 export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";

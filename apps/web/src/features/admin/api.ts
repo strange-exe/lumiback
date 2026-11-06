@@ -8,6 +8,7 @@ import type {
   AdminRequest,
   AdminUser,
   CampusSettings,
+  CorrectionQueue,
   Escalation,
   Gate,
   Holiday,
@@ -59,6 +60,11 @@ export const adminApi = {
 
   escalations(token: string, state: "open" | "all" = "open"): Promise<Escalation[]> {
     return callBackend<Escalation[]>(`/admin/escalations?state=${state}`, { token });
+  },
+
+  /** Students' correction asks, and returns the gate never saw, in this office's hostels. */
+  corrections(token: string): Promise<CorrectionQueue> {
+    return callBackend<CorrectionQueue>("/admin/corrections", { token });
   },
 
   ruleSets(token: string): Promise<RuleSet[]> {

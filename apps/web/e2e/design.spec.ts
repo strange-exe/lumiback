@@ -101,6 +101,17 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("heading", { name: "Your outings" }),
   },
   {
+    // "Something wrong?" opened on the newest outing (home-out above leaves a recent one).
+    name: "history-fix",
+    auth: true,
+    prepare: async (page) => {
+      await ensureIn(page);
+      await page.goto("/history");
+      await page.getByText("Something wrong?").first().click();
+    },
+    primary: (page) => page.getByRole("group", { name: "What's wrong?" }),
+  },
+  {
     name: "account",
     auth: true,
     prepare: async (page) => void (await page.goto("/account")),
@@ -206,6 +217,12 @@ const SCREENS: Screen[] = [
     auth: "admin",
     prepare: async (page) => void (await page.goto("/admin/requests")),
     primary: (page) => page.getByRole("heading", { name: "Outing requests" }),
+  },
+  {
+    name: "admin-corrections",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/corrections")),
+    primary: (page) => page.getByRole("heading", { name: "Corrections", level: 1 }),
   },
   {
     name: "admin-escalations",

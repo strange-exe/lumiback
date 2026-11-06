@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
+import { correctionBody } from "@/features/outings/corrections";
 import { callBackend } from "@/lib/backend";
 import type { FormState, GateCreated, PasswordLinkSent, StudentImportResult } from "@/lib/types";
 
@@ -158,6 +159,75 @@ export async function setRole(_: FormState, form: FormData): Promise<FormState> 
     student: "Now a student.",
   };
   return { error: null, notice: notice[role] };
+}
+
+// ---------- outing corrections ----------
+
+/**
+ * The office corrects an outing at once, with a reason: records a return (open outing), changes
+ * a return time (closed one), or cancels a mistaken tap. The backend checks the office covers
+ * the outing's hostel and that the time is possible.
+ */
+export async function correctOuting(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "outing_id");
+  const fields = {
+    kind: text(form, "kind"),
+    returned_at: text(form, "returned_at"),
+    reason: text(form, "reason"),
+  };
+  const checked = correctionBody(
+    {
+      kind: fields.kind,
+      time: fields.returned_at,
+      leftAt: text(form, "left_at"),
+      reason: fields.reason,
+    },
+    "staff",
+  );
+  if ("error" in checked) return { error: checked.error, fields };
+  const result = await attempt(
+    () =>
+      callBackend(`/admin/outings/${encodeURIComponent(id)}/correction`, {
+        method: "POST",
+        token,
+        body: checked.body,
+      }),
+    fields,
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin");
+  revalidatePath("/admin/corrections");
+  const notice = {
+    return: "Return recorded.",
+    return_time: "Return time changed.",
+    cancel: "Outing cancelled.",
+  };
+  return { error: null, notice: notice[checked.body.kind] };
+}
+
+/** Approve (the change applies now) or decline a student's correction ask. */
+export async function decideCorrection(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "correction_id");
+  const approve = text(form, "decision") === "approve";
+  const note = text(form, "note");
+  if (note.length > 300) {
+    return { error: "Keep the note under 300 characters.", fields: { note } };
+  }
+  const result = await attempt(
+    () =>
+      callBackend(`/admin/corrections/${encodeURIComponent(id)}/decision`, {
+        method: "POST",
+        token,
+        body: { approve, note: note || null },
+      }),
+    { note },
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin");
+  revalidatePath("/admin/corrections");
+  return { error: null, notice: approve ? "Approved." : "Declined." };
 }
 
 // ---------- adding students, password links ----------

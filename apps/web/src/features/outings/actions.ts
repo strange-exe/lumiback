@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { correctionBody } from "@/features/outings/corrections";
 import { safeReturnShareToSend } from "@/features/outings/safe-return";
 import { ApiError, callBackend } from "@/lib/backend";
 import { accessToken } from "@/lib/session";
@@ -130,6 +131,42 @@ export async function cancelRequest(_: FormState, form: FormData): Promise<FormS
   const id = text(form, "request_id");
   return run(() =>
     callBackend(`/outings/request/${encodeURIComponent(id)}`, { method: "DELETE", token }),
+  );
+}
+
+// ---------- corrections ----------
+
+/**
+ * Asks the hostel office to correct one of the student's outings: when they really came back
+ * (a forgotten tap-in), or that the trip didn't happen. The office approves or declines.
+ */
+export async function askCorrection(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "outing_id");
+  const fields = {
+    kind: text(form, "kind"),
+    returned_at: text(form, "returned_at"),
+    reason: text(form, "reason"),
+  };
+  const checked = correctionBody(
+    {
+      kind: fields.kind,
+      time: fields.returned_at,
+      leftAt: text(form, "left_at"),
+      reason: fields.reason,
+    },
+    "student",
+  );
+  if ("error" in checked) return { error: checked.error, fields };
+  return run(
+    () =>
+      callBackend(`/outings/${encodeURIComponent(id)}/correction`, {
+        method: "POST",
+        token,
+        body: checked.body,
+      }),
+    fields,
+    "Sent. The hostel office will look at it.",
   );
 }
 
