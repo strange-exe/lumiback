@@ -484,27 +484,46 @@ def safe_return_overdue_email(
     phone: str | None,
     link: str,
 ) -> Email:
-    first = _first(student)
     return notice_email(
-        Notice(
-            kind="safe_return_overdue",
+        safe_return_overdue_notice(
             to=to,
-            subject=f"Lumiback: {student} is 30 minutes past their return time",
-            greeting=f"Hi {_first(contact_name or '')},",
-            label="Late",
-            tone="alert",
-            heading=f"{first} isn't back yet",
-            paragraphs=(
-                f"{student} was due back at the hostel by {_hhmm(due_at)} IST and hasn't checked "
-                "in yet. Lumiback has asked them if they're OK. If they don't answer, the hostel "
-                "office follows up.",
-                *((f"You can call them on {phone}.",) if phone else ()),
-            ),
-            action=("See where they are", link),
-            note="The map shows a position only while they share it from Lumiback.",
-            reason=_contact_reason(student),
-            link="plain",
+            contact_name=contact_name,
+            student=student,
+            due_at=due_at,
+            phone=phone,
+            link=link,
         )
+    )
+
+
+def safe_return_overdue_notice(
+    *,
+    to: str,
+    contact_name: str | None,
+    student: str,
+    due_at: datetime,
+    phone: str | None,
+    link: str,
+) -> Notice:
+    first = _first(student)
+    return Notice(
+        kind="safe_return_overdue",
+        to=to,
+        subject=f"Lumiback: {student} is 30 minutes past their return time",
+        greeting=f"Hi {_first(contact_name or '')},",
+        label="Late",
+        tone="alert",
+        heading=f"{first} isn't back yet",
+        paragraphs=(
+            f"{student} was due back at the hostel by {_hhmm(due_at)} IST and hasn't checked "
+            "in yet. Lumiback has asked them if they're OK. If they don't answer, the hostel "
+            "office follows up.",
+            *((f"You can call them on {phone}.",) if phone else ()),
+        ),
+        action=("See where they are", link),
+        note="The map shows a position only while they share it from Lumiback.",
+        reason=_contact_reason(student),
+        link="plain",
     )
 
 
