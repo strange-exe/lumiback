@@ -88,14 +88,17 @@ function GateCard({
   onChanged: () => void;
   onLink: (url: string) => void;
 }): ReactNode {
-  const [busy, setBusy] = useState<"switch" | "link" | null>(null);
+  const [busy, setBusy] = useState<"switch" | "link" | "remove" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const act = async (kind: "switch" | "link"): Promise<void> => {
+  const act = async (kind: "switch" | "link" | "remove"): Promise<void> => {
     setBusy(kind);
     setError(null);
     try {
       if (kind === "switch") {
         await office.switchGate(g.id, !g.active);
+        onChanged();
+      } else if (kind === "remove") {
+        await office.removeGate(g.id);
         onChanged();
       } else {
         const created = await office.newKioskLink(g.id);
@@ -164,6 +167,28 @@ function GateCard({
               />
             </View>
           </View>
+          {g.used === false ? (
+            <Button
+              label="Remove gate"
+              variant="danger"
+              busy={busy === "remove"}
+              busyLabel="Removing…"
+              onPress={() =>
+                Alert.alert(
+                  `Remove ${g.name}?`,
+                  "Nobody has scanned at this gate yet, so it can go completely. Its kiosk link stops working.",
+                  [
+                    { text: "Keep it", style: "cancel" },
+                    { text: "Remove", style: "destructive", onPress: () => void act("remove") },
+                  ],
+                )
+              }
+            />
+          ) : (
+            <T tone="caption">
+              Scans have used this gate, so it stays for the records. Switch it off to stop it.
+            </T>
+          )}
         </View>
       ) : null}
     </Card>

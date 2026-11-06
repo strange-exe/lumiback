@@ -8,9 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Platform } from "react-native";
 
 import { clearSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
+import { deviceLabel } from "@/lib/devices";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, ShareSession, TokenPair, User } from "@/lib/types";
 import { sendingShareId, stopSending } from "@/location/task";
@@ -18,6 +20,14 @@ import { syncPush, syncReturnReminders } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
 type Status = "loading" | "signedOut" | "signedIn";
+
+// Android's Platform.Version is the API level (34); Release is the "14" people know.
+const release: unknown = (Platform.constants as { Release?: unknown } | undefined)?.Release;
+const THIS_DEVICE = deviceLabel({
+  OS: Platform.OS,
+  Version: Platform.Version,
+  release: typeof release === "string" ? release : undefined,
+});
 
 interface SignUp {
   name: string;
@@ -110,7 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       const tokens = await api<TokenPair>("/auth/login", {
         method: "POST",
         auth: false,
-        body: { email: email.trim().toLowerCase(), password },
+        // Names this phone in the signed-in devices list ("Lumiback app on Android 14").
+        body: { email: email.trim().toLowerCase(), password, device: THIS_DEVICE },
       });
       // A session kept through a server error at launch (see above) may be another student's:
       // forget its local state and end it on the server before this one takes its place.

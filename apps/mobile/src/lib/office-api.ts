@@ -128,4 +128,7 @@ export const office = {
     api<Gate>(`/admin/gates/${encodeURIComponent(id)}`, { method: "PATCH", body: { active } }),
   newKioskLink: (id: string) =>
     api<GateCreated>(`/admin/gates/${encodeURIComponent(id)}/kiosk-token`, { method: "POST" }),
+  /** Only a gate nobody has used; the server refuses (409) any other. */
+  removeGate: (id: string) =>
+    api<void>(`/admin/gates/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

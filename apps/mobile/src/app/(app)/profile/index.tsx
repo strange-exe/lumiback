@@ -158,6 +158,20 @@ export default function Profile(): ReactNode {
 
       <Section title="Account">
         <Row
+          leading={icon("phone-portrait-outline")}
+          title="Signed-in devices"
+          detail="Sign out a lost phone"
+          trailing={chevron}
+          onPress={() => router.push("/profile/devices")}
+        />
+        <Row
+          leading={icon("key-outline")}
+          title="Change password"
+          detail="Signs out your other devices"
+          trailing={chevron}
+          onPress={() => router.push("/profile/password")}
+        />
+        <Row
           leading={icon("download-outline")}
           title={savingData ? "Preparing your file…" : "Download my data"}
           detail="Save a copy of everything kept about you"

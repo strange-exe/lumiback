@@ -473,6 +473,8 @@ export interface Gate {
   radius_m: number;
   active: boolean;
   created_at: string;
+  /** Some scan or outing names it, so it stays for the records. Missing (older server): used. */
+  used?: boolean;
 }
 
 export interface GateCreated {
@@ -489,4 +491,28 @@ export interface Person {
   role: Role;
   hostel_ids: string[];
   hostels: string[];
+}
+
+/** One place this account is signed in (GET /auth/devices, most recently active first). */
+export interface Device {
+  id: string;
+  /** Null: signed in before devices were named, or not recognised ("Unknown device"). */
+  device: string | null;
+  signed_in_at: string;
+  last_active_at: string;
+  /** The device asking. False on every row when this phone signed in before the update. */
+  current: boolean;
+}
+
+/** POST /auth/devices/sign-out-others */
+export interface SignedOutOthers {
+  signed_out: number;
+}
+
+/** POST /auth/change-password */
+export interface PasswordChanged {
+  /** How many other devices were signed out. */
+  signed_out: number;
+  /** False when this phone signed in before devices had ids: it was signed out too. */
+  still_signed_in: boolean;
 }

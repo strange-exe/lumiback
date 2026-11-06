@@ -47,6 +47,22 @@ export function formatDate(iso: string | Date): string {
   return longDateFormat.format(new Date(iso));
 }
 
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "Sat 7 Nov, 9:14 PM": a moment in IST. Worked out by hand from the fixed +05:30 offset, so the
+ * text is the same on every phone whatever its Intl data (Hermes builds differ in punctuation).
+ */
+export function formatStamp(iso: string | Date): string {
+  const at = new Date(new Date(iso).getTime() + IST_OFFSET_MS);
+  const hours = at.getUTCHours();
+  const minutes = String(at.getUTCMinutes()).padStart(2, "0");
+  const clock = `${hours % 12 === 0 ? 12 : hours % 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`;
+  return `${WEEKDAYS[at.getUTCDay()]} ${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}, ${clock}`;
+}
+
 /** "2 h 15 min", "45 min" */
 export function formatMinutes(total: number): string {
   if (total < 1) return "under a minute";
