@@ -281,9 +281,10 @@ def test_overdue_emails_the_contact_once_with_the_link(client, db, riya):
     assert run_sweep(client).overdue_notified == 1
     overdue = to_contact(client)[1:]
     assert len(overdue) == 1 and "30 minutes past" in overdue[0].subject
-    assert overdue[0].html is None
     assert link_in(overdue[0]) == (session_id, token)  # the same link
     assert "+919876543210" in overdue[0].body  # her number, to call
+    html = overdue[0].html or ""  # formatted, inbox-tested 2026-11-06
+    assert 'href="tel:+919876543210"' in html and f"/watch/{session_id}#" in html
     assert watch(client, session_id, token).status_code == 200  # still works while late
 
     late_by(db, 90)

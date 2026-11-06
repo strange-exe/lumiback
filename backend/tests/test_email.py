@@ -21,6 +21,7 @@ from app.email_templates import (
     password_reset_email,
     request_decision_email,
     request_decision_notice,
+    safe_return_overdue_email,
     set_logo,
     set_reply_to,
     verification_email,
@@ -236,8 +237,14 @@ def test_late_alert_says_when_and_where_to_answer():
 
 def test_only_inbox_tested_notices_send_html():
     """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09, and
-    safe_return_start at GEU and Gmail on 2026-11-06)."""
-    assert HTML_NOTICES == {"approved", "declined", "escalation", "safe_return_start"}
+    safe_return_start and safe_return_overdue at GEU and Gmail on 2026-11-06)."""
+    assert HTML_NOTICES == {
+        "approved",
+        "declined",
+        "escalation",
+        "safe_return_start",
+        "safe_return_overdue",
+    }
     late = late_alert_email(to="riya@geu.ac.in", name="Riya", due_at=DUE, web_url=WEB)
     assert late.html is None  # every HTML version went to Junk: the safety alert stays plain
     declined = request_decision_email(
@@ -249,6 +256,46 @@ def test_only_inbox_tested_notices_send_html():
     )
     assert approved.html and escape("Today's outing is approved") in approved.html
     assert escalation_email(to="warden@geu.ac.in", count=1, web_url=WEB).html
+
+
+OVERDUE_LINK = "https://lumiback.test/watch/abc#key=k"
+
+
+def test_overdue_html_is_a_details_table_with_tappable_phone_and_link():
+    email = safe_return_overdue_email(
+        to="mum@example.com",
+        contact_name="Asha Sharma",
+        student="Riya <b>S</b>",
+        due_at=DUE,
+        phone="+91 98765 43210",
+        link=OVERDUE_LINK,
+    )
+    html = email.html or ""
+    assert "Riya isn&#x27;t back yet" in html and "Hi Asha," in html
+    assert "Riya &lt;b&gt;S&lt;/b&gt; hasn" in html and "<b>S</b>" not in html
+    assert html.count("href=") == 2  # the phone and the follow link, nothing else
+    assert 'href="tel:+919876543210"' in html
+    assert f'href="{escape(OVERDUE_LINK)}"' in html
+    assert ">Due back<" in html and ">Phone<" in html and ">Location<" in html
+    assert "background:#1f3fd1" not in html  # no button
+    for risky in ("<img", "<style", "display:none"):
+        assert risky not in html
+    # The text part is the inbox-tested plain text: due time, number and link in sentences.
+    assert "hasn't checked in yet" in email.body and "+91 98765 43210" in email.body
+    assert f"See where they are: {OVERDUE_LINK}" in email.body
+
+
+def test_overdue_html_without_a_phone_has_no_phone_row():
+    email = safe_return_overdue_email(
+        to="mum@example.com",
+        contact_name=None,
+        student="Riya",
+        due_at=DUE,
+        phone=None,
+        link=OVERDUE_LINK,
+    )
+    html = email.html or ""
+    assert "tel:" not in html and ">Phone<" not in html and html.count("href=") == 1
 
 
 @pytest.mark.parametrize("link", ["button", "text"])

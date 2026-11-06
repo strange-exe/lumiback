@@ -233,14 +233,31 @@ def password_reset_email(
 # - "safe_return_start" (to the emergency contact, button for the follow link): Inbox at GEU
 #   Microsoft 365 and Gmail, like both plain-text controls sent before and after it
 #   (2026-11-06, .claude/scripts/safe_return_inbox_test.py).
+# - "safe_return_overdue" (to the emergency contact, a details table with a tappable phone
+#   number and follow link, no button): Inbox at GEU Microsoft 365 and Gmail, like both
+#   plain-text controls (2026-11-06, .claude/scripts/safe_return_overdue_formatted_inbox_test.py).
+#   Unlike "late", it goes to someone who asked to follow the outing.
 
-HTML_NOTICES = frozenset({"approved", "declined", "escalation", "safe_return_start"})
+HTML_NOTICES = frozenset(
+    {"approved", "declined", "escalation", "safe_return_start", "safe_return_overdue"}
+)
 
 GOOD = "#187349"
 DANGER = "#b8322a"
 TONE = {"alert": DANGER, "good": GOOD, "neutral": MUTED}
 
 # Why a student gets these by email at all; part of the footer's "Sent to ... because ...".
+
+
+@dataclass(frozen=True)
+class Detail:
+    """One row of a notice's details table: "<name>  <strong>value_strong</strong>value"."""
+
+    name: str
+    value: str
+    value_strong: str = ""
+    href: str | None = None  # makes the value a link (https: or tel:)
+    note: str | None = None  # small print under the value
 
 
 @dataclass(frozen=True)
@@ -262,6 +279,10 @@ class Notice:
     # address with no link at all). Urgent notices use "plain": a red alert plus a button reads
     # as phishing to Microsoft 365 (the late alert went to Junk with a button, 2026-10-09).
     link: str = "button"
+    # With details, the HTML shows these rows in place of the action and note, and its own
+    # lead paragraphs (the facts in the rows aren't repeated). The text part is unchanged.
+    details: tuple[Detail, ...] = ()
+    html_paragraphs: tuple[str, ...] | None = None
 
 
 def _hhmm(moment: datetime) -> str:
@@ -302,8 +323,13 @@ def _notice_html(n: Notice, *, link: str | None = None) -> str:
             f'<p style="{P}margin-top:20px;">{escape(label)}: '
             f'<a href="{escape(url)}" style="color:{ACCENT};font-weight:bold;">{escape(shown)}</a></p>'
         )
-    paragraphs = "\n".join(f'<p style="{P}margin-top:10px;">{escape(p)}</p>' for p in n.paragraphs)
     note = f'<p style="{SMALL}margin-top:18px;">{escape(n.note)}</p>' if n.note else ""
+    if n.details:
+        action, note = _details_html(n), ""
+    shown_paragraphs = n.html_paragraphs if n.html_paragraphs is not None else n.paragraphs
+    paragraphs = "\n".join(
+        f'<p style="{P}margin-top:10px;">{escape(p)}</p>' for p in shown_paragraphs
+    )
     card = f"""<p style="{P}">{escape(n.greeting)}</p>
 <p style="margin:18px 0 0;font-family:{SANS};font-size:12px;line-height:16px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:{TONE[n.tone]};">{escape(n.label)}</p>
 <h1 style="margin:6px 0 4px;font-family:{SANS};font-size:22px;line-height:28px;font-weight:bold;color:{INK};">{escape(n.heading)}</h1>
@@ -311,6 +337,36 @@ def _notice_html(n: Notice, *, link: str | None = None) -> str:
 {action}
 {note}"""
     return _shell(title=n.heading, card=card, to=n.to, reason=n.reason)
+
+
+def _details_html(n: Notice) -> str:
+    link_style = f"color:{ACCENT};font-weight:bold;word-break:break-all;"
+    cell = "padding:12px 14px;vertical-align:top;font-family:" + SANS + ";"
+    rows = []
+    for i, d in enumerate(n.details):
+        border = "" if i == len(n.details) - 1 else f"border-bottom:1px solid {LINE};"
+        value = (f"<strong>{escape(d.value_strong)}</strong>" if d.value_strong else "") + escape(
+            d.value
+        )
+        if d.href:
+            value = f'<a href="{escape(d.href)}" style="{link_style}">{value}</a>'
+        if d.note:
+            value += (
+                f'<br><span style="font-size:13px;line-height:19px;color:{MUTED};">'
+                f"{escape(d.note)}</span>"
+            )
+        rows.append(
+            f'<tr><td style="{cell}{border}font-size:13px;line-height:19px;color:{MUTED};'
+            f'width:96px;">{escape(d.name)}</td>'
+            f'<td style="{cell}{border}font-size:15px;line-height:22px;color:{INK};">'
+            f"{value}</td></tr>"
+        )
+    accent = TONE[n.tone]
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '
+        f'style="margin-top:18px;border:1px solid {LINE};border-left:3px solid {accent};'
+        f'border-radius:8px;border-collapse:separate;">\n' + "\n".join(rows) + "\n</table>"
+    )
 
 
 def notice_email(n: Notice, *, html: bool | None = None, link: str | None = None) -> Email:
@@ -433,9 +489,9 @@ def escalation_email(*, to: str, count: int, web_url: str) -> Email:
 # ---------- safe return: to a student's emergency contact ----------
 #
 # The contact has no account and never asked for these, so each one says who chose to send it
-# and why. The start email is HTML with a button (inbox-tested, see HTML_NOTICES). The overdue
-# and back emails stay plain text: neither has had its own inbox test, and an alert about
-# someone being late reads as phishing in HTML (see "late" above).
+# and why. The start email is HTML with a button, and the overdue email HTML with a details
+# table and no button (both inbox-tested, see HTML_NOTICES). The back email stays plain text
+# until it has had its own inbox test.
 
 
 def _contact_reason(student: str) -> str:
@@ -506,6 +562,16 @@ def safe_return_overdue_notice(
     link: str,
 ) -> Notice:
     first = _first(student)
+    details = (
+        Detail("Due back", ", 30 minutes ago", value_strong=f"{_hhmm(due_at)} IST"),
+        *((Detail("Phone", phone, href=f"tel:{phone.replace(' ', '')}"),) if phone else ()),
+        Detail(
+            "Location",
+            link.removeprefix("https://"),
+            href=link,
+            note="Shows a position only while they share it from Lumiback.",
+        ),
+    )
     return Notice(
         kind="safe_return_overdue",
         to=to,
@@ -523,7 +589,11 @@ def safe_return_overdue_notice(
         action=("See where they are", link),
         note="The map shows a position only while they share it from Lumiback.",
         reason=_contact_reason(student),
-        link="plain",
+        details=details,
+        html_paragraphs=(
+            f"{student} hasn't checked in at the hostel yet. Lumiback has asked them if they're "
+            "OK. If they don't answer, the hostel office follows up.",
+        ),
     )
 
 
