@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 
 from app.api.deps import (
+    UNAUTHORIZED,
     BreachesDep,
     CurrentUser,
     HubDep,
@@ -66,6 +67,7 @@ LINK_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 DEVICE_SIGN_OUTS = Limit(max_hits=30, window_seconds=3600)
 # Wrong current passwords: a stolen session can't guess its way to a new password.
 CHANGE_FAILURES_PER_USER = Limit(max_hits=5, window_seconds=3600)
+CHANGE_TRIES_PER_USER = Limit(max_hits=10, window_seconds=3600)  # right or wrong
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -326,17 +328,28 @@ async def login(
 ) -> TokenOut:
     email = body.email.lower()
     await enforce(limiter, "login:ip", client_ip(request), LOGIN_PER_IP)
-    try:
-        # Checked before verifying, so a locked email stays locked even with the right password.
-        await limiter.check("login:email", email, LOGIN_FAILURES_PER_EMAIL)
-    except RateLimited as e:
-        raise too_many(e) from None
+    # Every try is counted before verifying, atomically (so a burst can't all pass the check
+    # before any is recorded), and a locked email stays locked even with the right password.
+    # A right password clears the count below.
+    await enforce(limiter, "login:email", email, LOGIN_FAILURES_PER_EMAIL)
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not verify_password(user.password_hash if user else None, body.password):
-        await limiter.record("login:email", email)
         raise INVALID_LOGIN
     assert user is not None
+    # Like every sign-out (refresh_tokens._lock_user): a reset, password change or turn-off at
+    # this moment either waits for this sign-in and then ends it, or finishes first, and then
+    # the password checked above is no longer the account's.
+    checked = user.password_hash
+    locked = await session.scalar(
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked is None or locked.password_hash != checked:
+        raise INVALID_LOGIN
+    user = locked
 
     await limiter.reset("login:email", email)
     if not user.active:
@@ -446,24 +459,36 @@ async def change_password(
 ) -> dict[str, int | bool]:
     """A new password, knowing the current one. Every other device is signed out; this one
     stays signed in (unless it signed in before devices had ids: then it's signed out too)."""
+    current = _current(request)
+    await session.commit()  # the sign-in check is done: hold no connection while waiting below
+    uid = str(user.id)
+    # Every try runs argon2 (slow on purpose), so every try is counted, atomically, before it
+    # runs; a wrong current password also counts toward the tighter guessing limit.
     try:
-        await limiter.check("change:user", str(user.id), CHANGE_FAILURES_PER_USER)
+        failure_hit, _ = await limiter.hit_all(
+            [
+                ("change:user", uid, CHANGE_FAILURES_PER_USER),
+                ("change-try:user", uid, CHANGE_TRIES_PER_USER),
+            ]
+        )
     except RateLimited as e:
         raise too_many(e) from None
-    current = _current(request)
     try:
         signed_out = await password_reset.change(
             session, user, body.current_password, body.password, breaches, current
         )
     except password_reset.WrongPassword:
-        await limiter.record("change:user", str(user.id))
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, detail="Your current password isn't right"
         ) from None
+    except password_reset.SignedOut:
+        raise UNAUTHORIZED from None
     except password_reset.WeakPassword as e:
+        await limiter.undo([failure_hit])  # the current password was right
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Password {e.problem}"
         ) from None
+    await limiter.undo([failure_hit])
     await limiter.reset("login:email", user.email.lower())  # an old lockout ends here too
     return {"signed_out": signed_out, "still_signed_in": current is not None}
 

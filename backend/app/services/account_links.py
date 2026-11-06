@@ -24,7 +24,7 @@ from app.email_templates import account_link_email
 from app.models import AccountLink, LinkPurpose, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
 from app.security.passwords import hash_password, password_problem
-from app.services.refresh_tokens import sign_out_everywhere
+from app.services.refresh_tokens import lock_user, sign_out_everywhere
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +168,7 @@ async def finish(
 
     token_hash = _hash(pepper, token)
     now = datetime.now(UTC)
+    await lock_user(session, user.id)  # first, like every password change: see lock_user
     link = await session.get(AccountLink, user.id, with_for_update=True, populate_existing=True)
     if (
         link is None

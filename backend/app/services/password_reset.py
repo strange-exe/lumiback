@@ -5,6 +5,7 @@ five wrong tries kill it, and asking for one never reveals whether an account ex
 new password signs the account out everywhere.
 """
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -21,7 +22,12 @@ from app.email_templates import password_reset_email
 from app.models import AccountLink, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
 from app.security.passwords import hash_password, password_problem, verify_password
-from app.services.refresh_tokens import sign_out_all_but, sign_out_everywhere
+from app.services.refresh_tokens import (
+    is_live,
+    lock_user,
+    sign_out_all_but,
+    sign_out_everywhere,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +116,7 @@ async def finish(
     new_hash = hash_password(new_password)  # slow on purpose (argon2): outside the lock too
 
     # A newer request may have replaced the code, or a parallel reset used it, meanwhile.
+    await lock_user(session, user.id)  # first, like every password change: see lock_user
     reset = await session.get(PasswordReset, user.id, with_for_update=True, populate_existing=True)
     now = datetime.now(UTC)
     if (
@@ -130,7 +137,12 @@ async def finish(
 
 
 class WrongPassword(Exception):
-    """The current password given to change it isn't right."""
+    """The current password given to change it isn't right (or stopped being right while the
+    change was being checked: a reset or another change got there first)."""
+
+
+class SignedOut(Exception):
+    """The sign-in asking for the change was signed out while it was being checked."""
 
 
 async def change(
@@ -144,8 +156,14 @@ async def change(
     """A signed-in person changes their password, knowing the current one. Every other device
     is signed out (a lost phone stops here), and this one (`keep`) stays signed in; with no
     `keep` (a sign-in from before devices had ids) every device is. Any reset code or admin
-    link still out stops working. Returns how many devices were signed out. Commits."""
-    if not verify_password(user.password_hash, current_password):
+    link still out stops working. Returns how many devices were signed out. Commits.
+
+    Argon2 runs off the event loop and no transaction is open across the breached-password
+    lookup (a network call); under the user lock, the password and the sign-in are checked
+    again, so a reset that lands meanwhile wins."""
+    checked = user.password_hash
+    await session.commit()  # nothing to save yet; no transaction held across what follows
+    if not await asyncio.to_thread(verify_password, checked, current_password):
         raise WrongPassword
     problem = password_problem(new_password, email=user.email, name=user.name)
     if problem is None and new_password == current_password:
@@ -154,8 +172,18 @@ async def change(
         problem = BREACHED
     if problem:
         raise WeakPassword(problem)
-    new_hash = hash_password(new_password)  # argon2, slow on purpose: before taking any lock
-    signed_out = await sign_out_all_but(session, user.id, keep)  # locks the user row first
+    new_hash = await asyncio.to_thread(hash_password, new_password)  # before taking any lock
+
+    await lock_user(session, user.id)
+    fresh = await session.get(User, user.id, populate_existing=True)
+    if fresh is None or fresh.password_hash != checked:
+        await session.rollback()
+        raise WrongPassword
+    if keep is not None and not await is_live(session, user.id, keep):
+        await session.rollback()
+        raise SignedOut
+    user = fresh
+    signed_out = await sign_out_all_but(session, user.id, keep)
     user.password_hash = new_hash
     await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
     await session.execute(delete(AccountLink).where(AccountLink.user_id == user.id))

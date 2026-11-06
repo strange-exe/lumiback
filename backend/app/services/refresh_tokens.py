@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PushToken, RefreshToken, User
@@ -93,7 +93,12 @@ async def rotate(session: AsyncSession, token: str) -> Rotated:
                 )
             )
         ).scalar_one_or_none()
-        if retired is not None:  # reuse of a retired token
+        if retired is not None and owner is not None:  # reuse of a retired token
+            # Revoking needs the exclusive lock, like every sign-out: a refresh of this family
+            # in flight (holding the shared one) must finish first so its successor is seen.
+            # Drop the shared lock first: two replays upgrading at once would deadlock.
+            await session.rollback()
+            await lock_user(session, owner)
             await revoke_family(session, retired, now=now)
             await session.commit()
         else:
@@ -126,22 +131,24 @@ async def revoke_family(
 
 async def revoke_by_token(session: AsyncSession, token: str) -> None:
     """Logout: revoke the family the token belongs to. Unknown tokens are ignored."""
-    family_id = (
+    found = (
         await session.execute(
-            select(RefreshToken.family_id).where(
+            select(RefreshToken.user_id, RefreshToken.family_id).where(
                 RefreshToken.token_hash == hash_refresh_token(token)
             )
         )
-    ).scalar_one_or_none()
-    if family_id is not None:
-        await revoke_family(session, family_id)
+    ).first()
+    if found is not None:
+        await lock_user(session, found.user_id)  # like every sign-out: see lock_user
+        await revoke_family(session, found.family_id)
         await session.commit()
 
 
-async def _lock_user(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Every sign-out takes this first. `rotate` holds the same row FOR SHARE from claiming a
-    token until its successor is saved, so a sign-out waits for a refresh in flight and then
-    revokes the successor too, instead of missing it."""
+async def lock_user(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Every sign-out, sign-in and password change takes this first (before any token, reset
+    or link row, so they all lock in one order). `rotate` holds the same row FOR SHARE from
+    claiming a token until its successor is saved, so a sign-out waits for a refresh in flight
+    and then revokes the successor too, instead of missing it."""
     await session.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
@@ -150,7 +157,7 @@ async def sign_out_everywhere(
 ) -> None:
     """Every device: tokens revoked and push tokens dropped. Doesn't commit (the caller's
     change, a new password or an account turned off, commits with it)."""
-    await _lock_user(session, user_id)
+    await lock_user(session, user_id)
     await session.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
@@ -208,9 +215,26 @@ async def is_live(session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUI
     return found is not None
 
 
+async def _drop_unowned_push_tokens(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Push tokens that no live sign-in owns: saved before devices had ids (family NULL), or
+    registered by a sign-in that has since ended. Nothing says which phone they belong to, so
+    after a sign-out they go; a phone still signed in registers again when the app opens."""
+    live = select(RefreshToken.family_id).where(
+        RefreshToken.user_id == user_id,
+        RefreshToken.revoked_at.is_(None),
+        RefreshToken.expires_at > datetime.now(UTC),
+    )
+    await session.execute(
+        delete(PushToken).where(
+            PushToken.user_id == user_id,
+            or_(PushToken.family_id.is_(None), PushToken.family_id.not_in(live)),
+        )
+    )
+
+
 async def sign_out_device(session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUID) -> bool:
     """Signs out one of the user's devices. False if it isn't one of theirs. Commits."""
-    await _lock_user(session, user_id)
+    await lock_user(session, user_id)
     mine = await session.scalar(
         select(RefreshToken.id)
         .where(RefreshToken.user_id == user_id, RefreshToken.family_id == family_id)
@@ -220,6 +244,7 @@ async def sign_out_device(session: AsyncSession, user_id: uuid.UUID, family_id: 
         await session.rollback()
         return False
     await revoke_family(session, family_id)
+    await _drop_unowned_push_tokens(session, user_id)
     await session.commit()
     return True
 
@@ -240,8 +265,9 @@ async def sign_out_all_but(
         count = len(await devices(session, user_id))
         await sign_out_everywhere(session, user_id)
         return count
-    await _lock_user(session, user_id)
+    await lock_user(session, user_id)
     others = [d.id for d in await devices(session, user_id) if d.id != keep]
     for family_id in others:
         await revoke_family(session, family_id)
+    await _drop_unowned_push_tokens(session, user_id)
     return len(others)

@@ -87,6 +87,30 @@ def test_signing_out_a_lost_phone_stops_it_at_once(client, db, riya):
     ] == ["Chrome on Windows"]
 
 
+@pytest.mark.parametrize("how", ["one", "others"])
+def test_a_phone_registered_before_devices_had_ids_stops_getting_pushes(client, db, riya, how):
+    # Push tokens saved before 1.12 have no sign-in attached (family_id NULL). Nothing says
+    # which phone one belongs to, so signing devices out drops them: the phones still signed
+    # in register theirs again the next time the app opens.
+    laptop = sign_in(client, user_agent=CHROME_WINDOWS)
+    lost = sign_in(client, device="Lumiback app on Android 14")
+    phone_token(client, auth_header(lost), "ExponentPushToken[oldPhone000001]")
+    db.execute(text("UPDATE push_tokens SET family_id = NULL"))
+    db.commit()
+    if how == "one":
+        lost_id = next(
+            d["id"]
+            for d in client.get("/auth/devices", headers=auth_header(laptop)).json()
+            if not d["current"]
+        )
+        r = client.delete(f"/auth/devices/{lost_id}", headers=auth_header(laptop))
+        assert r.status_code == 204, r.text
+    else:
+        r = client.post("/auth/devices/sign-out-others", headers=auth_header(laptop))
+        assert r.status_code == 200, r.text
+    assert push_tokens(db) == []
+
+
 def test_sign_out_every_other_device(client, db, riya):
     keep = sign_in(client, user_agent=CHROME_WINDOWS)
     others = [sign_in(client, device=f"Phone {i}") for i in range(2)]
@@ -215,6 +239,74 @@ def test_signing_a_device_out_cant_miss_its_refresh_at_the_same_moment(
     assert live_tokens(db) == 1  # the laptop's
 
 
+@pytest.mark.parametrize("how", ["replay", "logout"])
+def test_a_replayed_or_logged_out_token_cant_miss_a_refresh_at_the_same_moment(
+    client, db, riya, monkeypatch, how
+):
+    """Someone refreshes a copied sign-in just as the owner's app replays an old token (or
+    signs out with it). Reuse detection revokes the whole sign-in, including the successor the
+    refresh is saving at that moment."""
+    first = sign_in(client, device="Lumiback app on Android 14")
+    old = first["refresh_token"]
+    current = client.post("/auth/refresh", json={"refresh_token": old}).json()
+    real_issue = refresh_tokens.issue
+
+    async def slow_issue(*args, **kwargs):
+        if kwargs.get("signed_in_at") is not None:  # only the successor in a rotation
+            await asyncio.sleep(1.0)  # the replay or logout arrives here
+        return await real_issue(*args, **kwargs)
+
+    monkeypatch.setattr(refresh_tokens, "issue", slow_issue)
+    result: dict = {}
+    refreshing = threading.Thread(
+        target=lambda: result.update(
+            r=client.post("/auth/refresh", json={"refresh_token": current["refresh_token"]})
+        )
+    )
+    refreshing.start()
+    time.sleep(0.4)
+    if how == "replay":
+        stopped = client.post("/auth/refresh", json={"refresh_token": old})
+        assert stopped.status_code == 401
+    else:
+        assert client.post("/auth/logout", json={"refresh_token": old}).status_code == 204
+    refreshing.join(timeout=20)
+    if result["r"].status_code == 200:  # the refresh finished first: its successor dies too
+        successor = result["r"].json()
+        assert client.get("/auth/me", headers=auth_header(successor)).status_code == 401
+    assert live_tokens(db) == 0
+
+
+def test_a_reset_cant_miss_a_sign_in_at_the_same_moment(client, db, riya, monkeypatch):
+    """A sign-in that has checked the old password but not saved its token yet, while the
+    office resets the account. The new sign-in must not outlive the reset."""
+    _, admin = signup(client, "office@geu.ac.in", "Office")
+    make_admin(db, "office@geu.ac.in")
+    riya_id = client.get("/admin/users", params={"q": "riya"}, headers=admin).json()[0]["id"]
+    real_issue = refresh_tokens.issue
+
+    async def slow_issue(*args, **kwargs):
+        if kwargs.get("signed_in_at") is None:  # only a sign-in, not a rotation
+            await asyncio.sleep(1.0)  # the reset arrives here
+        return await real_issue(*args, **kwargs)
+
+    monkeypatch.setattr(refresh_tokens, "issue", slow_issue)
+    result: dict = {}
+    signing_in = threading.Thread(
+        target=lambda: result.update(
+            r=client.post("/auth/login", json={"email": RIYA, "password": PASSWORD})
+        )
+    )
+    signing_in.start()
+    time.sleep(0.4)
+    reset = client.post(f"/admin/users/{riya_id}/password-link", headers=admin)
+    signing_in.join(timeout=20)
+    assert reset.status_code == 200, reset.text
+    if result["r"].status_code == 200:  # the sign-in finished first: the reset still ends it
+        assert client.get("/auth/me", headers=auth_header(result["r"].json())).status_code == 401
+    assert live_tokens(db) == 0
+
+
 # ---------- changing the password while signed in ----------
 
 NEW_PASSWORD = "harbour-lantern-quietly-71"
@@ -255,6 +347,78 @@ def test_the_current_password_must_be_right_and_guessing_stops(client, riya):
         assert r.json()["detail"] == "Your current password isn't right"
     assert change(client, here).status_code == 429  # even the right one, for now
     assert client.get("/auth/me", headers=auth_header(here)).status_code == 200
+
+
+def test_every_try_at_a_change_counts(client, riya):
+    """Each try checks the current password (argon2, slow on purpose), so tries are limited
+    even when the current password is right and only the new one is refused."""
+    here = sign_in(client)
+    for _ in range(10):
+        assert change(client, here, new="short").status_code == 422
+    assert change(client, here).status_code == 429
+
+
+def _burst(n: int, send) -> list[int]:
+    start = threading.Barrier(n)
+    codes: list[int] = []
+
+    def one() -> None:
+        start.wait()
+        codes.append(send().status_code)
+
+    threads = [threading.Thread(target=one) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    return codes
+
+
+@pytest.mark.parametrize("where", ["login", "change"])
+def test_a_burst_of_wrong_passwords_cant_slip_past_the_limit(client, riya, where):
+    """Guesses sent all at once: no more than five are ever checked."""
+    if where == "login":
+        wrong = 401
+        codes = _burst(
+            10,
+            lambda: client.post("/auth/login", json={"email": RIYA, "password": "wrong-guess-1"}),
+        )
+    else:
+        wrong = 403
+        here = sign_in(client)
+        codes = _burst(10, lambda: change(client, here, current="wrong-guess-1"))
+    assert len(codes) == 10
+    assert codes.count(wrong) <= 5, codes
+    assert set(codes) <= {wrong, 429}, codes
+
+
+def test_a_change_cant_undo_a_reset_at_the_same_moment(client, db, riya):
+    """Someone with a stolen sign-in and the old password changes it, while the office resets
+    the account for its owner. The reset wins: the stolen change must not go through."""
+    _, admin = signup(client, "office@geu.ac.in", "Office")
+    make_admin(db, "office@geu.ac.in")
+    riya_id = client.get("/admin/users", params={"q": "riya"}, headers=admin).json()[0]["id"]
+    stolen = sign_in(client)
+
+    class SlowBreaches:
+        async def is_breached(self, password: str) -> bool:
+            await asyncio.sleep(1.0)  # the reset arrives here
+            return False
+
+    client.app.state.breaches = SlowBreaches()
+    result: dict = {}
+    changing = threading.Thread(target=lambda: result.update(r=change(client, stolen)))
+    changing.start()
+    time.sleep(0.4)
+    reset = client.post(f"/admin/users/{riya_id}/password-link", headers=admin)
+    changing.join(timeout=20)
+    assert reset.status_code == 200, reset.text
+    assert result["r"].status_code in (401, 403), result["r"].text
+    assert (
+        client.post("/auth/login", json={"email": RIYA, "password": NEW_PASSWORD}).status_code
+        == 401
+    )
+    assert live_tokens(db) == 0
 
 
 @pytest.mark.parametrize(
