@@ -54,6 +54,22 @@
     "format:check": "prettier --check ."
   },
   "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo",
+        "expo-constants",
+        "expo-dev-client",
+        "expo-linking",
+        "expo-location",
+        "expo-notifications",
+        "expo-router",
+        "expo-splash-screen",
+        "expo-task-manager",
+        "expo-updates"
+      ]
+    }
+  },
   "jest": {
     "preset": "jest-expo",
     "testMatch": [
