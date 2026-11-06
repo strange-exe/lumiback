@@ -30,7 +30,8 @@ from app.security.passwords import hash_password  # noqa: E402
 
 E2E_EMAIL = "e2e@geu.ac.in"
 DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase this one
-E2E_PASSWORD = "lantern-at-dusk-2029"  # noqa: S105 - test-only, local *_test database
+# Test-only, local *_test database; apps/web/e2e/helpers.ts signs in with the same value.
+E2E_PASSWORD = "lantern@123"  # noqa: S105
 ADMIN_EMAIL = "e2e-admin@geu.ac.in"
 WARDEN_EMAIL = "e2e-warden@geu.ac.in"  # warden of Hostel 3
 HEAD_WARDEN_EMAIL = "e2e-head@geu.ac.in"
