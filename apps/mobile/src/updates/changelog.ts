@@ -30,6 +30,8 @@ export const NATIVE_BUILDS: Readonly<Record<string, number>> = {
   // Build 2: updates itself, downloading the APK for its processor (54 MB on modern phones).
   // It replaced the first build 2 (ba998202), which was only on testers' phones.
   "09a68a5f6ff29dabba07bfa02488c9206cda5818": 2,
+  // Build 3 (1.8.0): Expo SDK 57 patch releases, same signing key as build 2.
+  "3b9a63d6b753fdb9d3d3308930fcc962c8ca8b15": 3,
 };
 
 /**

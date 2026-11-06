@@ -1,4 +1,22 @@
-import { CHANGELOG, compareVersions, CURRENT, shouldShowWhatsNew } from "./changelog";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import {
+  CHANGELOG,
+  compareVersions,
+  CURRENT,
+  NATIVE_BUILDS,
+  shouldShowWhatsNew,
+} from "./changelog";
+
+test("every published build's runtime is listed in NATIVE_BUILDS", () => {
+  // The web serves this file to installed apps; each channel names the latest build.
+  const feed = JSON.parse(
+    readFileSync(join(__dirname, "../../../web/public/app/android.json"), "utf8"),
+  ) as Record<string, { build: number }>;
+  const known = new Set(Object.values(NATIVE_BUILDS));
+  for (const channel of Object.values(feed)) expect(known).toContain(channel.build);
+});
 
 test("versions are x.y.z, unique and newest first", () => {
   for (const r of CHANGELOG) expect(r.version).toMatch(/^\d+\.\d+\.\d+$/);
