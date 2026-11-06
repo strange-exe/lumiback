@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.10.0",
+    "date": "2026-11-06",
+    "title": "Fix an outing that went wrong",
+    "points": [
+      "Forgot to tap in, or tapped by mistake? Ask the hostel office to fix it from History. Nothing changes until they approve.",
+      "If an outing from an earlier day is still open, the gate asks whether you're coming in or going out, instead of guessing.",
+      "The hostel office can record a return or fix a return time, and every change keeps the original time."
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-11-06",
     "title": "Another outing, and accounts the office sets up",
