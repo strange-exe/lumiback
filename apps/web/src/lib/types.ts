@@ -29,6 +29,17 @@ export interface TokenPair {
   refresh_token: string;
 }
 
+/** One place the account is signed in (GET /auth/devices), most recently active first. */
+export interface Device {
+  id: string;
+  /** "Chrome on Windows", "Lumiback app on Android 14"; null when it wasn't recognised. */
+  device: string | null;
+  signed_in_at: string;
+  last_active_at: string;
+  /** The device asking. False on every row when this one signed in before devices existed. */
+  current: boolean;
+}
+
 export type OutingStatus = "out" | "overdue" | "returned";
 
 export interface Outing {
@@ -314,6 +325,8 @@ export interface Gate {
   radius_m: number;
   active: boolean;
   created_at: string;
+  /** Some scan or outing names it, so it stays for the records. Missing (older server): used. */
+  used?: boolean;
 }
 
 export interface GateCreated {

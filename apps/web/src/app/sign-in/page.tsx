@@ -9,13 +9,22 @@ import { currentUser } from "@/lib/session";
 export const metadata: Metadata = { title: "Sign in" };
 
 interface PageProps {
-  /** set: a password chosen with an emailed link (/set-password). */
-  searchParams: Promise<{ verified?: string; deleted?: string; reset?: string; set?: string }>;
+  /**
+   * set: a password chosen with an emailed link (/set-password). changed: a password changed on
+   * /account/password from a sign-in old enough that the change signed it out too.
+   */
+  searchParams: Promise<{
+    verified?: string;
+    deleted?: string;
+    reset?: string;
+    set?: string;
+    changed?: string;
+  }>;
 }
 
 export default async function SignInPage({ searchParams }: PageProps): Promise<ReactNode> {
   if (await currentUser()) redirect("/home");
-  const { verified, deleted, reset, set } = await searchParams;
+  const { verified, deleted, reset, set, changed } = await searchParams;
 
   return (
     <AuthShell>
@@ -39,6 +48,12 @@ export default async function SignInPage({ searchParams }: PageProps): Promise<R
         {reset && (
           <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
             Password changed. Sign in with your new password.
+          </p>
+        )}
+        {changed && (
+          <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
+            Your password was changed, and you were signed out here too. Sign in with your new
+            password.
           </p>
         )}
         {set && (

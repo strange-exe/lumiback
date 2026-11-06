@@ -1,7 +1,11 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { isDeviceId, signedOutNotice } from "@/features/account/devices";
+import { changePasswordProblem, passwordChangedNotice } from "@/features/account/password";
 import { isLinkToken } from "@/features/auth/link-token";
 import { shareApi } from "@/features/share/api";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
@@ -18,6 +22,15 @@ function failure(error: unknown, fields?: Record<string, string>): FormState {
   throw error; // unexpected: let the error boundary handle it
 }
 
+/**
+ * The browser's User-Agent, for /auth/login to name this sign-in ("Chrome on Windows") in the
+ * signed-in devices list. The backend keeps only that name, never the raw string.
+ */
+async function browserAgent(): Promise<string | undefined> {
+  const agent = (await headers()).get("user-agent")?.trim();
+  return agent ? agent.slice(0, 512) : undefined;
+}
+
 export async function signIn(_: FormState, form: FormData): Promise<FormState> {
   const email = text(form, "email").toLowerCase();
   const password = form.get("password");
@@ -28,7 +41,7 @@ export async function signIn(_: FormState, form: FormData): Promise<FormState> {
   try {
     tokens = await callBackend<TokenPair>("/auth/login", {
       method: "POST",
-      body: { email, password },
+      body: { email, password, user_agent: await browserAgent() },
       clientIp: await visitorIp(),
     });
   } catch (error) {
@@ -142,6 +155,87 @@ export async function deleteAccount(_: FormState, form: FormData): Promise<FormS
   redirect("/sign-in?deleted=1");
 }
 
+// ---------- signed-in devices (a lost phone) ----------
+
+/** A device action's result failed: a lost session goes to sign in, the rest is shown. */
+function deviceFailure(error: unknown): FormState {
+  if (error instanceof ApiError && error.status === 401) redirect("/sign-in");
+  return failure(error);
+}
+
+/** Signs one other device out at once: its sign-in stops working on its next request. */
+export async function signOutDevice(_: FormState, form: FormData): Promise<FormState> {
+  const id = form.get("device_id");
+  if (!isDeviceId(id)) return { error: "That device couldn't be found. Reload the page." };
+  // Only for the message, shown to this same person as text.
+  const name = text(form, "device_name").slice(0, 80) || "that device";
+  const token = await accessToken();
+  if (!token) redirect("/sign-in");
+  try {
+    await callBackend(`/auth/devices/${id}`, { method: "DELETE", token });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      revalidatePath("/account"); // already gone (signed out elsewhere): refresh the list
+      return { error: null, notice: `${name} was already signed out.` };
+    }
+    return deviceFailure(error);
+  }
+  revalidatePath("/account");
+  return { error: null, notice: `Signed out of ${name}.` };
+}
+
+/** Every device except this one. 409: this device signed in before devices were named. */
+export async function signOutOtherDevices(_: FormState): Promise<FormState> {
+  const token = await accessToken();
+  if (!token) redirect("/sign-in");
+  let count: number;
+  try {
+    ({ signed_out: count } = await callBackend<{ signed_out: number }>(
+      "/auth/devices/sign-out-others",
+      { method: "POST", token },
+    ));
+  } catch (error) {
+    return deviceFailure(error);
+  }
+  revalidatePath("/account");
+  return { error: null, notice: signedOutNotice(count) };
+}
+
+// ---------- changing the password while signed in ----------
+
+/**
+ * A new password, knowing the current one. The backend signs out every other device and keeps
+ * this one, unless this sign-in is from before devices had ids (`still_signed_in: false`): then
+ * it was revoked too, so the cookies go and the person signs in again with the new password.
+ * Its 403 (wrong current password), 422 (a weak new one) and 429 messages are shown as written.
+ * Passwords are never handed back to the form.
+ */
+export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
+  const current = form.get("current_password");
+  const password = form.get("password");
+  const problem = changePasswordProblem(current, password, form.get("confirm"));
+  if (problem) return { error: problem };
+  const token = await accessToken();
+  if (!token) redirect("/sign-in");
+  let result: { signed_out: number; still_signed_in: boolean };
+  try {
+    result = await callBackend("/auth/change-password", {
+      method: "POST",
+      token,
+      body: { current_password: current, password },
+      clientIp: await visitorIp(),
+    });
+  } catch (error) {
+    return deviceFailure(error);
+  }
+  if (!result.still_signed_in) {
+    await clearTokens();
+    redirect("/sign-in?changed=1");
+  }
+  revalidatePath("/account");
+  return { error: null, notice: passwordChangedNotice(result.signed_out) };
+}
+
 /** Forgot password, step 1: the API answers the same whether or not the account exists. */
 export async function requestPasswordReset(_: FormState, form: FormData): Promise<FormState> {
   const email = text(form, "email").toLowerCase();
@@ -195,7 +289,7 @@ export async function resetPassword(_: FormState, form: FormData): Promise<FormS
   try {
     tokens = await callBackend<TokenPair>("/auth/login", {
       method: "POST",
-      body: { email, password },
+      body: { email, password, user_agent: await browserAgent() },
       clientIp,
     });
   } catch {

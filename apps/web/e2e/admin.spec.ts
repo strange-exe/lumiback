@@ -109,7 +109,9 @@ test.describe("as a student on a form day", () => {
       await expect(page.getByRole("button", { name: "Check out" })).toHaveCount(0); // approval first
       const form = page.getByRole("form", { name: "Ask for today's outing" });
       await form.getByLabel("Where and why").fill("Shopping at Pacific Mall");
-      await form.getByText("1 h", { exact: true }).click();
+      // Late in the day only "Up to 3 h" is left (shorter choices end past the window), so
+      // take whichever choice is offered instead of a fixed "1 h".
+      await form.getByRole("radio").first().check();
       await form.getByLabel("Your phone number").fill("98765 43210");
       await form.getByLabel("Emergency contact").fill("Sunita Sharma");
       await form.getByLabel("Relation").fill("Mother");
@@ -191,6 +193,27 @@ test.describe("as an admin", () => {
       kiosk.page.getByRole("heading", { name: "South Gate is switched off" }),
     ).toBeVisible();
     await kiosk.page.context().close();
+  });
+
+  test("a gate added by mistake can be removed; a used one stays", async ({ page }) => {
+    await page.goto("/admin/gates");
+    const form = page.getByRole("form", { name: "Add a gate" });
+    await form.getByLabel("Name").fill("Spare Gate");
+    await form.getByLabel("Latitude").fill("30.2670");
+    await form.getByLabel("Longitude").fill("77.9962");
+    await form.getByRole("button", { name: "Add gate" }).click();
+    const gateCard = (name: string) =>
+      page.getByRole("listitem").filter({ has: page.getByRole("heading", { name }) });
+    const spare = gateCard("Spare Gate");
+    await expect(spare.getByRole("button", { name: "Remove gate" })).toBeVisible();
+    // The seeded gate has taken scans (seeded outings), so it can only be switched off.
+    const used = gateCard("North Gate");
+    await expect(used.getByRole("button", { name: "Remove gate" })).toHaveCount(0);
+    await expect(used).toContainText("stays for the records");
+
+    page.once("dialog", (dialog) => void dialog.accept());
+    await spare.getByRole("button", { name: "Remove gate" }).click();
+    await expect(page.getByRole("heading", { name: "Spare Gate" })).toHaveCount(0);
   });
 
   test("change how long gate scans are kept", async ({ page }) => {

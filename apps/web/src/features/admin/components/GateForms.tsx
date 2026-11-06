@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import {
   createGate,
   newKioskLink,
+  removeGate,
   setGateActive,
   updateGate,
   type GateFormState,
@@ -176,6 +177,7 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
   const [toggle, toggleAction] = useActionState(setGateActive, EMPTY);
   const [kiosk, kioskAction] = useActionState(newKioskLink, EMPTY);
   const [edit, editAction] = useActionState(updateGate, EMPTY);
+  const [removal, removeAction] = useActionState(removeGate, EMPTY);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
@@ -204,8 +206,29 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
             New kiosk link
           </SubmitButton>
         </form>
+        {gate.used === false && (
+          <form
+            action={removeAction}
+            onSubmit={(event) => {
+              const ok = window.confirm(
+                `Remove ${gate.name}? Nobody has scanned at it yet, so it can go completely. Its kiosk link stops working.`,
+              );
+              if (!ok) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="gate_id" value={gate.id} />
+            <SubmitButton variant="danger" pendingLabel="Removing…" className="min-h-11 text-sm">
+              Remove gate
+            </SubmitButton>
+          </form>
+        )}
       </div>
-      <FormError message={toggle.error ?? kiosk.error} />
+      {gate.used !== false && (
+        <p className="text-sm text-muted">
+          Scans have used this gate, so it stays for the records. Switch it off to stop it.
+        </p>
+      )}
+      <FormError message={toggle.error ?? kiosk.error ?? removal.error} />
       {kiosk.kiosk && <KioskLink gate={kiosk.kiosk.gate} token={kiosk.kiosk.token} />}
       <details className="group">
         <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-sm font-bold text-accent">

@@ -1,10 +1,12 @@
+import { CaretRight } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { DeleteAccountForm } from "@/features/account/DeleteAccountForm";
 import { DownloadMyData } from "@/features/account/DownloadMyData";
 import { OutingDetails } from "@/features/account/OutingDetails";
+import { SignedInDevices, SignedInDevicesLoading } from "@/features/account/SignedInDevices";
 import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
 import { requireUser } from "@/lib/session";
@@ -39,6 +41,17 @@ export default async function AccountPage(): Promise<ReactNode> {
         ))}
       </dl>
       <OutingDetails profile={profile} hostels={hostels} />
+      <Link
+        href="/account/password"
+        className="flex min-h-14 items-center justify-between gap-3 rounded-sheet border border-line bg-surface px-5 font-bold text-accent hover:bg-accent-soft"
+      >
+        Change password
+        <CaretRight size={18} weight="bold" aria-hidden="true" className="text-muted" />
+      </Link>
+      {/* Streams in, so a slow or failed list never holds up the rest of the page. */}
+      <Suspense fallback={<SignedInDevicesLoading />}>
+        <SignedInDevices token={token} />
+      </Suspense>
       <DownloadMyData />
       <div className="flex flex-col gap-2 text-muted">
         <p>

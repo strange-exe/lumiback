@@ -88,6 +88,19 @@ export async function setGateActive(_: GateFormState, form: FormData): Promise<G
   return { error: null };
 }
 
+/** Removes a gate nobody has used (admins only); the server refuses a used one with a reason. */
+export async function removeGate(_: GateFormState, form: FormData): Promise<GateFormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "gate_id");
+  const result = await attempt(() =>
+    callBackend<void>(`/admin/gates/${encodeURIComponent(id)}`, { method: "DELETE", token }),
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/gates");
+  revalidatePath("/admin");
+  return { error: null };
+}
+
 export async function newKioskLink(_: GateFormState, form: FormData): Promise<GateFormState> {
   const token = await tokenOrSignIn();
   const id = text(form, "gate_id");
