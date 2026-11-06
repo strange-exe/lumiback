@@ -2,6 +2,7 @@ import { Link, router, useLocalSearchParams } from "expo-router";
 import { useRef, useState, type ReactNode } from "react";
 import { type TextInput, View } from "react-native";
 
+import { signInRefusal } from "@/lib/accounts";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Illustration } from "@/ui/illustration";
@@ -26,10 +27,13 @@ export default function SignIn(): ReactNode {
     try {
       await signIn(email, password);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
+      // Only an unverified email goes to the code screen; a turned-off account (also a 403)
+      // shows the server's own words.
+      const refusal = e instanceof ApiError ? signInRefusal(e.status, e.detail) : null;
+      if (refusal?.verify) {
         router.push({ pathname: "/verify", params: { email: email.trim().toLowerCase() } });
       } else {
-        setError(e instanceof ApiError ? e.detail : "Something went wrong. Try again.");
+        setError(refusal ? refusal.message : "Something went wrong. Try again.");
       }
       setPassword(""); // only the password needs typing again
     } finally {

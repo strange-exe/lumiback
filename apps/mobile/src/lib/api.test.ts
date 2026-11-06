@@ -75,3 +75,43 @@ describe("api errors", () => {
     expect(failure.problem).toBeNull();
   });
 });
+
+describe("a turned-off account", () => {
+  const session = jest.requireMock<{ refresh: jest.Mock; clearTokens: jest.Mock }>("@/lib/session");
+  const OFF = "This account has been turned off. Ask your hostel office to turn it back on.";
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    session.refresh.mockClear();
+    session.clearTokens.mockClear();
+  });
+
+  it("gets sign-in's 403 as the server words it, with no refresh", async () => {
+    fetchMock.mockResolvedValueOnce(reply(403, { detail: OFF }));
+    const failure = (await api("/auth/login", { method: "POST", auth: false, body: {} }).catch(
+      (e: unknown) => e,
+    )) as ApiError;
+    expect(failure.status).toBe(403);
+    expect(failure.detail).toBe(OFF);
+    expect(session.refresh).not.toHaveBeenCalled();
+  });
+
+  it("ends the session when it's turned off while signed in (refresh refused)", async () => {
+    // session.refresh clears the stored tokens itself on a refusal and returns null.
+    session.refresh.mockResolvedValueOnce(null);
+    fetchMock.mockResolvedValueOnce(reply(401, { detail: "Not signed in" }));
+    const failure = (await api("/admin/overview").catch((e: unknown) => e)) as ApiError;
+    expect(failure.status).toBe(401);
+    expect(failure.detail).toBe("Please sign in again.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the tokens when the retry is refused too", async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(401, { detail: "Not signed in" }))
+      .mockResolvedValueOnce(reply(401, { detail: "Not signed in" }));
+    const failure = (await api("/admin/overview").catch((e: unknown) => e)) as ApiError;
+    expect(failure.status).toBe(401);
+    expect(session.clearTokens).toHaveBeenCalledTimes(1);
+  });
+});

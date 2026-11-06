@@ -2,15 +2,22 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Alert, Pressable, RefreshControl, View } from "react-native";
 
+import {
+  ACCOUNT_FILTERS,
+  accountControls,
+  emptyListText,
+  type AccountControls,
+} from "@/lib/accounts";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { accountLabel, everyHostel, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
-import type { OfficeHostel, OfficeStudent, Role } from "@/lib/types";
+import type { AccountFilter, OfficeHostel, OfficeStudent, Role } from "@/lib/types";
 import { useData } from "@/lib/use-data";
+import { AccountActions, AddPersonSheet, EditSheet } from "@/screens/office/AccountSheets";
 import { Contact } from "@/screens/office/Contact";
 import { haptic } from "@/ui/haptics";
-import { Button, Chips, Field, FormError, Heading, Screen, StatusChip, T } from "@/ui/kit";
+import { Button, Chips, Field, FormError, Heading, Notice, Screen, StatusChip, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 
@@ -30,16 +37,32 @@ export default function Students(): ReactNode {
   const [search, setSearch] = useState("");
   const [roleFor, setRoleFor] = useState<OfficeStudent | null>(null);
   const [moveFor, setMoveFor] = useState<OfficeStudent | null>(null);
+  const [editFor, setEditFor] = useState<OfficeStudent | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [account, setAccount] = useState<"all" | AccountFilter>("all");
+  // What the last account change did, in words (also announced to screen readers).
+  const [done, setDone] = useState<string | null>(null);
+  const viewer = user?.role ? { id: user.id, role: user.role } : null;
 
   const hostels = useData(useCallback(() => office.hostels(), []));
   const load = useCallback(
-    () => office.students({ hostelId: hostelId === "all" ? null : hostelId, q: search }),
-    [hostelId, search],
+    () =>
+      office.students({
+        hostelId: hostelId === "all" ? null : hostelId,
+        q: search,
+        account: account === "all" ? null : account,
+      }),
+    [hostelId, search, account],
   );
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
   useEffect(() => {
     void refetch();
-  }, [hostelId, search, refetch]);
+  }, [hostelId, search, account, refetch]);
+
+  const changed = (message: string): void => {
+    setDone(message);
+    void refetch();
+  };
 
   const choices = [
     ...(admin || (hostels.data?.length ?? 0) > 1 ? [{ value: "all", label: "All" }] : []),
@@ -68,9 +91,25 @@ export default function Students(): ReactNode {
               : "Your hostels' students, with the contacts they gave."
         }
       />
+      {admin ? (
+        <Button
+          label="Add a person"
+          variant="secondary"
+          onPress={() => {
+            setDone(null);
+            setAdding(true);
+          }}
+        />
+      ) : null}
+      {done ? (
+        <View accessibilityLiveRegion="polite">
+          <Notice>{done}</Notice>
+        </View>
+      ) : null}
       {choices.length > 1 ? (
         <Chips label="Hostel" options={choices} value={hostelId} onChange={setHostelId} />
       ) : null}
+      <Chips label="Show" options={ACCOUNT_FILTERS} value={account} onChange={setAccount} />
       <Field
         label="Search"
         placeholder="Name, email or roll number"
@@ -91,7 +130,7 @@ export default function Students(): ReactNode {
         <T tone="muted">Loading…</T>
       ) : data && data.length === 0 ? (
         <T tone="muted" style={{ textAlign: "center", paddingVertical: space(8) }}>
-          {search ? `Nobody matches "${search}".` : "No students have chosen this hostel yet."}
+          {emptyListText(account, search)}
         </T>
       ) : (
         <View
@@ -109,8 +148,13 @@ export default function Students(): ReactNode {
               student={s}
               first={i === 0}
               onChangeRole={admin ? () => setRoleFor(s) : undefined}
-              // Admins only, for anyone but themselves (their own goes through Forgot password).
-              onLinkSent={admin && s.id !== user?.id ? () => void refetch() : undefined}
+              controls={accountControls(viewer, s)}
+              onEdit={() => {
+                setDone(null);
+                setEditFor(s);
+              }}
+              onChanged={changed}
+              onLinkSent={() => void refetch()}
               onMove={
                 s.role === "student" && (hostels.data ?? []).some((h) => h.id !== s.hostel_id)
                   ? () => setMoveFor(s)
@@ -128,6 +172,27 @@ export default function Students(): ReactNode {
           onSaved={() => {
             setMoveFor(null);
             void refetch();
+          }}
+        />
+      ) : null}
+      {editFor ? (
+        <EditSheet
+          person={editFor}
+          canEditEmail={accountControls(viewer, editFor).editEmail}
+          onClose={() => setEditFor(null)}
+          onSaved={(message) => {
+            setEditFor(null);
+            changed(message);
+          }}
+        />
+      ) : null}
+      {admin && adding ? (
+        <AddPersonSheet
+          hostels={hostels.data ?? []}
+          onClose={() => setAdding(false)}
+          onAdded={(message) => {
+            setAdding(false);
+            changed(message);
           }}
         />
       ) : null}
@@ -152,14 +217,21 @@ function StudentRow({
   first,
   onChangeRole,
   onMove,
+  controls,
+  onEdit,
+  onChanged,
   onLinkSent,
 }: {
   student: OfficeStudent;
   first: boolean;
   onChangeRole?: () => void;
   onMove?: () => void;
-  /** Set when the viewer may send this student a password link; refreshes the list. */
-  onLinkSent?: () => void;
+  /** What the viewer may do to this account (see accountControls). */
+  controls: AccountControls;
+  onEdit: () => void;
+  onChanged: (message: string) => void;
+  /** After a password link is sent (controls.passwordLink); refreshes the list. */
+  onLinkSent: () => void;
 }): ReactNode {
   const c = useColors();
   const [open, setOpen] = useState(false);
@@ -204,10 +276,11 @@ function StudentRow({
           {onMove ? (
             <Button label="Move to another hostel" variant="secondary" onPress={onMove} />
           ) : null}
-          {onLinkSent ? <PasswordLink student={s} onSent={onLinkSent} /> : null}
+          {controls.passwordLink ? <PasswordLink student={s} onSent={onLinkSent} /> : null}
           {onChangeRole ? (
             <Button label="Change role" variant="secondary" onPress={onChangeRole} />
           ) : null}
+          <AccountActions person={s} controls={controls} onEdit={onEdit} onChanged={onChanged} />
         </View>
       ) : null}
     </View>

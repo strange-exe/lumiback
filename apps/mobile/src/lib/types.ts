@@ -350,8 +350,60 @@ export interface OfficeStudent {
 }
 
 /** invited: added by the office, hasn't chosen a password yet; reset: a password link was
- * sent and they haven't chosen a new one yet. */
-export type AccountState = "active" | "invited" | "reset";
+ * sent and they haven't chosen a new one yet; off: turned off by the hostel office (can't sign
+ * in, history kept). */
+export type AccountState = "active" | "invited" | "reset" | "off";
+
+/** GET /admin/students?account=: only people who haven't set up, or only accounts turned off. */
+export type AccountFilter = "invited" | "off";
+
+/** PATCH /admin/users/{id}: only the fields sent change; null clears a roll no. or phone. The
+ * email is for admins only. */
+export interface AccountEdit {
+  name?: string;
+  email?: string;
+  roll_no?: string | null;
+  phone?: string | null;
+}
+
+/** The /admin/users shape, returned by the account controls. */
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  roll_no: string | null;
+  role: Role;
+  hostel_ids: string[];
+  hostels: string[];
+  home_hostel_id: string | null;
+  home_hostel: string | null;
+  account: AccountState;
+}
+
+/** POST /admin/people (admins only): one person, checked like a row of the CSV import. */
+export interface NewPerson {
+  name: string;
+  role: Role;
+  student_id?: string;
+  email?: string;
+  /** A student's hostel; the hostel a warden looks after. */
+  hostel_id?: string;
+  phone?: string;
+  parent_name?: string;
+  parent_phone?: string;
+}
+
+/** POST /admin/people's reply (a CSV import row, status "added"). */
+export interface PersonAdded {
+  line: number;
+  student_id: string;
+  name: string;
+  email: string;
+  hostel: string | null;
+  status: "new" | "exists" | "error" | "added";
+  error: string | null;
+  role: Role;
+}
 
 /** POST /admin/users/{id}/password-link. reset: their old password stopped working. */
 export interface PasswordLinkSent {

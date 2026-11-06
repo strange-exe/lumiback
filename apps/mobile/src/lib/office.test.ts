@@ -115,10 +115,11 @@ describe("formatPhone", () => {
 });
 
 describe("accountLabel", () => {
-  it("says nothing for an account in use, and names the other two states", () => {
+  it("says nothing for an account in use, and names the other states", () => {
     expect(accountLabel("active")).toBeNull();
-    expect(accountLabel("invited")).toBe("Invited, not set up");
+    expect(accountLabel("invited")).toBe("Hasn't set up");
     expect(accountLabel("reset")).toBe("Password reset sent");
+    expect(accountLabel("off")).toBe("Turned off");
   });
 });
 

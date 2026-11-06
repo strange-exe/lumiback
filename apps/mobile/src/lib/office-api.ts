@@ -1,8 +1,11 @@
 /** The hostel office's API calls. The server checks the role on every call, and limits a
  * warden to their own hostels' students. */
 import { api } from "@/lib/api";
-import { scanQuery } from "@/lib/office";
+import { scanQuery, studentsQuery } from "@/lib/office";
 import type {
+  AccountEdit,
+  AccountFilter,
+  AdminUser,
   Correction,
   CorrectionBody,
   CorrectionQueue,
@@ -16,8 +19,10 @@ import type {
   OfficeRequest,
   OfficeStudent,
   OfficeScanPage,
+  NewPerson,
   PasswordLinkSent,
   Person,
+  PersonAdded,
   Role,
   RuleSet,
   ScanResult,
@@ -57,13 +62,28 @@ export const office = {
 
   /** A warden's own hostels; every hostel for an admin. */
   hostels: () => api<OfficeHostel[]>("/admin/my-hostels"),
-  students: (filter: { hostelId?: string | null; q?: string }) => {
-    const query = new URLSearchParams();
-    if (filter.hostelId) query.set("hostel_id", filter.hostelId);
-    if (filter.q && filter.q.trim().length >= 2) query.set("q", filter.q.trim());
-    const qs = query.toString();
-    return api<OfficeStudent[]>(`/admin/students${qs ? `?${qs}` : ""}`);
-  },
+  students: (filter: {
+    hostelId?: string | null;
+    q?: string;
+    /** Only people who haven't set up, or only accounts turned off (staff too, for admins). */
+    account?: AccountFilter | null;
+  }) => api<OfficeStudent[]>(`/admin/students${studentsQuery(filter)}`),
+
+  /** Correct someone's details: only the fields in `body` change (email: admins only). */
+  editAccount: (userId: string, body: AccountEdit) =>
+    api<AdminUser>(`/admin/users/${encodeURIComponent(userId)}`, { method: "PATCH", body }),
+  /** Turn an account off (signed out everywhere, history kept) or back on. */
+  turnAccount: (userId: string, on: boolean) =>
+    api<AdminUser>(`/admin/users/${encodeURIComponent(userId)}/active`, {
+      method: "POST",
+      body: { on },
+    }),
+  /** Admins only: remove an account nobody has set up; the emailed link stops working. */
+  cancelInvite: (userId: string) =>
+    api<void>(`/admin/users/${encodeURIComponent(userId)}/invite`, { method: "DELETE" }),
+  /** Admins only: add one person; they're emailed a link to choose a password. */
+  addPerson: (person: NewPerson) =>
+    api<PersonAdded>("/admin/people", { method: "POST", body: person }),
   /** Students choose their hostel once; after that the office moves them (both hostels theirs). */
   moveStudent: (userId: string, hostelId: string) =>
     api<OfficeStudent>(`/admin/students/${encodeURIComponent(userId)}/hostel`, {

@@ -1,5 +1,12 @@
 /** Hostel office helpers with no app dependencies (unit-tested). API calls: office-api.ts. */
-import type { AccountState, DayRule, OfficeScan, Role, ScanResult } from "@/lib/types";
+import type {
+  AccountFilter,
+  AccountState,
+  DayRule,
+  OfficeScan,
+  Role,
+  ScanResult,
+} from "@/lib/types";
 
 /** What each scan result means, in the website's words. */
 export const SCAN_RESULT_LABEL: Record<ScanResult, string> = {
@@ -24,6 +31,21 @@ export function scanQuery(filter: {
   if (filter.gateId) query.set("gate_id", filter.gateId);
   if (filter.result) query.set("result", filter.result);
   return query.toString();
+}
+
+/** The students list's query string ("" or "?..."); searches under 2 letters are left out, as
+ * the API ignores them. */
+export function studentsQuery(filter: {
+  hostelId?: string | null;
+  q?: string;
+  account?: AccountFilter | null;
+}): string {
+  const query = new URLSearchParams();
+  if (filter.hostelId) query.set("hostel_id", filter.hostelId);
+  if (filter.q && filter.q.trim().length >= 2) query.set("q", filter.q.trim());
+  if (filter.account) query.set("account", filter.account);
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
 }
 
 /** "12 m from the gate (GPS ±9 m)"; null when the scan had no position (a bad code). */
@@ -119,13 +141,18 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
 };
 
-/** A student's account in words, or null when it's in use (nothing to say). */
+/** A person's account in words, or null when it's in use (nothing to say). */
 export function accountLabel(account: AccountState): string | null {
-  return account === "invited"
-    ? "Invited, not set up"
-    : account === "reset"
-      ? "Password reset sent"
-      : null;
+  switch (account) {
+    case "invited":
+      return "Hasn't set up";
+    case "reset":
+      return "Password reset sent";
+    case "off":
+      return "Turned off";
+    default:
+      return null;
+  }
 }
 
 /**
