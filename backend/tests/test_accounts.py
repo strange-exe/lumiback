@@ -166,6 +166,30 @@ def test_a_warden_manages_their_own_hostels_students_only(client, admin, hostels
     assert email.status_code == 403 and "Only an admin" in email.json()["detail"]
 
 
+@pytest.mark.parametrize("how", ["search", "off"])
+def test_a_head_warden_lists_students_only(client, admin, hostels, anna, how):
+    """A head warden looks after every hostel's students, not the staff: neither a search nor
+    the turned-off list shows them a warden or an admin."""
+    signup(client, "head@geu.ac.in", "Head Warden")
+    assert set_role(client, admin, "head@geu.ac.in", "head_warden").status_code == 200
+    head = login(client, "head@geu.ac.in")
+    head_headers = {"Authorization": f"Bearer {head['access_token']}"}
+    signup(client, "warden.b@geu.ac.in", "Warden B")
+    made = set_role(client, admin, "warden.b@geu.ac.in", "warden", [hostels["B"]])
+    assert made.status_code == 200
+    if how == "search":
+        params = {"q": "geu.ac.in"}
+    else:
+        for email in (ANNA, "warden.b@geu.ac.in"):
+            assert turn(client, admin, user_id(client, admin, email), on=False).status_code == 200
+        params = {"account": "off"}
+    listed = client.get("/admin/students", params=params, headers=head_headers)
+    assert listed.status_code == 200, listed.text
+    assert [s["email"] for s in listed.json()] == [ANNA]
+    from_admin = client.get("/admin/students", params=params, headers=admin).json()
+    assert "warden.b@geu.ac.in" in [s["email"] for s in from_admin]  # admins see staff too
+
+
 def test_nobody_turns_off_their_own_account(client, admin):
     me = user_id(client, admin, "office@geu.ac.in")
     assert turn(client, admin, me, on=False).status_code == 403
@@ -273,6 +297,25 @@ def test_an_admin_cancels_an_unused_invite(client, db, admin):
     )
     assert set_password(client, token).status_code == 404  # the emailed link is dead too
     assert ("invite:cancel", email) in audit_rows(db)
+
+
+def test_a_new_email_kills_the_link_sent_to_the_old_one(client, admin):
+    # An invite that went to a mistyped address must not survive the correction: whoever reads
+    # that inbox could otherwise set the password of the corrected account.
+    email = imported(client, admin)
+    token = link_token(client, email)
+    uid = client.get("/admin/users", params={"q": email}, headers=admin).json()[0]["id"]
+    assert edit(client, admin, uid, email="kabir.negi@geu.ac.in").status_code == 200
+    assert client.post("/auth/password-link", json={"token": token}).status_code == 404
+    assert set_password(client, token).status_code == 404
+
+
+def test_a_new_email_kills_an_admin_reset_link_too(client, admin, anna):
+    uid = user_id(client, admin, ANNA)
+    assert client.post(f"/admin/users/{uid}/password-link", headers=admin).status_code == 200
+    token = link_token(client, ANNA)
+    assert edit(client, admin, uid, email="anna.rawat@geu.ac.in").status_code == 200
+    assert set_password(client, token).status_code == 404
 
 
 def test_only_unused_invites_can_be_cancelled_and_only_by_admins(

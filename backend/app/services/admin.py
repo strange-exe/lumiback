@@ -377,6 +377,8 @@ async def students(
         .order_by(User.name)
         .limit(300)
     )
+    if staff.user.role != UserRole.ADMIN:  # wardens and head wardens: students, not staff
+        query = query.where(User.role == UserRole.STUDENT)
     if hostel_id is not None:
         query = query.where(User.hostel_id == hostel_id)
     if q:

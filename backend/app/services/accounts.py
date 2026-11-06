@@ -16,13 +16,15 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models import (
+    AccountLink,
     Outing,
+    PasswordReset,
     SessionStatus,
     ShareSession,
     User,
@@ -146,6 +148,10 @@ async def edit(
             raise Refused(409, "Someone else already has that email address")
         changed.append(f"email {target.email} -> {changes.email}")
         target.email = changes.email
+        # A set-password link (or reset code) went to the old address, and whoever reads that
+        # inbox could still use it: they die with it. The office sends a new link if needed.
+        await session.execute(delete(AccountLink).where(AccountLink.user_id == target.id))
+        await session.execute(delete(PasswordReset).where(PasswordReset.user_id == target.id))
     if changed:
         audit(session, staff.user, "account:edit", f"{target.email}: {', '.join(changed)}")
     try:
