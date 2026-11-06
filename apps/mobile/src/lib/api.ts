@@ -1,5 +1,11 @@
 import { API_URL } from "@/lib/config";
-import { accessToken, clearTokens, refresh, SessionUnavailable } from "@/lib/session";
+import {
+  accessToken,
+  clearTokens,
+  refresh,
+  sessionGeneration,
+  SessionUnavailable,
+} from "@/lib/session";
 
 export class ApiError extends Error {
   constructor(
@@ -61,6 +67,7 @@ async function renewing(get: () => Promise<string | null>): Promise<string | nul
 /** Calls the API; on a 401 it refreshes once and retries, then signs out if still refused. */
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const auth = options.auth ?? true;
+  const began = sessionGeneration(); // a refusal only ends the session this request began in
   let token = auth ? await renewing(accessToken) : null;
   if (auth && !token) throw new ApiError(401, "Please sign in again.");
 
@@ -70,7 +77,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
     if (!token) throw new ApiError(401, "Please sign in again.");
     response = await send(path, options, token);
     if (response.status === 401) {
-      await clearTokens();
+      if (sessionGeneration() === began) await clearTokens();
       throw new ApiError(401, "Please sign in again.");
     }
   }

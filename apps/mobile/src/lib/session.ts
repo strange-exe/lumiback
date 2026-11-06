@@ -13,10 +13,15 @@ const EARLY_MS = 60_000; // refresh a minute before the access token expires
 
 let access: { token: string; expiresAt: number } | null = null;
 let inFlight: Promise<string | null> | null = null;
-// Bumped whenever a sign-in stores tokens or the session is cleared. A refresh that started
-// before then belongs to the session it replaced: its result must not overwrite or sign out
-// the new one (another student may have signed in meanwhile, see auth.tsx signIn).
+// Which sign-in the stored session is: bumped by a sign-in (storeTokens) and by clearTokens,
+// never by a refresh, which only rotates the same session. Work begun under one session must
+// not overwrite or sign out the next (another student may have signed in, see auth.tsx signIn).
 let generation = 0;
+
+/** The current session's generation, for a request to check it is still the one it began in. */
+export function sessionGeneration(): number {
+  return generation;
+}
 const signedOutListeners = new Set<() => void>();
 
 export function onSignedOut(listener: () => void): () => void {
@@ -24,8 +29,14 @@ export function onSignedOut(listener: () => void): () => void {
   return () => signedOutListeners.delete(listener);
 }
 
+/** A new sign-in: from here on, work begun under the previous session is dropped. */
 export async function storeTokens(tokens: TokenPair): Promise<void> {
   generation += 1;
+  inFlight = null; // the old session's refresh, if any, must not be shared with this one
+  await save(tokens);
+}
+
+async function save(tokens: TokenPair): Promise<void> {
   access = {
     token: tokens.access_token,
     expiresAt: Date.now() + tokens.expires_in * 1000 - EARLY_MS,
@@ -35,6 +46,7 @@ export async function storeTokens(tokens: TokenPair): Promise<void> {
 
 export async function clearTokens(): Promise<void> {
   generation += 1;
+  inFlight = null;
   access = null;
   await SecureStore.deleteItemAsync(REFRESH_KEY);
   signedOutListeners.forEach((listener) => listener());
@@ -67,12 +79,16 @@ export async function accessToken(): Promise<string | null> {
  * trouble rejects with SessionUnavailable, keeping the token for the next try.
  */
 export function refresh(): Promise<string | null> {
-  inFlight ??= (async () => {
+  if (inFlight) return inFlight;
+  const started = generation;
+  // Superseded: a sign-in or sign-out replaced the session this refresh was renewing. Its
+  // callers began under that session, so they get null ("sign in again") and nothing is
+  // stored or cleared: the new session is left alone and never handed to old work.
+  const superseded = (): boolean => generation !== started;
+  const run: Promise<string | null> = (async () => {
     try {
-      const started = generation;
       const token = await storedRefreshToken();
-      if (!token) return null;
-      const superseded = (): boolean => generation !== started;
+      if (!token || superseded()) return null;
       let response: Response;
       try {
         response = await fetch(`${API_URL}/auth/refresh`, {
@@ -83,8 +99,7 @@ export function refresh(): Promise<string | null> {
       } catch {
         throw new SessionUnavailable(); // offline: keep everything, the next call retries
       }
-      // Another session took this one's place while the request ran: leave it alone.
-      if (superseded()) return access?.token ?? null;
+      if (superseded()) return null;
       if (response.status === 401) {
         await clearTokens(); // revoked, expired, or reused: sign in again
         return null;
@@ -92,12 +107,15 @@ export function refresh(): Promise<string | null> {
       // Server trouble (5xx, rate limited): keep the refresh token, try again later.
       if (!response.ok) throw new SessionUnavailable();
       const tokens = (await response.json()) as TokenPair;
-      if (superseded()) return access?.token ?? null;
-      await storeTokens(tokens);
+      if (superseded()) return null;
+      await save(tokens); // the same session, rotated: not a new generation
       return tokens.access_token;
     } finally {
-      inFlight = null;
+      // Once superseded, storeTokens/clearTokens already let go of this refresh, and a newer
+      // session's refresh may be the one in flight now: leave it.
+      if (!superseded()) inFlight = null;
     }
   })();
-  return inFlight;
+  inFlight = run;
+  return run;
 }

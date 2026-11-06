@@ -68,3 +68,23 @@ describe("sendingShareId", () => {
     expect(await sendingShareId()).toBeNull();
   });
 });
+
+describe("a fix already on its way when sharing stops on this phone", () => {
+  it("tells nobody the share ended (the next student must not see it)", async () => {
+    const { defineTask } = jest.requireMock("expo-task-manager");
+    const tick = defineTask.mock.calls[0][1];
+    const { api, ApiError } = jest.requireMock("@/lib/api");
+    const { notifyShareEnded } = jest.requireMock("@/notify/notify");
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    mockStore.set("lumiback.share", JSON.stringify({ sessionId: "s1", endsAt: later }));
+    api.mockImplementation(async () => {
+      // Another student signs in while this fix is sent: the share is stopped here, and the
+      // server answers the old share with 404 under the new student's token.
+      mockStore.delete("lumiback.share");
+      throw Object.assign(new ApiError(), { status: 404 });
+    });
+    const fix = { coords: { latitude: 30.27, longitude: 77.99, accuracy: 10 }, timestamp: 0 };
+    await tick({ data: { locations: [fix] }, error: null });
+    expect(notifyShareEnded).not.toHaveBeenCalled();
+  });
+});
