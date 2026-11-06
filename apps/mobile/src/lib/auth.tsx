@@ -49,11 +49,12 @@ export function useAuth(): AuthValue {
 }
 
 /** Forget one student's local safety state: an armed safe-return intent, the share this phone
- * sends, and the "due back" reminders. Best effort; each step is idempotent. */
-function forgetStudentOnPhone(): void {
+ * sends, and the "due back" reminders. Best effort; each step is idempotent. Resolves once the
+ * location service has stopped. */
+async function forgetStudentOnPhone(): Promise<void> {
   clearSafeReturn();
-  void stopSending().catch(() => undefined);
   void syncReturnReminders(null).catch(() => undefined);
+  await stopSending().catch(() => undefined);
 }
 
 /** Only the server refusing the session ends it, as in refresh(): not a 5xx or 429. */
@@ -83,13 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       setStatus("signedOut");
       // Also when the server ended the session (a refused refresh): nothing of this student
       // stays on the phone for the next one to sign in, best effort.
-      forgetStudentOnPhone();
+      void forgetStudentOnPhone();
     });
     void (async () => {
       if (!(await storedRefreshToken())) {
         // The session may have ended while no screen was open (the location task got the
         // refusal), so this listener never ran: clean up before anyone signs in.
-        forgetStudentOnPhone();
+        await forgetStudentOnPhone();
         return setStatus("signedOut");
       }
       try {
@@ -115,7 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       // forget its local state and end it on the server before this one takes its place.
       const kept = await storedRefreshToken();
       if (kept) {
-        forgetStudentOnPhone();
+        // Waits for the location service, so no queued fix of theirs goes out with our tokens.
+        await forgetStudentOnPhone();
         await api("/auth/logout", {
           method: "POST",
           auth: false,

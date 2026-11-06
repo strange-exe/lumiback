@@ -13,6 +13,10 @@ const EARLY_MS = 60_000; // refresh a minute before the access token expires
 
 let access: { token: string; expiresAt: number } | null = null;
 let inFlight: Promise<string | null> | null = null;
+// Bumped whenever a sign-in stores tokens or the session is cleared. A refresh that started
+// before then belongs to the session it replaced: its result must not overwrite or sign out
+// the new one (another student may have signed in meanwhile, see auth.tsx signIn).
+let generation = 0;
 const signedOutListeners = new Set<() => void>();
 
 export function onSignedOut(listener: () => void): () => void {
@@ -21,6 +25,7 @@ export function onSignedOut(listener: () => void): () => void {
 }
 
 export async function storeTokens(tokens: TokenPair): Promise<void> {
+  generation += 1;
   access = {
     token: tokens.access_token,
     expiresAt: Date.now() + tokens.expires_in * 1000 - EARLY_MS,
@@ -29,6 +34,7 @@ export async function storeTokens(tokens: TokenPair): Promise<void> {
 }
 
 export async function clearTokens(): Promise<void> {
+  generation += 1;
   access = null;
   await SecureStore.deleteItemAsync(REFRESH_KEY);
   signedOutListeners.forEach((listener) => listener());
@@ -63,8 +69,10 @@ export async function accessToken(): Promise<string | null> {
 export function refresh(): Promise<string | null> {
   inFlight ??= (async () => {
     try {
+      const started = generation;
       const token = await storedRefreshToken();
       if (!token) return null;
+      const superseded = (): boolean => generation !== started;
       let response: Response;
       try {
         response = await fetch(`${API_URL}/auth/refresh`, {
@@ -75,6 +83,8 @@ export function refresh(): Promise<string | null> {
       } catch {
         throw new SessionUnavailable(); // offline: keep everything, the next call retries
       }
+      // Another session took this one's place while the request ran: leave it alone.
+      if (superseded()) return access?.token ?? null;
       if (response.status === 401) {
         await clearTokens(); // revoked, expired, or reused: sign in again
         return null;
@@ -82,6 +92,7 @@ export function refresh(): Promise<string | null> {
       // Server trouble (5xx, rate limited): keep the refresh token, try again later.
       if (!response.ok) throw new SessionUnavailable();
       const tokens = (await response.json()) as TokenPair;
+      if (superseded()) return access?.token ?? null;
       await storeTokens(tokens);
       return tokens.access_token;
     } finally {

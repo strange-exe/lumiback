@@ -6,7 +6,9 @@ import {
   refresh,
   SessionUnavailable,
   storedRefreshToken,
+  storeTokens,
 } from "@/lib/session";
+import type { TokenPair } from "@/lib/types";
 
 const mockStore = new Map<string, string>();
 
@@ -46,6 +48,44 @@ test("concurrent callers share one refresh request (reusing a rotated token logs
   // The fresh access token is cached: no second request.
   expect(await accessToken()).toBe("a2");
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+describe("a refresh that outlives its session", () => {
+  const next = { access_token: "b1", token_type: "bearer", expires_in: 900, refresh_token: "rb" };
+
+  test("never stores the old session's tokens over a new sign-in", async () => {
+    let release!: (r: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    const pending = refresh(); // started with the kept session's "r1"
+    await Promise.resolve(); // let it send the request
+    await storeTokens(next as TokenPair); // another student signs in meanwhile
+    release(
+      reply(200, {
+        access_token: "a2",
+        token_type: "bearer",
+        expires_in: 900,
+        refresh_token: "r2",
+      }),
+    );
+    expect(await pending).toBe("b1");
+    expect(await storedRefreshToken()).toBe("rb");
+    expect(await accessToken()).toBe("b1");
+  });
+
+  test("never signs the new session out when the old one is refused", async () => {
+    const signedOut = jest.fn();
+    const off = onSignedOut(signedOut);
+    let release!: (r: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    const pending = refresh();
+    await Promise.resolve();
+    await storeTokens(next as TokenPair);
+    release(reply(401, { detail: "revoked" })); // the sign-in ended the old login
+    expect(await pending).toBe("b1");
+    expect(await storedRefreshToken()).toBe("rb");
+    expect(signedOut).not.toHaveBeenCalled();
+    off();
+  });
 });
 
 test("a refused refresh token signs out", async () => {
