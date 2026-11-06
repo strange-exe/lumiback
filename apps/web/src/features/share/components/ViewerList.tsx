@@ -10,7 +10,10 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
   const { update } = useShare();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const who = viewer.kind === "guest" ? `${viewer.name} (guest)` : viewer.name;
+  // Only the server's mark says who the emergency contact is: any guest can pick a name like theirs.
+  const who = viewer.kind === "guest" && !viewer.contact ? `${viewer.name} (guest)` : viewer.name;
+  const status =
+    viewer.status === "pending" ? "wants to see your location" : "can see your location";
 
   const act = (action: typeof approveViewer): void => {
     setError(null);
@@ -27,7 +30,7 @@ function ViewerRow({ viewer, sessionId }: { viewer: Viewer; sessionId: string })
         <p className="min-w-0 flex-1">
           <span className="font-bold text-ink">{who}</span>
           <span className="block text-sm text-muted">
-            {viewer.status === "pending" ? "wants to see your location" : "can see your location"}
+            {viewer.contact ? `Your emergency contact, ${status} until you're back` : status}
           </span>
         </p>
         {viewer.status === "pending" ? (

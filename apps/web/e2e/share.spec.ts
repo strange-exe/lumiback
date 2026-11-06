@@ -1,7 +1,9 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import {
   allowLocation,
+  ensureIn,
   newJoinCode,
   startSharing,
   stopSharing,
@@ -213,5 +215,67 @@ test.describe("guards", () => {
     expect(put.status()).toBe(403);
     const stop = await request.post(`/api/share/${id}/stop`, { headers: evil });
     expect(stop.status()).toBe(403);
+  });
+});
+
+/** Save the student's contacts, with the emergency contact's email ("" clears it). */
+async function setEmergencyContact(page: Page, name: string, email: string): Promise<void> {
+  await page.goto("/account");
+  await page.getByLabel("Your phone number").fill("9000000099");
+  await page.getByLabel("Emergency contact", { exact: true }).fill(name);
+  await page.getByLabel("Relation").fill("Mother");
+  await page.getByLabel("Their phone").fill("9000000199");
+  await page.getByLabel("Their email (optional)").fill(email);
+  await page.getByRole("button", { name: "Save contacts" }).click();
+  await expect(page.getByText("Saved.")).toBeVisible();
+}
+
+test.describe("safe return", () => {
+  test.beforeEach(async ({ context }) => {
+    await allowLocation(context);
+    await stubMapTiles(context);
+  });
+
+  test("the student can tell the real emergency contact from a guest who copies the name", async ({
+    page,
+    browser,
+  }) => {
+    const errors = watchForErrors(page);
+    await stopSharing(page);
+    await ensureIn(page);
+    await setEmergencyContact(page, "Sunita", "sunita.e2e@example.com");
+    try {
+      await page.goto("/home");
+      await page.getByLabel("Where to? (optional)").fill("Clock Tower");
+      await page.getByRole("checkbox", { name: /follow until I'm back/ }).check();
+      await page.getByRole("button", { name: "Check out" }).click();
+      await expect(page.getByRole("heading", { name: "Clock Tower" })).toBeVisible();
+
+      await page.goto("/share");
+      const contact = page.getByRole("listitem").filter({ hasText: "Your emergency contact" });
+      await expect(contact).toContainText("Sunita (emergency contact)");
+      await expect(contact).not.toContainText("(guest)");
+
+      // A code holder picks a look-alike of the contact's label (a Cyrillic "e").
+      const lookAlike = "Sunita (" + String.fromCodePoint(0x0435) + "mergency contact)";
+      const code = await newJoinCode(page);
+      const guest = await guestPage(browser);
+      await joinAsGuest(guest, code, lookAlike);
+      const request = page.getByRole("listitem").filter({ hasText: "wants to see" });
+      await expect(request).toContainText(`${lookAlike} (guest)`, { timeout: 10_000 });
+      await expect(request).not.toContainText("Your emergency contact");
+      await page.screenshot({ path: "e2e/shots/after/share-contact-marker.png", fullPage: true });
+      const axe = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
+        .analyze();
+      expect(axe.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+      await page.getByRole("button", { name: `Decline ${lookAlike} (guest)` }).click();
+      await guest.context().close();
+      expect(errors).toEqual([]);
+    } finally {
+      await stopSharing(page);
+      await ensureIn(page);
+      await setEmergencyContact(page, "Sunita", "");
+    }
   });
 });

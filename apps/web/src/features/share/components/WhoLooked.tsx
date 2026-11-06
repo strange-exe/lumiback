@@ -78,7 +78,9 @@ export function WhoLooked({ sessionId }: { sessionId: string }): ReactNode {
             )}
             <p className="min-w-0 flex-1">
               <span className="font-bold text-ink">
-                {entry.kind === "guest" ? `${entry.viewer_name} (guest)` : entry.viewer_name}
+                {entry.kind === "guest" && !entry.contact
+                  ? `${entry.viewer_name} (guest)`
+                  : entry.viewer_name}
               </span>
               <span className="block text-sm text-muted">
                 {entry.kind === "admin"
