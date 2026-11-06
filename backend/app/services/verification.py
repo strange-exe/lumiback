@@ -20,7 +20,7 @@ from app.email import Mailer
 from app.email_templates import verification_email
 from app.models import PendingRegistration, User
 from app.schemas import RegisterIn
-from app.security.passwords import hash_password
+from app.security.passwords import hash_password_async
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ async def start(session: AsyncSession, body: RegisterIn, pepper: str, mailer: Ma
     values = {
         "name": body.name,
         "roll_no": body.roll_no,
-        "password_hash": hash_password(body.password),
+        "password_hash": await hash_password_async(body.password),
         "code_hash": _hash(pepper, body.email, code),
         "attempts": 0,
         "expires_at": datetime.now(UTC) + CODE_TTL,

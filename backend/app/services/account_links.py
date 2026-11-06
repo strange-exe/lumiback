@@ -23,7 +23,7 @@ from app.email import Mailer
 from app.email_templates import account_link_email
 from app.models import AccountLink, LinkPurpose, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
-from app.security.passwords import hash_password, password_problem
+from app.security.passwords import hash_password_async, password_problem
 from app.services.refresh_tokens import lock_user, sign_out_everywhere
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ async def finish(
         problem = BREACHED
     if problem:
         raise WeakPassword(problem)
-    new_hash = hash_password(new_password)  # slow on purpose (argon2): outside the lock too
+    new_hash = await hash_password_async(new_password)  # argon2, slow: outside the lock too
 
     token_hash = _hash(pepper, token)
     now = datetime.now(UTC)

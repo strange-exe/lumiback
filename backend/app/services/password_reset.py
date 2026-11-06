@@ -5,7 +5,6 @@ five wrong tries kill it, and asking for one never reveals whether an account ex
 new password signs the account out everywhere.
 """
 
-import asyncio
 import hashlib
 import hmac
 import logging
@@ -21,7 +20,7 @@ from app.email import Mailer
 from app.email_templates import password_reset_email
 from app.models import AccountLink, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
-from app.security.passwords import hash_password, password_problem, verify_password
+from app.security.passwords import hash_password_async, password_problem, verify_password_async
 from app.services.refresh_tokens import (
     is_live,
     lock_user,
@@ -55,10 +54,15 @@ def _hash(pepper: str, email: str, code: str) -> bytes:
 
 
 async def start(session: AsyncSession, email: str, pepper: str, mailer: Mailer) -> None:
-    """Send a code if a verified account uses this email; otherwise do nothing, silently."""
+    """Send a code if a verified account that's on uses this email; otherwise do nothing,
+    silently (a turned-off account gets no code: it couldn't sign in with the new password)."""
     email = email.lower()
     user = await session.scalar(
-        select(User).where(User.email == email, User.email_verified_at.is_not(None))
+        select(User).where(
+            User.email == email,
+            User.email_verified_at.is_not(None),
+            User.deactivated_at.is_(None),
+        )
     )
     if user is None:
         return
@@ -113,7 +117,7 @@ async def finish(
         problem = BREACHED
     if problem:
         raise WeakPassword(problem)
-    new_hash = hash_password(new_password)  # slow on purpose (argon2): outside the lock too
+    new_hash = await hash_password_async(new_password)  # argon2, slow: outside the lock too
 
     # A newer request may have replaced the code, or a parallel reset used it, meanwhile.
     await lock_user(session, user.id)  # first, like every password change: see lock_user
@@ -163,7 +167,7 @@ async def change(
     again, so a reset that lands meanwhile wins."""
     checked = user.password_hash
     await session.commit()  # nothing to save yet; no transaction held across what follows
-    if not await asyncio.to_thread(verify_password, checked, current_password):
+    if not await verify_password_async(checked, current_password):
         raise WrongPassword
     problem = password_problem(new_password, email=user.email, name=user.name)
     if problem is None and new_password == current_password:
@@ -172,7 +176,7 @@ async def change(
         problem = BREACHED
     if problem:
         raise WeakPassword(problem)
-    new_hash = await asyncio.to_thread(hash_password, new_password)  # before taking any lock
+    new_hash = await hash_password_async(new_password)  # before taking any lock
 
     await lock_user(session, user.id)
     fresh = await session.get(User, user.id, populate_existing=True)

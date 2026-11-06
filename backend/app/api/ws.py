@@ -10,7 +10,8 @@ Protocol (JSON messages):
             {"type": "granted", ...} | {"type": "location", ...} | {"type": "ended", "reason"}
 
 Authorization is re-checked against the database for EVERY event before anything is sent,
-so a revoked, expired, or stopped viewer never receives another location. Close codes:
+so a revoked, expired, or stopped viewer never receives another location; nor does a device
+signed out, or an account turned off, since connecting ("reauth_required", then 4401). Close codes:
 4400 protocol error, 4401 not authenticated / token expired, 4403 access ended, 4404 unknown.
 """
 
@@ -61,12 +62,14 @@ class Connection:
         websocket: WebSocket,
         principal: Principal,
         token_expires_at: datetime | None,
+        sign_in: uuid.UUID | None = None,
     ) -> None:
         self.ws = websocket
         self.app = websocket.app
         self.hub: Hub = websocket.app.state.hub
         self.principal = principal
         self.token_expires_at = token_expires_at
+        self.sign_in = sign_in  # the device's sign-in (refresh-token family), if named
         self.subscriptions: dict[uuid.UUID, object] = {}
         self.pending: set[uuid.UUID] = set()
         self._send_lock = asyncio.Lock()
@@ -91,14 +94,30 @@ class Connection:
     def token_expired(self) -> bool:
         return self.token_expires_at is not None and datetime.now(UTC) >= self.token_expires_at
 
-    async def _check(self, session_id: uuid.UUID) -> tuple[Access, dict]:
-        """Fresh DB session per check: never trust cached authorization."""
+    async def _check(self, session_id: uuid.UUID) -> tuple[Access, dict] | None:
+        """Fresh DB session per check: never trust cached authorization. None: the account was
+        turned off or this device signed out since connecting (its token hasn't expired)."""
         async with self.app.state.sessionmaker() as db:
+            if not await self._signed_in(db):
+                return None
             access = await resolve_access(db, session_id, self.principal)
             positions: dict = {}  # session_id, location, mocked_location
             if access.role in (Role.SHARER, Role.VIEWER):
                 positions = (await loc_svc.latest(db, session_id)).model_dump(mode="json")
             return access, positions
+
+    async def _signed_in(self, db) -> bool:
+        user_id = self.principal.user_id
+        if user_id is None:  # a guest: their viewer row is what resolve_access checks
+            return True
+        user = await db.get(User, user_id)
+        if user is None or not user.active:
+            return False
+        return self.sign_in is None or await refresh_tokens.is_live(db, user_id, self.sign_in)
+
+    async def _signed_out(self) -> None:
+        await self.send({"type": "reauth_required"})
+        await self.close(CLOSE_UNAUTHENTICATED, "signed out")
 
     async def _log(self, session_id: uuid.UUID, access: Access) -> None:
         if access.role is Role.VIEWER and access.viewer is not None:
@@ -113,7 +132,11 @@ class Connection:
         if len(self.subscriptions) >= MAX_SUBSCRIPTIONS:
             await self.send({"type": "error", "detail": "too many subscriptions"})
             return
-        access, positions = await self._check(session_id)
+        checked = await self._check(session_id)
+        if checked is None:
+            await self._signed_out()
+            return
+        access, positions = checked
         match access.role:
             case Role.SHARER | Role.VIEWER:
                 self._attach(session_id)
@@ -166,7 +189,11 @@ class Connection:
             await self.close(CLOSE_UNAUTHENTICATED, "token expired")
             return
 
-        access, positions = await self._check(session_id)
+        checked = await self._check(session_id)
+        if checked is None:
+            await self._signed_out()
+            return
+        access, positions = checked
         if access.role in (Role.SHARER, Role.VIEWER):
             if session_id in self.pending:  # just approved
                 self.pending.discard(session_id)
@@ -204,7 +231,9 @@ async def _authenticate(websocket: WebSocket, message: dict) -> Connection | Non
                 db, user.id, claims.session_id
             ):
                 return None  # that device was signed out
-        return Connection(websocket, Principal(user_id=claims.user_id), claims.expires_at)
+        return Connection(
+            websocket, Principal(user_id=claims.user_id), claims.expires_at, claims.session_id
+        )
     if isinstance(guest := message.get("guest_token"), str) and 0 < len(guest) <= 200:
         return Connection(websocket, Principal(guest_token_hash=hash_guest_token(guest)), None)
     return None

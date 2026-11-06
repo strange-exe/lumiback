@@ -262,6 +262,26 @@ def test_closing_a_socket_unsubscribes_it(connect, client, shared):
     assert hub.subscriber_count(uuid.UUID(shared["id"])) == 0
 
 
+@pytest.mark.parametrize("how", ["signed_out", "turned_off"])
+def test_a_stream_stops_when_its_sign_in_ends(connect, client, shared, db, how):
+    """A device signed out (or an account turned off) mid-stream gets no further locations,
+    even though its access token hasn't expired yet."""
+    tokens = login(client, "arjun@example.com")
+    ws = connect(tokens["access_token"])
+    assert subscribe(ws, shared["id"])["type"] == "subscribed"
+    if how == "signed_out":
+        out = client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+        assert out.status_code == 204
+    else:
+        db.execute(
+            text("UPDATE users SET deactivated_at = now() WHERE email = 'arjun@example.com'")
+        )
+        db.commit()
+    client.put(f"/sessions/{shared['id']}/location", json=fix(lat=31.2), headers=shared["riya"])
+    assert ws.receive_json() == {"type": "reauth_required"}
+    assert closed_with(ws) == 4401
+
+
 def test_a_fresh_login_token_works(connect, client, shared):
     tokens = login(client, "arjun@example.com")
     ws = connect(tokens["access_token"])

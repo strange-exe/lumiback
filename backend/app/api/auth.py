@@ -39,7 +39,7 @@ from app.schemas import (
     VerifyEmailIn,
 )
 from app.security.breached import BREACHED
-from app.security.passwords import hash_password, needs_rehash, verify_password
+from app.security.passwords import hash_password_async, needs_rehash, verify_password_async
 from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
 from app.services import (
@@ -199,7 +199,11 @@ async def forgot_password(
     # An imported student who lost (or let expire) their set-up email gets a fresh one: they
     # have no password a code could replace, and the link proves the inbox is theirs.
     imported = await session.scalar(
-        select(User).where(User.email == email, User.email_verified_at.is_(None))
+        select(User).where(
+            User.email == email,
+            User.email_verified_at.is_(None),
+            User.deactivated_at.is_(None),  # turned off: nothing is sent, same 202
+        )
     )
     try:
         if imported is not None:
@@ -334,7 +338,7 @@ async def login(
     await enforce(limiter, "login:email", email, LOGIN_FAILURES_PER_EMAIL)
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if not verify_password(user.password_hash if user else None, body.password):
+    if not await verify_password_async(user.password_hash if user else None, body.password):
         raise INVALID_LOGIN
     assert user is not None
     # Like every sign-out (refresh_tokens._lock_user): a reset, password change or turn-off at
@@ -358,7 +362,7 @@ async def login(
     if not user.email_verified:
         raise NOT_VERIFIED  # likewise
     if needs_rehash(user.password_hash):
-        user.password_hash = hash_password(body.password)
+        user.password_hash = await hash_password_async(body.password)
     family = uuid.uuid4()  # this sign-in: one entry in the signed-in devices list
     device = device_label.label(body.device, body.user_agent or request.headers.get("user-agent"))
     refresh = await refresh_tokens.issue(session, user.id, family_id=family, device=device)
@@ -503,12 +507,10 @@ async def delete_account(
 ) -> Response:
     """Permanently delete the account and everything tied to it (every foreign key cascades):
     outings, shares and their locations, viewers, contacts, codes, tokens, the access log."""
-    try:
-        await limiter.check("delete:user", str(user.id), DELETE_FAILURES_PER_USER)
-    except RateLimited as e:
-        raise too_many(e) from None
-    if not verify_password(user.password_hash, body.password):
-        await limiter.record("delete:user", str(user.id))
+    # Every try is counted before verifying, atomically, like login: a burst can't all pass
+    # the check before any is recorded. A right password deletes the account, count and all.
+    await enforce(limiter, "delete:user", str(user.id), DELETE_FAILURES_PER_USER)
+    if not await verify_password_async(user.password_hash, body.password):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="That password isn't right")
 
     # Live shares this account is part of: as the sharer, or watching someone else's.

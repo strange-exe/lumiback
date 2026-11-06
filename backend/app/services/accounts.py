@@ -89,6 +89,9 @@ async def deactivate(session: AsyncSession, staff: Staff, user_id: uuid.UUID) ->
     now = datetime.now(UTC)
     target.deactivated_at = now
     await sign_out_everywhere(session, target.id, now)  # tokens and push tokens
+    # And no way back in: a set-password link or reset code already out dies too.
+    await session.execute(delete(AccountLink).where(AccountLink.user_id == target.id))
+    await session.execute(delete(PasswordReset).where(PasswordReset.user_id == target.id))
     live = list(
         await session.scalars(
             select(ShareSession.id).where(

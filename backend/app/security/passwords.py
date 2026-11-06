@@ -1,5 +1,7 @@
 """Password hashing (Argon2id) and strength rules."""
 
+import asyncio
+
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
@@ -72,3 +74,15 @@ def verify_password(password_hash: str | None, password: str) -> bool:
 
 def needs_rehash(password_hash: str) -> bool:
     return _hasher.check_needs_rehash(password_hash)
+
+
+# Argon2 takes tens of milliseconds of CPU on purpose. The app calls these, so that work runs in
+# a thread and never stalls the event loop (every other request on the worker) while it runs.
+
+
+async def hash_password_async(password: str) -> str:
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password_hash: str | None, password: str) -> bool:
+    return await asyncio.to_thread(verify_password, password_hash, password)

@@ -318,6 +318,41 @@ def test_a_new_email_kills_an_admin_reset_link_too(client, admin, anna):
     assert set_password(client, token).status_code == 404
 
 
+@pytest.mark.parametrize("kind", ["reset", "invite"])
+def test_turning_off_kills_links_and_codes_already_sent(client, db, admin, anna, kind):
+    """An account turned off keeps no way back in: a set-password link or reset code already
+    out dies with it. Turning it back on, the office sends a new link if needed."""
+    if kind == "reset":
+        email = ANNA
+        uid = user_id(client, admin, ANNA)
+        assert client.post("/auth/forgot-password", json={"email": ANNA}).status_code == 202
+        assert client.post(f"/admin/users/{uid}/password-link", headers=admin).status_code == 200
+    else:
+        email = imported(client, admin)
+        uid = client.get("/admin/users", params={"q": email}, headers=admin).json()[0]["id"]
+    token = link_token(client, email)
+    assert turn(client, admin, uid, on=False).status_code == 200
+    assert set_password(client, token).status_code == 404
+    left = db.execute(
+        text(
+            "SELECT (SELECT count(*) FROM account_links WHERE user_id = :u)"
+            " + (SELECT count(*) FROM password_resets WHERE user_id = :u)"
+        ),
+        {"u": uid},
+    ).scalar()
+    assert left == 0
+
+
+@pytest.mark.parametrize("kind", ["verified", "invite"])
+def test_forgot_password_sends_nothing_to_a_turned_off_account(client, admin, anna, kind):
+    email = ANNA if kind == "verified" else imported(client, admin)
+    uid = client.get("/admin/users", params={"q": email}, headers=admin).json()[0]["id"]
+    assert turn(client, admin, uid, on=False).status_code == 200
+    before = len(client.app.state.mailer.outbox)
+    assert client.post("/auth/forgot-password", json={"email": email}).status_code == 202
+    assert len(client.app.state.mailer.outbox) == before  # same 202, nothing sent
+
+
 def test_only_unused_invites_can_be_cancelled_and_only_by_admins(
     client, admin, hostels, warden, anna
 ):
