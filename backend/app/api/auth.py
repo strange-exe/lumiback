@@ -15,16 +15,20 @@ from app.api.deps import (
     enforce,
     too_many,
 )
-from app.models import SessionStatus, ShareSession, ShareViewer, User
+from app.models import LinkPurpose, SessionStatus, ShareSession, ShareViewer, User
 from app.realtime import AccessChanged
 from app.schemas import (
     DeleteAccountIn,
     EmailIn,
+    LinkInfoOut,
+    LinkTokenIn,
     LoginIn,
     RefreshIn,
     RegisteredOut,
     RegisterIn,
     ResetPasswordIn,
+    SetPasswordIn,
+    SetPasswordOut,
     TokenOut,
     UserOut,
     VerifyEmailIn,
@@ -33,7 +37,7 @@ from app.security.breached import BREACHED
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
-from app.services import password_reset, refresh_tokens, verification
+from app.services import account_links, password_reset, refresh_tokens, verification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,11 +52,16 @@ DELETE_FAILURES_PER_USER = Limit(max_hits=5, window_seconds=3600)
 FORGOT_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
 FORGOT_PER_IP = Limit(max_hits=10, window_seconds=3600)
 RESET_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
+LINK_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 NOT_VERIFIED = HTTPException(status.HTTP_403_FORBIDDEN, detail="Email not verified")
 INVALID_CODE = HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+LINK_FAILED = HTTPException(
+    status.HTTP_404_NOT_FOUND,
+    detail="This link has expired or was already used. Use Forgot password to get a new one.",
+)
 
 
 def _token_pair(settings: SettingsDep, user: User, refresh: str) -> TokenOut:
@@ -165,11 +174,90 @@ async def forgot_password(
     email = body.email.lower()
     await enforce(limiter, "forgot:ip", client_ip(request), FORGOT_PER_IP)
     await enforce(limiter, "forgot:email", email, FORGOT_PER_EMAIL)
+    pepper = settings.code_pepper.get_secret_value()
+    # An imported student who lost (or let expire) their set-up email gets a fresh one: they
+    # have no password a code could replace, and the link proves the inbox is theirs.
+    imported = await session.scalar(
+        select(User).where(User.email == email, User.email_verified_at.is_(None))
+    )
     try:
-        await password_reset.start(session, email, settings.code_pepper.get_secret_value(), mailer)
-    except password_reset.EmailNotSent:
+        if imported is not None:
+            uid, name = imported.id, imported.name
+            token = await account_links.issue(
+                session, uid, LinkPurpose.INVITE, pepper, created_by=None
+            )
+            await session.commit()
+            await account_links.send(
+                session,
+                mailer,
+                user_id=uid,
+                to=email,
+                name=name,
+                purpose=LinkPurpose.INVITE,
+                token=token,
+                web_url=settings.web_url,
+                pepper=pepper,
+            )
+        else:
+            await password_reset.start(session, email, pepper, mailer)
+    except (password_reset.EmailNotSent, account_links.EmailNotSent):
         raise EMAIL_NOT_SENT from None
     return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.post("/password-link")
+async def password_link_info(
+    body: LinkTokenIn,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+) -> LinkInfoOut:
+    """Whose set-password link this is, so the page can greet them (404 if it doesn't work).
+    A POST, so the token never lands in an access log."""
+    ip = client_ip(request)
+    try:
+        await limiter.check("link:ip", ip, LINK_FAILURES_PER_IP)
+    except RateLimited as e:
+        raise too_many(e) from None
+    pepper = settings.code_pepper.get_secret_value()
+    try:
+        user = await account_links.peek(session, body.token, pepper)
+    except account_links.LinkFailed:
+        await limiter.record("link:ip", ip)
+        raise LINK_FAILED from None
+    return LinkInfoOut(name=user.name, email=user.email, invite=user.email_verified_at is None)
+
+
+@router.post("/set-password")
+async def set_password(
+    body: SetPasswordIn,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    breaches: BreachesDep,
+) -> SetPasswordOut:
+    """Chooses a password with a link an admin sent (imported student or admin reset). The
+    link then stops working, the email counts as verified, and every device is signed out."""
+    ip = client_ip(request)
+    try:
+        await limiter.check("link:ip", ip, LINK_FAILURES_PER_IP)
+    except RateLimited as e:
+        raise too_many(e) from None
+    try:
+        user = await account_links.finish(
+            session, body.token, body.password, settings.code_pepper.get_secret_value(), breaches
+        )
+    except account_links.LinkFailed:
+        await limiter.record("link:ip", ip)
+        raise LINK_FAILED from None
+    except account_links.WeakPassword as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Password {e.problem}"
+        ) from None
+    await limiter.reset("login:email", user.email)
+    return SetPasswordOut(email=user.email)
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)

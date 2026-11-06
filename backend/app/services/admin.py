@@ -38,6 +38,7 @@ from app.schemas import (
     AdminUser,
     StudentOut,
 )
+from app.services.account_links import has_password
 from app.services.outings import rules_in_use, status_of
 from app.services.rules import ist_date
 from app.services.staff import Staff, warden_hostel_ids
@@ -287,7 +288,8 @@ async def search_users(session: AsyncSession, q: str) -> list[AdminUser]:
     rows = await session.scalars(
         select(User)
         .where(
-            User.email_verified_at.is_not(None),
+            # Unverified users are imported students who haven't set up yet: found too, so an
+            # admin can send their link again.
             or_(
                 func.lower(User.name).like(pattern),
                 User.email.like(pattern),
@@ -324,6 +326,7 @@ async def person(session: AsyncSession, u: User) -> AdminUser:
         hostels=[n for _, n in hostels],
         home_hostel_id=u.hostel_id,
         home_hostel=home.name if home else None,
+        account=account_state(u),
     )
 
 
@@ -335,7 +338,7 @@ async def students(
     query = (
         select(User, Hostel.name)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
-        .where(User.email_verified_at.is_not(None), staff.covers(User.hostel_id))
+        .where(staff.covers(User.hostel_id))  # imported students who haven't set up too
         .order_by(User.name)
         .limit(300)
     )
@@ -379,7 +382,20 @@ def _student_out(u: User, hostel: str | None, open_: Outing | None, now: datetim
         emergency_relation=u.emergency_relation,
         emergency_phone=u.emergency_phone,
         status=status_of(open_, now) if open_ else "in",  # type: ignore[arg-type]
+        account=account_state(u),
     )
+
+
+def account_state(u: User) -> str:
+    """invited: imported, no password chosen yet. reset: an admin reset the password and the
+    student hasn't chosen a new one. (Self sign-ups are verified before their row exists.)"""
+    if u.email_verified_at is None:
+        return "invited"
+    return "active" if has_password(u) else "reset"
+
+
+def _can_sign_in(u: User) -> bool:
+    return account_state(u) == "active"
 
 
 class MoveRefused(Exception):
@@ -447,13 +463,12 @@ async def set_role(
         return target
     if target.role == UserRole.ADMIN and role != UserRole.ADMIN:
         # Lock the admin rows while counting: two admins demoting each other at the same moment
-        # must not both see "2 admins" and leave none.
+        # must not both see "2 admins" and leave none. Only admins who can sign in count: an
+        # invite nobody has claimed yet (or a reset in progress) can't run the campus.
         admins = list(
-            await session.scalars(
-                select(User.id).where(User.role == UserRole.ADMIN).with_for_update()
-            )
+            await session.scalars(select(User).where(User.role == UserRole.ADMIN).with_for_update())
         )
-        if len(admins) <= 1:
+        if sum(1 for a in admins if a.id != target.id and _can_sign_in(a)) < 1:
             raise LastAdmin
     target.role = role
     await session.execute(delete(WardenHostel).where(WardenHostel.user_id == target.id))

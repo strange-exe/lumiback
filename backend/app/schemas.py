@@ -488,6 +488,7 @@ class OutingRequestOut(BaseModel):
     decided_at: datetime | None
     created_at: datetime
     used: bool  # an outing was started with it
+    again: bool  # asked after an earlier approval that day was used
 
     @field_serializer("decided_at", "created_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -674,6 +675,8 @@ class AdminUser(BaseModel):
     hostels: list[str] = []
     home_hostel_id: uuid.UUID | None = None  # the hostel they live in (students), to move them
     home_hostel: str | None = None
+    # invited: imported, hasn't chosen a password; reset: password reset, not chosen yet
+    account: Literal["active", "invited", "reset"] = "active"
 
 
 class StudentOut(BaseModel):
@@ -691,6 +694,7 @@ class StudentOut(BaseModel):
     emergency_relation: str | None
     emergency_phone: str | None
     status: Literal["in", "out", "overdue"]  # right now
+    account: Literal["active", "invited", "reset"] = "active"  # see AdminUser
 
 
 class StudentHostelIn(Input):
@@ -703,6 +707,56 @@ class RoleIn(Input):
     role: Literal["student", "warden", "head_warden", "admin"]
     # Required (at least one) for a warden; ignored for other roles.
     hostel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+
+
+# ---------- adding students in bulk, set-password links ----------
+
+
+class StudentImportIn(Input):
+    csv: str = Field(min_length=1, max_length=600_000)  # the service caps it at 512 KB
+    confirm: bool = False  # False: only check the rows
+
+
+class StudentImportRow(BaseModel):
+    line: int
+    student_id: str
+    name: str
+    email: str
+    hostel: str | None
+    status: Literal["new", "exists", "error", "added"]
+    error: str | None
+    role: Literal["student", "warden", "head_warden", "admin"]
+
+
+class StudentImportOut(BaseModel):
+    rows: list[StudentImportRow]
+    added: int  # 0 until confirmed
+    new: int
+    existing: int
+    errors: int
+
+
+class PasswordLinkOut(BaseModel):
+    kind: Literal["invite", "reset"]  # reset: the old password stopped working
+    email: str
+
+
+class LinkTokenIn(Input):
+    token: str = Field(min_length=20, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class LinkInfoOut(BaseModel):
+    name: str
+    email: str
+    invite: bool  # setting up a new account (otherwise a reset)
+
+
+class SetPasswordIn(LinkTokenIn):
+    password: str = Field(max_length=MAX_LENGTH)  # never stripped or altered
+
+
+class SetPasswordOut(BaseModel):
+    email: str  # to prefill sign-in
 
 
 # ---------- push ----------
@@ -819,6 +873,7 @@ class AdminRequestOut(BaseModel):
     decided_at: datetime | None
     created_at: datetime
     used: bool
+    again: bool  # another outing after today's approved one was used
 
     @field_serializer("decided_at", "created_at")
     def _in_ist(self, value: datetime | None) -> str | None:

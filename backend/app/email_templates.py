@@ -486,6 +486,54 @@ def escalation_email(*, to: str, count: int, web_url: str) -> Email:
     return notice_email(escalation_notice(to=to, count=count, web_url=web_url))
 
 
+# ---------- set-password links an admin sends (imported students, admin resets) ----------
+#
+# Plain text until each kind has had its own inbox test (see HTML_NOTICES). No password is
+# ever in these emails: the student picks one through the link.
+
+
+def account_link_email(*, to: str, name: str, invite: bool, link: str) -> Email:
+    if invite:
+        notice = Notice(
+            kind="account_invite",
+            to=to,
+            subject="Lumiback: set up your account",
+            greeting=f"Hi {_first(name)},",
+            label="Your account",
+            tone="neutral",
+            heading="Your hostel office added you to Lumiback",
+            paragraphs=(
+                "Lumiback is Graphic Era's hostel outing app: students tap out and back in at "
+                "the gate and ask for weekend outings, and the hostel office approves requests "
+                "and follows up on late returns.",
+                "Choose your password to start. The link works once and expires in 7 days. "
+                "After that, use Forgot password on the sign-in page.",
+            ),
+            action=("Choose your password", link),
+            note="If you weren't expecting this, you can ignore this email.",
+            reason="the hostel office added this address to Lumiback",
+        )
+    else:
+        notice = Notice(
+            kind="account_reset",
+            to=to,
+            subject="Lumiback: choose a new password",
+            greeting=f"Hi {_first(name)},",
+            label="Password reset",
+            tone="neutral",
+            heading="The hostel office reset your password",
+            paragraphs=(
+                "Your old password no longer works, and Lumiback has signed you out on every "
+                "device. Choose a new password to sign in again.",
+                "The link works once and expires in 24 hours.",
+            ),
+            action=("Choose a new password", link),
+            note="If you didn't ask the hostel office for this, tell them.",
+            reason="the hostel office reset the password of this Lumiback account",
+        )
+    return notice_email(notice)
+
+
 # ---------- safe return: to a student's emergency contact ----------
 #
 # The contact has no account and never asked for these, so each one says who chose to send it

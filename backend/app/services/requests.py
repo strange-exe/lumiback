@@ -21,12 +21,7 @@ from app.services.staff import Staff
 
 
 class AlreadyRequested(Exception):
-    """A pending or approved request for today already exists; `used`: it was approved and
-    the student already went out on it."""
-
-    def __init__(self, used: bool = False) -> None:
-        super().__init__()
-        self.used = used
+    """A pending, or approved and not yet used, request for today already exists."""
 
 
 class NotFound(Exception):
@@ -58,6 +53,7 @@ async def usable_today(
                 OutingRequest.student_id == student_id,
                 OutingRequest.day == day,
                 OutingRequest.status == RequestStatus.APPROVED,
+                OutingRequest.used_at.is_(None),
                 ~select(Outing.id).where(Outing.request_id == OutingRequest.id).exists(),
             )
             .limit(1)
@@ -83,6 +79,24 @@ async def is_used(session: AsyncSession, request_id: uuid.UUID) -> bool:
     return (
         await session.scalar(
             select(select(Outing.id).where(Outing.request_id == request_id).exists())
+        )
+    ) or False
+
+
+async def is_again(session: AsyncSession, r: OutingRequest) -> bool:
+    """Asked after an earlier approval that day was used: a second (or later) outing."""
+    return (
+        await session.scalar(
+            select(
+                select(OutingRequest.id)
+                .where(
+                    OutingRequest.student_id == r.student_id,
+                    OutingRequest.day == r.day,
+                    OutingRequest.used_at.is_not(None),
+                    OutingRequest.created_at < r.created_at,
+                )
+                .exists()
+            )
         )
     ) or False
 
@@ -129,13 +143,9 @@ async def create(session: AsyncSession, student: User, body: OutingRequestIn) ->
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        live = await latest_today(session, student_id, window.day)
-        used = (
-            live is not None
-            and live.status is RequestStatus.APPROVED
-            and await is_used(session, live.id)
-        )
-        raise AlreadyRequested(used) from None
+        # A used approval no longer counts as live (it's excluded from the unique index), so
+        # this is always a pending or not-yet-used approved request.
+        raise AlreadyRequested from None
     await session.refresh(request)
     return request
 

@@ -336,13 +336,14 @@ class OutingRequest(Base):
             "requested_minutes IS NULL OR requested_minutes BETWEEN 30 AND 720",
             name="requested_range",
         ),
-        # One live request per student per day: a declined or cancelled one can be replaced.
+        # One live request per student per day: a declined or cancelled one can be replaced,
+        # and so can an approved one once its outing is taken (asking for another outing).
         Index(
             "uq_outing_requests_one_live_per_day",
             "student_id",
             "day",
             unique=True,
-            postgresql_where=text("status IN ('pending', 'approved')"),
+            postgresql_where=text("status IN ('pending', 'approved') AND used_at IS NULL"),
         ),
         Index("ix_outing_requests_status_created", "status", "created_at"),
         Index("ix_outing_requests_day", "day"),  # the sweep clears past days' requests
@@ -365,6 +366,9 @@ class OutingRequest(Base):
     )
     decided_at: Mapped[datetime | None]
     note: Mapped[str | None] = mapped_column(String(200))  # e.g. why it was declined
+    # When an outing took this approval (also recorded as outings.request_id). Stored too so
+    # the one-live-request index can let the student ask for another outing afterwards.
+    used_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
 
 
@@ -566,6 +570,38 @@ class PasswordReset(Base):
     code_hash: Mapped[bytes] = mapped_column(LargeBinary)
     attempts: Mapped[int] = mapped_column(server_default=text("0"))
     expires_at: Mapped[datetime]
+    created_at: Mapped[datetime] = created_at()
+
+
+class LinkPurpose(enum.StrEnum):
+    INVITE = "invite"  # an account an admin imported: the student sets their first password
+    RESET = "reset"  # an admin reset the password: the student sets a new one
+
+
+class AccountLink(Base):
+    """A one-time "set your password" link an admin sent: one live link per account.
+
+    Only HMAC(CODE_PEPPER, "link:" token) is stored. The link works once, expires after
+    LINK_TTL, and a newer link for the same account replaces it. Deleted when used and by the
+    sweep once expired.
+    """
+
+    __tablename__ = "account_links"
+    __table_args__ = (
+        hash_len_check("token_hash"),
+        CheckConstraint("expires_at > created_at", name="expires_after_create"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    purpose: Mapped[LinkPurpose] = mapped_column(str_enum(LinkPurpose, "link_purpose"))
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    sent_at: Mapped[datetime | None]  # None until the email went out (imports send later)
     created_at: Mapped[datetime] = created_at()
 
 

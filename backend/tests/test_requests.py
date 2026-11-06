@@ -387,10 +387,44 @@ def test_a_refused_tap_out_explains_todays_request(client, riya, warden, form_da
     decide(client, warden, request["id"])
     assert client.post("/outings", json={}, headers=riya).status_code == 201
     client.post("/outings/current/return", headers=riya)
-    assert refusal() == "You've used today's approved outing. Form days allow one outing a day."
+    assert refusal() == (
+        "You've used today's approved outing. To go out again, ask for another outing in "
+        "Lumiback and tap out once it's approved."
+    )
+
+
+def test_after_a_used_approval_the_student_can_ask_for_another_outing(
+    client, riya, warden, form_day
+):
+    first = send(client, riya).json()
+    assert first["again"] is False
+    decide(client, warden, first["id"])
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    client.post("/outings/current/return", headers=riya)
+
     again = send(client, riya)
-    assert again.status_code == 409
-    assert again.json()["detail"] == "You've already used today's approved outing."
+    assert again.status_code == 201, again.text
+    second = again.json()
+    assert second["again"] is True and second["used"] is False
+    assert send(client, riya).status_code == 409  # one live request at a time
+    queue = client.get("/admin/requests", headers=warden).json()
+    assert {r["id"]: r["again"] for r in queue} == {first["id"]: False, second["id"]: True}
+
+    # Still needs approval: no tap-out until the warden says yes.
+    assert client.post("/outings", json={}, headers=riya).status_code == 403
+    decide(client, warden, second["id"])
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    assert client.get("/outings/request", headers=riya).json()["used"] is True
+
+
+def test_a_used_approval_stays_used_even_without_its_outing_row(client, db, riya, warden, form_day):
+    first = send(client, riya).json()
+    decide(client, warden, first["id"])
+    assert client.post("/outings", json={}, headers=riya).status_code == 201
+    client.post("/outings/current/return", headers=riya)
+    db.execute(text("DELETE FROM outings"))  # e.g. removed by retention
+    db.commit()
+    assert client.post("/outings", json={}, headers=riya).status_code == 403
 
 
 def test_a_refusal_mentions_the_no_form_evening(client, db, riya, form_day):

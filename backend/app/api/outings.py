@@ -203,6 +203,7 @@ async def _request_out(session, r) -> OutingRequestOut:
         decided_at=r.decided_at,
         created_at=r.created_at,
         used=await requests.is_used(session, r.id),
+        again=await requests.is_again(session, r),
     )
 
 
@@ -221,21 +222,20 @@ async def send_request(
         r = await requests.create(session, me, body)
     except rules.Refused as e:
         raise refused(e) from None
-    except requests.AlreadyRequested as e:
+    except requests.AlreadyRequested:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="You've already used today's approved outing."
-            if e.used
-            else "You already asked for today's outing. Cancel it first to change it.",
+            detail="You already asked for today's outing. Cancel it first to change it.",
         ) from None
     out = await _request_out(session, r)
     # The hostel's wardens (or the admins, if it has none) decide it: tell them now.
+    asked = "another outing today" if out.again else "today's outing"
     for person in await staff.office_for(session, hostel_id):
         push.to_user(
             person.id,
             PushMessage(
                 title="New outing request",
-                body=f"{name} asked for today's outing.",
+                body=f"{name} asked for {asked}.",
                 url="/office/requests",
                 channel="share-status",  # the app's "Sharing and requests" switch
             ),

@@ -70,7 +70,10 @@ async def _no_request(session: AsyncSession, student_id: uuid.UUID, window: rule
     if status is RequestStatus.DECLINED:
         return "Your request for today was declined. You can send a new one."
     if status is RequestStatus.APPROVED:  # not usable: already used for an outing
-        return f"You've used today's approved outing. Form days allow one outing a day.{later}"
+        return (
+            "You've used today's approved outing. To go out again, ask for another outing in "
+            f"Lumiback and tap out once it's approved.{later}"
+        )
     return (
         f"{window.label} outings need an approved request. Ask for today's outing in Lumiback "
         f"(Today in the app, Home on the website), then tap out once it's approved.{later}"
@@ -115,6 +118,8 @@ async def check_out(
         request_id=request.id if request else None,
         hostel_id=student.hostel_id,  # the hostel now: the record stays with it if they move
     )
+    if request is not None:
+        request.used_at = now  # frees the student to ask for another outing today
     if safe_return_pepper is not None:
         await safe_return.start(session, outing, student, safe_return_pepper)
     session.add(outing)

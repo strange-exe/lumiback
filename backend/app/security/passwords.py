@@ -57,11 +57,17 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password_hash: str | None, password: str) -> bool:
-    """Constant-shape check: always runs one Argon2 verification."""
+    """Constant-shape check: always runs one Argon2 verification.
+
+    A missing hash, or a marker such as "no password set yet", is checked against a dummy
+    hash, so it takes as long as a wrong password and never says which accounts lack one.
+    """
+    real = password_hash is not None and password_hash.startswith("$argon2")
     try:
-        return _hasher.verify(password_hash or _DUMMY_HASH, password) and password_hash is not None
+        ok = _hasher.verify(password_hash if real else _DUMMY_HASH, password)
     except (VerificationError, InvalidHashError):
         return False
+    return ok and real
 
 
 def needs_rehash(password_hash: str) -> bool:

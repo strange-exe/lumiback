@@ -45,7 +45,7 @@ from app.push import (
 )
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
-from app.services import escalations, password_reset, safe_return, verification
+from app.services import account_links, escalations, password_reset, safe_return, verification
 from app.services.rules import IST
 
 logger = logging.getLogger(__name__)
@@ -177,6 +177,7 @@ async def sweep(
         hits = await delete_old_hits(session, now)
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
         resets = await password_reset.delete_expired(session, now)  # unused reset codes
+        await account_links.delete_expired(session, now)  # unused set-password links
         late = await escalations.send_alerts(session, now)
         # The contacts following these students (safe return), told at the same moment.
         contacts_told = (

@@ -102,6 +102,7 @@ async def _request_out(
         decided_at=r.decided_at,
         created_at=r.created_at,
         used=await requests.is_used(session, r.id),
+        again=await requests.is_again(session, r),
     )
 
 

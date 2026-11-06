@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.email import Mailer
 from app.email_templates import password_reset_email
-from app.models import PasswordReset, RefreshToken, User
+from app.models import AccountLink, PasswordReset, RefreshToken, User
 from app.security.breached import BREACHED, BreachChecker
 from app.security.passwords import hash_password, password_problem
 
@@ -120,6 +120,8 @@ async def finish(
         raise ResetFailed
     user.password_hash = new_hash
     await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+    # An admin's set-password link, if one is out, would otherwise replace this password.
+    await session.execute(delete(AccountLink).where(AccountLink.user_id == user.id))
     await session.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))

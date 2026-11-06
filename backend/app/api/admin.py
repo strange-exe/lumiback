@@ -4,11 +4,19 @@ import uuid
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import AdminUser, SessionDep, StaffUser
+from app.api.deps import (
+    AdminUser,
+    LimiterDep,
+    MailerDep,
+    SessionDep,
+    SettingsDep,
+    StaffUser,
+    enforce,
+)
 from app.models import Gate, ScanResult, User, UserRole
 from app.schemas import (
     AdminOuting,
@@ -19,18 +27,28 @@ from app.schemas import (
     GateIn,
     GateOut,
     GatePatch,
+    PasswordLinkOut,
     RoleIn,
     StudentHostelIn,
+    StudentImportIn,
+    StudentImportOut,
+    StudentImportRow,
     StudentOut,
 )
 from app.schemas import (
     AdminUser as AdminUserOut,
 )
 from app.security.gate_codes import new_kiosk_token
+from app.security.rate_limit import Limit
+from app.services import account_links, student_import
 from app.services import admin as svc
 from app.services.gates import campus_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+IMPORT_CHECKS = Limit(max_hits=60, window_seconds=3600)
+IMPORT_CONFIRMS = Limit(max_hits=10, window_seconds=3600)
+PASSWORD_LINKS = Limit(max_hits=30, window_seconds=3600)
 
 NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 NAME_TAKEN = HTTPException(status.HTTP_409_CONFLICT, detail="A gate with that name already exists")
@@ -221,12 +239,123 @@ async def move_student(
         raise HTTPException(e.status, detail=str(e)) from None
 
 
+@router.post("/students/import")
+async def import_students(
+    body: StudentImportIn,
+    me: AdminUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    request: Request,
+    tasks: BackgroundTasks,
+) -> StudentImportOut:
+    """Adds students from a CSV. Without `confirm`, only checks every row. With it, checks
+    again (the file is never trusted from an earlier check), adds the new rows, and emails
+    each new student a link to choose a password, after the response."""
+    await enforce(
+        limiter, "import:admin", str(me.id), IMPORT_CONFIRMS if body.confirm else IMPORT_CHECKS
+    )
+    try:
+        rows = await student_import.check(session, body.csv, settings)
+    except student_import.ImportProblem as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)) from None
+    added: set[str] = set()
+    if body.confirm:
+        pepper = settings.code_pepper.get_secret_value()
+        created = await student_import.save(session, rows, pepper, me.id)
+        if created:
+            staff = sum(
+                r.role is not UserRole.STUDENT
+                for r in rows
+                if r.email in {c.email for c in created}
+            )
+            svc.audit(session, me, "people:import", f"{len(created)} accounts ({staff} staff)")
+            await session.commit()
+            tasks.add_task(
+                student_import.send_invites,
+                request.app.state.sessionmaker,
+                request.app.state.mailer,
+                created,
+                settings.web_url,
+                pepper,
+            )
+        added = {c.email for c in created}
+    out = [
+        StudentImportRow(
+            line=r.line,
+            student_id=r.student_id,
+            name=r.name,
+            email=r.email,
+            hostel=r.hostel,
+            status="added" if r.email in added and r.status == "new" else r.status,
+            error=r.error,
+            role=r.role.value,
+        )
+        for r in rows
+    ]
+    return StudentImportOut(
+        rows=out,
+        added=len(added),
+        new=0 if body.confirm else sum(r.status == "new" for r in rows),
+        existing=sum(r.status == "exists" for r in rows),
+        errors=sum(r.status == "error" for r in rows),
+    )
+
+
+@router.post("/users/{user_id}/password-link")
+async def send_password_link(
+    user_id: uuid.UUID,
+    me: AdminUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    limiter: LimiterDep,
+    mailer: MailerDep,
+) -> PasswordLinkOut:
+    """Emails anyone (students and staff) a one-time link to choose a password: a first one
+    if they were imported and haven't set up (the link again), otherwise a reset, which stops
+    their old password working and signs them out everywhere."""
+    target = await session.get(User, user_id)
+    if target is None:
+        raise NOT_FOUND
+    if target.id == me.id:
+        # It would sign this admin out mid-task; their own password goes through Forgot.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="To change your own password, use Forgot password on the sign-in page",
+        )
+    await enforce(limiter, "password-link:admin", str(me.id), PASSWORD_LINKS)
+    pepper = settings.code_pepper.get_secret_value()
+    email, name, uid = target.email, target.name, target.id
+    purpose, token = await account_links.reset(session, target, pepper, me.id)
+    svc.audit(session, me, f"password:{purpose.value}", email)
+    await session.commit()
+    try:
+        await account_links.send(
+            session,
+            mailer,
+            user_id=uid,
+            to=email,
+            name=name,
+            purpose=purpose,
+            token=token,
+            web_url=settings.web_url,
+            pepper=pepper,
+        )
+    except account_links.EmailNotSent:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail="The email couldn't be sent. Try again in a minute.",
+        ) from None
+    return PasswordLinkOut(kind=purpose.value, email=email)  # type: ignore[arg-type]
+
+
 @router.post("/users/{user_id}/role")
 async def set_role(
     user_id: uuid.UUID, body: RoleIn, me: AdminUser, session: SessionDep
 ) -> AdminUserOut:
+    # Invited accounts count too: an admin can correct an imported role before it's claimed.
     target = await session.get(User, user_id)
-    if target is None or target.email_verified_at is None:
+    if target is None:
         raise NOT_FOUND
     try:
         await svc.set_role(session, me, target, UserRole(body.role), body.hostel_ids)
