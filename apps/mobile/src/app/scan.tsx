@@ -9,14 +9,18 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { consumeSafeReturn, safeReturnFor } from "@/gate/intent";
 import {
+  afterStaleAnswer,
   blockedTapCopy,
   confirmCopy,
   gateCode,
   phaseForNewLink,
   refusal,
+  scanBody,
+  staleOuting,
   startPhase,
   toFix,
   type Fix,
+  type ScanIntent,
 } from "@/gate/scan";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -38,6 +42,8 @@ type Phase =
   | { kind: "confirm"; qr: string }
   | { kind: "checking"; step: "location" | "server" }
   | { kind: "done"; result: GateScanned; notice: string | null }
+  /** An outing from an earlier day was never closed: coming back in, or going out now? */
+  | { kind: "stale"; qr: string; fix: Fix; readAt: number; message: string }
   | { kind: "refused"; message: string; retry: boolean; fallback: boolean; settings?: boolean };
 
 const LOCATION_TIMEOUT_MS = 20_000;
@@ -142,16 +148,26 @@ export default function Scan(): ReactNode {
     setPhase(next.phase);
   }, [linked, phase.kind]);
 
+  // The student's answer to the stale-outing question, kept for a fresh scan if the code ran out
+  // while they read it. Cleared once a scan goes through.
+  const intent = useRef<ScanIntent | null>(null);
+
   const send = useCallback(
-    async (qr: string, fix: Fix): Promise<void> => {
+    async (qr: string, fix: Fix, readAt: number): Promise<void> => {
       setPhase({ kind: "checking", step: "server" });
       let result: GateScanned;
       try {
         result = await api<GateScanned>("/gates/scan", {
           method: "POST",
-          body: { qr, ...fix, safe_return: safeReturn },
+          body: scanBody(qr, fix, safeReturn, intent.current),
         });
       } catch (e) {
+        const stale = e instanceof ApiError ? staleOuting(e) : null;
+        if (stale) {
+          haptic.tap();
+          setPhase({ kind: "stale", qr, fix, readAt, message: stale.message });
+          return;
+        }
         haptic.warning();
         setPhase(
           e instanceof ApiError
@@ -160,6 +176,7 @@ export default function Scan(): ReactNode {
         );
         return;
       }
+      intent.current = null;
       haptic.success();
       const sessionId = result.outing.safe_return_session_id;
       let notice: string | null = null;
@@ -180,8 +197,9 @@ export default function Scan(): ReactNode {
   /** Location, then the server. Every state change here comes after an await. */
   const check = useCallback(
     async (qr: string): Promise<void> => {
+      const readAt = Date.now();
       try {
-        await send(qr, await freshFix());
+        await send(qr, await freshFix(), readAt);
       } catch (e) {
         haptic.warning();
         setPhase({
@@ -221,6 +239,27 @@ export default function Scan(): ReactNode {
     haptic.tap();
     setPhase({ kind: "checking", step: "location" });
     void check(qr);
+  };
+
+  /** Coming back in, or going out now: resend the same scan with the answer while its code is
+   * still good, else ask for a fresh scan (the answer goes with it). */
+  const answerStale = (answer: ScanIntent): void => {
+    if (phase.kind !== "stale") return;
+    intent.current = answer;
+    haptic.tap();
+    if (afterStaleAnswer(phase.readAt, Date.now()) === "resend") {
+      void send(phase.qr, phase.fix, phase.readAt);
+      return;
+    }
+    setPhase({
+      kind: "refused",
+      message:
+        answer === "in"
+          ? "The gate code changed while you chose. Scan the gate screen again to tap in."
+          : "The gate code changed while you chose. Scan the gate screen again to go out.",
+      retry: true,
+      fallback: false,
+    });
   };
 
   const leave = (): void => {
@@ -264,7 +303,9 @@ export default function Scan(): ReactNode {
           }}
         >
           <Text style={[type.headline, { color: c.onHero }]} accessibilityRole="header">
-            {phase.kind === "done" || phase.kind === "confirm" ? "Gate" : "Scan the gate screen"}
+            {phase.kind === "done" || phase.kind === "confirm" || phase.kind === "stale"
+              ? "Gate"
+              : "Scan the gate screen"}
           </Text>
           <Press
             onPress={() => router.back()}
@@ -292,6 +333,7 @@ export default function Scan(): ReactNode {
           onScanAgain={scanAgain}
           onConfirm={confirmLinked}
           onCancel={leave}
+          onStaleAnswer={answerStale}
         />
       </SafeAreaView>
     </View>
@@ -309,6 +351,7 @@ function Body({
   onScanAgain,
   onConfirm,
   onCancel,
+  onStaleAnswer,
 }: {
   phase: Phase;
   permission: ReturnType<typeof useCameraPermissions>[0];
@@ -321,6 +364,7 @@ function Body({
   onScanAgain: () => void;
   onConfirm: (qr: string) => void;
   onCancel: () => void;
+  onStaleAnswer: (answer: ScanIntent) => void;
 }): ReactNode {
   const c = useColors();
   const out = knownOut === true;
@@ -402,6 +446,29 @@ function Body({
       );
     case "done":
       return <Done result={phase.result} notice={phase.notice} />;
+    case "stale":
+      return (
+        <Panel art>
+          <Title>Your last outing is still open</Title>
+          <Detail>{phase.message}</Detail>
+          <Button
+            label="I'm coming back in"
+            variant="onHero"
+            accessibilityLabel="I'm coming back in: close my open outing now"
+            onPress={() => onStaleAnswer("in")}
+          />
+          <Button
+            label="I'm going out now"
+            variant="onHeroOutline"
+            accessibilityLabel="I'm going out now: start a new outing"
+            onPress={() => onStaleAnswer("out")}
+          />
+          <Detail>
+            Going out marks your last return as not recorded. You can ask the hostel office to fix
+            its time from History.
+          </Detail>
+        </Panel>
+      );
   }
 }
 

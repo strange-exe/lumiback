@@ -81,6 +81,11 @@ describe("notificationRoute", () => {
     expect(notificationRoute({ url: "/office/escalations" })).toBe("/office/escalations");
   });
 
+  it("opens the corrections queue for staff and History for the student", () => {
+    expect(notificationRoute({ url: "/office/corrections" })).toBe("/office/corrections");
+    expect(notificationRoute({ url: "/history" })).toBe("/history");
+  });
+
   it("opens Today when the url is missing or unknown", () => {
     for (const data of [undefined, null, {}, { url: null }, { url: "/admin" }, { url: 3 }, "x"]) {
       expect(notificationRoute(data)).toBe("/today");

@@ -45,7 +45,7 @@ export function startPhase(
 export function phaseForNewLink(
   previous: string | undefined,
   next: string | undefined,
-  shown: "camera" | "confirm" | "checking" | "refused" | "done",
+  shown: "camera" | "confirm" | "checking" | "refused" | "done" | "stale",
 ): { phase: ReturnType<typeof startPhase>; safeReturn: false } | null {
   if (!next || next === previous || shown === "checking") return null;
   return { phase: startPhase(next), safeReturn: false };
@@ -95,6 +95,50 @@ export function toFix(location: {
     accuracy_m: location.coords.accuracy ?? 9_999,
     mocked: location.mocked ?? false,
   };
+}
+
+/** The answer to "your outing from an earlier day was never closed". */
+export type ScanIntent = "in" | "out";
+
+/**
+ * The POST /gates/scan body. `ask_if_stale` tells the server this app can answer the stale-outing
+ * question: it then replies 409 with `{code: "stale_outing", left_at, message}` instead of a
+ * sentence for older apps. `intent` is that answer, sent with the same scan.
+ */
+export function scanBody(
+  qr: string,
+  fix: Fix,
+  safeReturn: boolean,
+  intent: ScanIntent | null = null,
+): Fix & { qr: string; safe_return: boolean; ask_if_stale: true; intent?: ScanIntent } {
+  return {
+    qr,
+    ...fix,
+    safe_return: safeReturn,
+    ask_if_stale: true,
+    ...(intent ? { intent } : {}),
+  };
+}
+
+/** The stale-outing question, when that's what a refusal is; else null. */
+export function staleOuting(error: {
+  status: number;
+  problem: { code: string; message: string; [key: string]: unknown } | null;
+}): { message: string; leftAt: string | null } | null {
+  if (error.status !== 409 || error.problem?.code !== "stale_outing") return null;
+  const leftAt = error.problem.left_at;
+  return { message: error.problem.message, leftAt: typeof leftAt === "string" ? leftAt : null };
+}
+
+/**
+ * A gate code is good for at least 40 s after it's read (the current 20 s window and the two
+ * before it). An answer within this long resends the same scan; a slower one asks for a fresh
+ * scan (the answer is kept and sent with it), rather than sending a code that has run out.
+ */
+export const STALE_RESEND_MS = 30_000;
+
+export function afterStaleAnswer(readAt: number, now: number): "resend" | "rescan" {
+  return now - readAt <= STALE_RESEND_MS ? "resend" : "rescan";
 }
 
 /** What the screen shows when the API says no. */

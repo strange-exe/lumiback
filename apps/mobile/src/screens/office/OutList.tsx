@@ -2,18 +2,28 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useState, type ReactNode } from "react";
 import { View } from "react-native";
 
+import { office } from "@/lib/office-api";
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { OfficeOuting } from "@/lib/types";
-import { Section, Segmented, StatusChip, T } from "@/ui/kit";
+import { CorrectionSheet } from "@/screens/correction-sheet";
+import { Press, Section, Segmented, StatusChip, T } from "@/ui/kit";
 import { fonts, space, useColors } from "@/ui/theme";
 
 type Filter = "all" | "late" | "due";
 
 const REPLY = { on_my_way: "On the way", safe: "Says they're safe" } as const;
 
-/** Everyone out now, most urgent first (the API sorts by return time). */
-export function OutList({ outings }: { outings: OfficeOuting[] }): ReactNode {
+/** Everyone out now, most urgent first (the API sorts by return time). Each row can record the
+ * student's return (a forgotten tap-in), with a time and a reason. */
+export function OutList({
+  outings,
+  onChanged,
+}: {
+  outings: OfficeOuting[];
+  onChanged: () => void;
+}): ReactNode {
   const [filter, setFilter] = useState<Filter>("all");
+  const [recording, setRecording] = useState<OfficeOuting | null>(null);
   const late = outings.filter((o) => o.status === "overdue");
   const shown =
     filter === "late"
@@ -42,15 +52,36 @@ export function OutList({ outings }: { outings: OfficeOuting[] }): ReactNode {
       ) : (
         <Section>
           {shown.map((o) => (
-            <OutRow key={o.id} outing={o} />
+            <OutRow key={o.id} outing={o} onRecord={() => setRecording(o)} />
           ))}
         </Section>
       )}
+      {recording ? (
+        <CorrectionSheet
+          key={recording.id}
+          target={recording}
+          side="office"
+          onClose={() => setRecording(null)}
+          submit={async (body) => {
+            await office.correct(recording.id, body);
+          }}
+          onDone={() => {
+            setRecording(null);
+            onChanged();
+          }}
+        />
+      ) : null}
     </View>
   );
 }
 
-function OutRow({ outing: o }: { outing: OfficeOuting }): ReactNode {
+function OutRow({
+  outing: o,
+  onRecord,
+}: {
+  outing: OfficeOuting;
+  onRecord: () => void;
+}): ReactNode {
   const c = useColors();
   const isLate = o.status === "overdue";
   return (
@@ -85,6 +116,15 @@ function OutRow({ outing: o }: { outing: OfficeOuting }): ReactNode {
             .join(" · ")}
         </T>
       </View>
+      <Press
+        onPress={onRecord}
+        accessibilityLabel={`Record ${o.name}'s return`}
+        style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
+      >
+        <T tone="label" style={{ color: c.accent }}>
+          Record return
+        </T>
+      </Press>
     </View>
   );
 }

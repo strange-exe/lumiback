@@ -7,10 +7,21 @@ import {
   SessionUnavailable,
 } from "@/lib/session";
 
+/**
+ * A structured error detail: `{code, message, ...}` (e.g. the gate's "stale_outing"). Most
+ * errors send a plain sentence instead, and have none.
+ */
+export interface Problem {
+  code: string;
+  message: string;
+  [key: string]: unknown;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
+    readonly problem: Problem | null = null,
   ) {
     super(`${status}: ${detail}`);
   }
@@ -18,11 +29,24 @@ export class ApiError extends Error {
 
 const OFFLINE = "Can't reach Lumiback. Check your connection and try again.";
 
-/** Human-readable message from a FastAPI error body (string detail or validation list). */
+/** The structured detail of an error body, or null when `detail` isn't `{code, message}`. */
+export function problemOf(payload: unknown): Problem | null {
+  if (!payload || typeof payload !== "object" || !("detail" in payload)) return null;
+  const detail = (payload as { detail: unknown }).detail;
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const { code, message } = detail as { code?: unknown; message?: unknown };
+  if (typeof code !== "string" || typeof message !== "string") return null;
+  return { ...(detail as Record<string, unknown>), code, message };
+}
+
+/** Human-readable message from a FastAPI error body (string detail, `{code, message}`, or
+ * validation list). */
 export function detailOf(payload: unknown, status: number): string {
   if (payload && typeof payload === "object" && "detail" in payload) {
     const detail = (payload as { detail: unknown }).detail;
     if (typeof detail === "string") return detail;
+    const problem = problemOf(payload);
+    if (problem) return problem.message;
     if (Array.isArray(detail) && detail.length > 0) {
       const first = detail[0] as { msg?: unknown };
       if (typeof first.msg === "string") return first.msg.replace(/^Value error, /, "");
@@ -88,6 +112,8 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
 
   if (response.status === 204 || response.status === 202) return undefined as T;
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, detailOf(payload, response.status));
+  if (!response.ok) {
+    throw new ApiError(response.status, detailOf(payload, response.status), problemOf(payload));
+  }
   return payload as T;
 }

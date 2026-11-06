@@ -14,10 +14,15 @@ const OVERVIEW: OfficeOverview = {
   overdue: 1,
   open_escalations: 2,
   pending_requests: 4,
+  corrections: 5,
 };
 
 // What the Today rows say when there's nothing to do: only true when the overview really loaded.
-const ZERO_STATE = ["Late students who don't answer or aren't back", "Today's forms"];
+const ZERO_STATE = [
+  "Late students who don't answer or aren't back",
+  "Today's forms",
+  "Students' asks and return times to fix",
+];
 
 function render(props: Parameters<typeof OfficeHome>[0]): ReactTestRenderer {
   let tree: ReactTestRenderer | undefined;
@@ -63,7 +68,16 @@ describe("OfficeHome", () => {
     expect(shown).toContain("2 late students need follow-up");
     expect(shown).toContain("4 waiting for you");
     expect(shown).toContain("4 out, 1 late");
+    expect(shown).toContain("5 to look at");
     expect(shown).not.toContain("Try again");
+  });
+
+  it("says what Corrections is for when there's nothing to fix", () => {
+    const shown = words(
+      render({ ...base, overview: { ...OVERVIEW, corrections: 0 }, loading: false, error: null }),
+    );
+    expect(shown).toContain("Students' asks and return times to fix");
+    expect(shown).not.toContain("0");
   });
 
   it("keeps the last real counts and says a refresh failed", () => {

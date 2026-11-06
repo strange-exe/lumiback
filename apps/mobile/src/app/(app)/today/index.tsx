@@ -6,6 +6,7 @@ import { RefreshControl, Text, View } from "react-native";
 import { armSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { canAsk } from "@/lib/corrections";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import {
@@ -29,10 +30,12 @@ import type {
   TodayRules,
 } from "@/lib/types";
 import { safeReturnNotice, safeReturnOffer, type SafeReturnOffer } from "@/lib/safe-return";
+import { student } from "@/lib/student-api";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
+import { CorrectionSheet } from "@/screens/correction-sheet";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { RequestSheet } from "@/screens/outing-request";
 import { SafeReturnStatus, SafeReturnTick, sendForOuting } from "@/screens/safe-return";
@@ -522,6 +525,7 @@ function Out({
   const now = useNow(15_000);
   const [busy, setBusy] = useState<"return" | "on_my_way" | "safe" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fixing, setFixing] = useState(false);
   const dueMs = new Date(outing.expected_return_at).getTime();
   // Derived from the clock, so the card turns overdue on time without a refetch.
   const overdue = outing.status === "overdue" || now > dueMs;
@@ -663,6 +667,36 @@ function Out({
           })
         }
       />
+      {/* Came back earlier and never tapped in (often noticed the next day): ask the office to
+          record when, instead of "I'm back" recording now. */}
+      {outing.correction?.status === "pending" ? (
+        <Text style={[type.caption, { color: c.heroMuted, textAlign: "center" }]}>
+          Your correction is with the hostel office.
+        </Text>
+      ) : canAsk(outing, now) ? (
+        <Press
+          onPress={() => setFixing(true)}
+          accessibilityLabel="Forgot to tap in? Tell the hostel office when you came back"
+          style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={[type.label, { color: c.heroAccent }]}>Forgot to tap in?</Text>
+        </Press>
+      ) : null}
+      {fixing ? (
+        <CorrectionSheet
+          key={outing.id}
+          target={outing}
+          side="student"
+          onClose={() => setFixing(false)}
+          submit={async (body) => {
+            await student.askCorrection(outing.id, body);
+          }}
+          onDone={() => {
+            setFixing(false);
+            void onChange();
+          }}
+        />
+      ) : null}
       {error ? (
         <Text style={[type.label, { color: c.heroDanger }]} accessibilityRole="alert">
           {error}

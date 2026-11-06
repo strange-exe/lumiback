@@ -28,6 +28,7 @@ export default function OfficeLayout(): ReactNode {
       <Stack.Screen name="scans" options={{ animation: "default" }} />
       <Stack.Screen name="rules" options={{ animation: "default" }} />
       <Stack.Screen name="gates" options={{ animation: "default" }} />
+      <Stack.Screen name="corrections" options={{ animation: "default" }} />
     </Stack>
   );
 }

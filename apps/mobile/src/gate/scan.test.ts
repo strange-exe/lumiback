@@ -1,12 +1,70 @@
 import {
+  afterStaleAnswer,
   blockedTapCopy,
   confirmCopy,
   gateCode,
   phaseForNewLink,
   refusal,
+  scanBody,
+  STALE_RESEND_MS,
+  staleOuting,
   startPhase,
   toFix,
 } from "@/gate/scan";
+
+describe("stale outing at the gate", () => {
+  const fix = { lat: 30.27, lng: 78.0, accuracy_m: 8, mocked: false };
+
+  it("always tells the server this app can answer the stale-outing question", () => {
+    expect(scanBody("QR", fix, false)).toEqual({
+      qr: "QR",
+      ...fix,
+      safe_return: false,
+      ask_if_stale: true,
+    });
+    expect(scanBody("QR", fix, true)).not.toHaveProperty("intent");
+  });
+
+  it("resends the same scan with the answer, still asking", () => {
+    expect(scanBody("QR", fix, true, "out")).toEqual({
+      qr: "QR",
+      ...fix,
+      safe_return: true,
+      ask_if_stale: true,
+      intent: "out",
+    });
+    expect(scanBody("QR", fix, false, "in")).toMatchObject({ intent: "in", ask_if_stale: true });
+  });
+
+  it("recognises the question only in a 409 with the stale_outing code", () => {
+    const problem = {
+      code: "stale_outing",
+      left_at: "2026-11-05T18:10:00+05:30",
+      message:
+        "Your outing from Thu 5 Nov was never closed. Are you coming back in, or going out now?",
+    };
+    expect(staleOuting({ status: 409, problem })).toEqual({
+      message: problem.message,
+      leftAt: "2026-11-05T18:10:00+05:30",
+    });
+    expect(staleOuting({ status: 422, problem })).toBeNull();
+    expect(staleOuting({ status: 409, problem: null })).toBeNull();
+    expect(staleOuting({ status: 409, problem: { code: "other", message: "x" } })).toBeNull();
+    expect(staleOuting({ status: 409, problem: { code: "stale_outing", message: "m" } })).toEqual({
+      message: "m",
+      leftAt: null,
+    });
+  });
+
+  it("resends while the code is still good, else asks for a fresh scan", () => {
+    const readAt = 1_000_000;
+    expect(afterStaleAnswer(readAt, readAt + 5_000)).toBe("resend");
+    expect(afterStaleAnswer(readAt, readAt + STALE_RESEND_MS)).toBe("resend");
+    expect(afterStaleAnswer(readAt, readAt + STALE_RESEND_MS + 1)).toBe("rescan");
+    // A code is good for at least 40 s after it's read: the resend window stays inside that.
+    expect(STALE_RESEND_MS).toBeLessThan(40_000);
+  });
+});
 
 const GATE = "61c6a6d7-178a-4cee-ac83-b5c43bb6f783";
 

@@ -7,6 +7,7 @@ import { everyHostel } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { Escalation, OfficeOuting, OfficeRequest } from "@/lib/types";
 import { useData } from "@/lib/use-data";
+import { BackList } from "@/screens/office/BackList";
 import { EscalationCard } from "@/screens/office/EscalationCard";
 import { OutList } from "@/screens/office/OutList";
 import { RequestCard } from "@/screens/office/RequestCard";
@@ -24,7 +25,7 @@ const POLL_MS = 30_000;
 type Loaded =
   | { section: "requests"; items: OfficeRequest[] }
   | { section: "escalations"; items: Escalation[] }
-  | { section: "out"; items: OfficeOuting[] };
+  | { section: "out"; items: OfficeOuting[]; back: OfficeOuting[] };
 
 function sectionOf(value: unknown): SectionName {
   return SECTIONS.some((s) => s.value === value) ? (value as SectionName) : "requests";
@@ -36,8 +37,10 @@ async function load(section: SectionName): Promise<Loaded> {
       return { section, items: await office.requests() };
     case "escalations":
       return { section, items: await office.escalations() };
-    case "out":
-      return { section, items: await office.outings() };
+    case "out": {
+      const [items, back] = await Promise.all([office.outings(), office.backToday()]);
+      return { section, items, back };
+    }
   }
 }
 
@@ -128,7 +131,10 @@ export default function OfficeScreen(): ReactNode {
           </View>
         )
       ) : current?.section === "out" ? (
-        <OutList outings={current.items} />
+        <View style={{ gap: space(8) }}>
+          <OutList outings={current.items} onChanged={() => void refetch()} />
+          <BackList outings={current.back} onChanged={() => void refetch()} />
+        </View>
       ) : null}
     </Screen>
   );

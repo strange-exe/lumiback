@@ -3,9 +3,13 @@ import { RefreshControl, SectionList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, ApiError } from "@/lib/api";
+import { canAsk } from "@/lib/corrections";
+import { student } from "@/lib/student-api";
 import { formatDay } from "@/lib/time";
 import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
 import { useData } from "@/lib/use-data";
+import { useNow } from "@/lib/use-now";
+import { CorrectionSheet } from "@/screens/correction-sheet";
 import { Illustration } from "@/ui/illustration";
 import { Button, FormError, Heading, T } from "@/ui/kit";
 import { OutingRow } from "@/ui/OutingRow";
@@ -39,6 +43,9 @@ export default function History(): ReactNode {
     return { summary, page };
   }, []);
   const { data, error, loading, refreshing, reload } = useData(load);
+  // The trip whose "Something wrong?" form is open.
+  const [fixing, setFixing] = useState<Outing | null>(null);
+  const now = useNow(60_000);
 
   // Older pages are appended locally; a refresh (or coming back to the tab) starts over.
   const [older, setOlder] = useState<{
@@ -136,7 +143,12 @@ export default function History(): ReactNode {
           </T>
         )}
         renderItem={({ item, index, section }) => (
-          <OutingRow outing={item} first={index === 0} last={index === section.data.length - 1} />
+          <OutingRow
+            outing={item}
+            first={index === 0}
+            last={index === section.data.length - 1}
+            onFix={canAsk(item, now) ? () => setFixing(item) : undefined}
+          />
         )}
         ListEmptyComponent={
           loading ? null : (
@@ -164,6 +176,21 @@ export default function History(): ReactNode {
           ) : null
         }
       />
+      {fixing ? (
+        <CorrectionSheet
+          key={fixing.id}
+          target={fixing}
+          side="student"
+          onClose={() => setFixing(null)}
+          submit={async (body) => {
+            await student.askCorrection(fixing.id, body);
+          }}
+          onDone={() => {
+            setFixing(null);
+            void reload();
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

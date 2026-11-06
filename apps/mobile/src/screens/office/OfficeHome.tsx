@@ -63,6 +63,7 @@ export function OfficeHome({
   if (data) {
     const escalations = data.open_escalations ?? 0;
     const requests = data.pending_requests ?? 0;
+    const corrections = data.corrections ?? 0;
     const late = data.overdue;
     today = (
       <>
@@ -84,6 +85,17 @@ export function OfficeHome({
             detail={requests > 0 ? `${requests} waiting for you` : "Today's forms"}
             trailing={count(requests, "accent")}
             onPress={() => open("requests")}
+          />
+          <Row
+            leading={icon("create-outline")}
+            title="Corrections"
+            detail={
+              corrections > 0
+                ? `${corrections} to look at`
+                : "Students' asks and return times to fix"
+            }
+            trailing={count(corrections, "accent")}
+            onPress={() => router.push("/office/corrections")}
           />
           <Row
             leading={icon("walk-outline")}

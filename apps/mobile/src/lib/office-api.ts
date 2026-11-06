@@ -3,6 +3,9 @@
 import { api } from "@/lib/api";
 import { scanQuery } from "@/lib/office";
 import type {
+  Correction,
+  CorrectionBody,
+  CorrectionQueue,
   Escalation,
   Gate,
   GateCreated,
@@ -35,6 +38,22 @@ export const office = {
       body: { note },
     }),
   outings: () => api<OfficeOuting[]>("/admin/outings"),
+  /** Outings that ended today (IST), latest first: to correct a return time or a mistaken tap. */
+  backToday: () => api<OfficeOuting[]>("/admin/outings?state=back"),
+
+  /** Students' correction asks (oldest first) and returns the gate never saw. */
+  corrections: () => api<CorrectionQueue>("/admin/corrections"),
+  /** Record a return, fix a return time, or cancel a mistaken tap: applied at once. */
+  correct: (outingId: string, body: CorrectionBody) =>
+    api<OfficeOuting>(`/admin/outings/${encodeURIComponent(outingId)}/correction`, {
+      method: "POST",
+      body,
+    }),
+  decideCorrection: (id: string, approve: boolean, note: string | null) =>
+    api<Correction>(`/admin/corrections/${encodeURIComponent(id)}/decision`, {
+      method: "POST",
+      body: { approve, note },
+    }),
 
   /** A warden's own hostels; every hostel for an admin. */
   hostels: () => api<OfficeHostel[]>("/admin/my-hostels"),

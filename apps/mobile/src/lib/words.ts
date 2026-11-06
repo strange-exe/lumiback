@@ -7,12 +7,18 @@ export function sentence(text: string): string {
 
 /**
  * How a trip was recorded. Only a trip scanned at the gate both ways is fully verified; a gate
- * tap-out with a self-reported return says just that.
+ * tap-out with a self-reported return says just that. A return the hostel office recorded, or
+ * one nobody recorded (closed when they tapped out again on a later day), says so whatever the
+ * way out was.
  */
 export function viaLabel(outing: Pick<Outing, "out_via" | "in_via">): {
   label: string;
   verified: boolean;
 } {
+  if (outing.in_via === "staff") return { label: "Recorded by the office", verified: false };
+  if (outing.in_via === "unrecorded") {
+    return { label: "Return time not recorded", verified: false };
+  }
   if (outing.out_via !== "gate") return { label: "Self-reported", verified: false };
   if (outing.in_via === "gate") return { label: "Verified at gate", verified: true };
   return { label: "Out verified at gate", verified: true };

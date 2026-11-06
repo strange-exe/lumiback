@@ -38,11 +38,46 @@ export interface Outing {
   duration_minutes: number | null;
   /** "gate": scanned at a gate with a GPS check; "self": logged in the app. */
   out_via: "self" | "gate";
-  in_via: "self" | "gate" | null;
+  in_via: InVia | null;
   /** The answer to "you're late, are you OK?". */
   late_reply?: "on_my_way" | "safe" | null;
   /** Safe return: the share the emergency contact follows until the student is back. */
   safe_return_session_id?: string | null;
+  /** The latest correction (asked by the student or made by the office), if any. */
+  correction?: Correction | null;
+}
+
+/** How a return was recorded. staff: the hostel office recorded or corrected it. unrecorded:
+ * closed when the student tapped out again on a later day, so when they came back is unknown. */
+export type InVia = "self" | "gate" | "staff" | "unrecorded";
+
+// ---------- outing corrections ----------
+
+/** return: close an open outing at a time. return_time: change a closed outing's return.
+ * cancel: the tap was a mistake and the trip didn't happen. */
+export type CorrectionKind = "return" | "return_time" | "cancel";
+
+export interface Correction {
+  id: string;
+  kind: CorrectionKind;
+  status: RequestStatus;
+  /** ISO, IST offset; null for a cancel. */
+  returned_at: string | null;
+  reason: string;
+  /** The office made it (else the student asked). */
+  by_staff: boolean;
+  /** What the record said before, once applied. */
+  old_returned_at: string | null;
+  /** The office's reply to a student's ask. */
+  note: string | null;
+  created_at: string;
+}
+
+/** POST /outings/{id}/correction and /admin/outings/{id}/correction */
+export interface CorrectionBody {
+  kind: CorrectionKind;
+  returned_at?: string;
+  reason: string;
 }
 
 // ---------- outing rules ----------
@@ -213,6 +248,8 @@ export interface OfficeOverview {
   overdue: number;
   pending_requests?: number;
   open_escalations?: number;
+  /** Students' correction asks plus unrecorded returns to fix. */
+  corrections?: number;
 }
 
 export interface OfficeOuting {
@@ -223,11 +260,20 @@ export interface OfficeOuting {
   destination: string | null;
   left_at: string;
   expected_return_at: string;
+  returned_at?: string | null;
   status: OutingStatus;
   late_minutes: number;
   out_via: "self" | "gate";
   out_gate: string | null;
+  in_via?: InVia | null;
   late_reply?: LateReply | null;
+}
+
+/** GET /admin/corrections */
+export interface CorrectionQueue {
+  asks: { correction: Correction; outing: OfficeOuting }[];
+  /** Closed when the student tapped out again on a later day: when they came back is unknown. */
+  unrecorded: OfficeOuting[];
 }
 
 export interface OfficeRequest {
