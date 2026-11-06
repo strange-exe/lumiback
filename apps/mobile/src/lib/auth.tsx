@@ -111,6 +111,17 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
         auth: false,
         body: { email: email.trim().toLowerCase(), password },
       });
+      // A session kept through a server error at launch (see above) may be another student's:
+      // forget its local state and end it on the server before this one takes its place.
+      const kept = await storedRefreshToken();
+      if (kept) {
+        forgetStudentOnPhone();
+        await api("/auth/logout", {
+          method: "POST",
+          auth: false,
+          body: { refresh_token: kept },
+        }).catch(() => undefined);
+      }
       await storeTokens(tokens);
       await loadUser();
     },

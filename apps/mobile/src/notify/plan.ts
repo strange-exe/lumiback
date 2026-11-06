@@ -47,6 +47,27 @@ export function newRequests<V extends { id: string; status: string }>(
   return viewers.filter((v) => v.status === "pending" && !seen.has(v.id));
 }
 
+/**
+ * The local follow-request alert, worded like the server's push (backend/app/api/codes.py). A
+ * guest picks their own name, so it says they are a guest and that the emergency contact never
+ * has to ask: a name can look like the contact's, the kind can't.
+ */
+export function followRequestNotice(viewer: { name: string; kind: "user" | "guest" }): {
+  title: string;
+  body: string;
+} {
+  if (viewer.kind === "guest") {
+    return {
+      title: `${viewer.name} (guest) wants to follow you`,
+      body: "Joined with a code, no account. Your emergency contact never has to ask.",
+    };
+  }
+  return {
+    title: `${viewer.name} wants to follow you`,
+    body: "A Lumiback student. Open Lumiback to approve or decline.",
+  };
+}
+
 const ENDED: Record<string, string> = {
   expired: "Your sharing time ran out.",
   stopped_by_sharer: "Sharing was stopped from another device.",

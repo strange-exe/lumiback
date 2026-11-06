@@ -4,8 +4,10 @@ import { useEffect } from "react";
 import { Platform } from "react-native";
 
 import { loadPrefs } from "@/lib/prefs";
+import type { Viewer } from "@/lib/types";
 import {
   endedMessage,
+  followRequestNotice,
   notificationRoute,
   RETURN_DUE,
   RETURN_SOON,
@@ -102,11 +104,10 @@ export interface NotificationData {
   url: NotificationRoute;
 }
 
-export async function notifyFollowRequest(name: string): Promise<void> {
+export async function notifyFollowRequest(viewer: Pick<Viewer, "name" | "kind">): Promise<void> {
   if (!(await loadPrefs()).followRequests) return;
   return show(CHANNELS.requests, {
-    title: `${name} wants to follow you`,
-    body: "Open Lumiback to approve or decline.",
+    ...followRequestNotice(viewer),
     data: { url: "/live" } satisfies NotificationData,
   });
 }

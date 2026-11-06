@@ -1,5 +1,6 @@
 import {
   endedMessage,
+  followRequestNotice,
   mutedChannels,
   notificationRoute,
   newRequests,
@@ -84,5 +85,24 @@ describe("notificationRoute", () => {
     for (const data of [undefined, null, {}, { url: null }, { url: "/admin" }, { url: 3 }, "x"]) {
       expect(notificationRoute(data)).toBe("/today");
     }
+  });
+});
+
+describe("followRequestNotice", () => {
+  test("a guest who copies the contact's label is still called a guest", () => {
+    // A Cyrillic "e": looks like the label Lumiback gives the real contact.
+    const lookAlike = "Sunita (" + String.fromCodePoint(0x0435) + "mergency contact)";
+    expect(followRequestNotice({ name: lookAlike, kind: "guest" })).toEqual({
+      title: `${lookAlike} (guest) wants to follow you`,
+      body: "Joined with a code, no account. Your emergency contact never has to ask.",
+    });
+  });
+
+  test("a student is named as a student", () => {
+    const notice = followRequestNotice({ name: "Arjun", kind: "user" });
+    expect(notice).toEqual({
+      title: "Arjun wants to follow you",
+      body: "A Lumiback student. Open Lumiback to approve or decline.",
+    });
   });
 });

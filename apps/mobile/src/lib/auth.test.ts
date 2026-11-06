@@ -43,7 +43,7 @@ jest.mock("@/lib/session", () => ({
     return () => undefined;
   },
   storedRefreshToken: jest.fn(async () => mockStoredToken),
-  storeTokens: jest.fn(),
+  storeTokens: jest.fn(async () => void mockCalls.push("storeTokens")),
 }));
 jest.mock("@/notify/notify", () => ({
   syncPush: jest.fn(),
@@ -110,6 +110,32 @@ describe("the launch check", () => {
     const { auth, tree } = await mount();
     expect(mockCalls).not.toContain("clearTokens");
     expect(auth.status).toBe("signedOut");
+    act(() => tree.unmount());
+  });
+
+  it("signing in over a session kept through a server error forgets that student first", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    mockStoredToken = "r1";
+    mockApi.mockRejectedValueOnce(new ApiError(503)); // the launch check's /auth/me
+    const id = armSafeReturn(); // the kept student's, armed before the app was closed
+    const { auth, tree } = await mount();
+    mockCalls.length = 0;
+    await act(async () => auth.signIn("next@geu.ac.in", "pw"));
+    expect(safeReturnFor({ intent: id })).toBe(false);
+    expect(mockCalls).toEqual(expect.arrayContaining(["stopSending", "syncReturnReminders"]));
+    // The kept login is ended on the server before the new one is stored.
+    expect(mockCalls.indexOf("api /auth/logout")).toBeGreaterThanOrEqual(0);
+    expect(mockCalls.indexOf("api /auth/logout")).toBeLessThan(mockCalls.indexOf("storeTokens"));
+    act(() => tree.unmount());
+  });
+
+  it("a plain sign-in, with nothing kept, ends no session and stops nothing", async () => {
+    const { auth, tree } = await mount();
+    mockCalls.length = 0;
+    await act(async () => auth.signIn("next@geu.ac.in", "pw"));
+    expect(mockCalls).not.toContain("api /auth/logout");
+    expect(mockCalls).not.toContain("stopSending");
+    expect(mockCalls).toContain("storeTokens");
     act(() => tree.unmount());
   });
 

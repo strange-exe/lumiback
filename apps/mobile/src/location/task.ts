@@ -65,7 +65,7 @@ async function checkRequests(share: ActiveShare): Promise<void> {
   if (fresh.length === 0) return;
   // With server push the request already arrived as a push; don't show it twice.
   if (!(await hasPushToken())) {
-    for (const viewer of fresh) await notifyFollowRequest(viewer.name);
+    for (const viewer of fresh) await notifyFollowRequest(viewer);
   }
   await saveShare({ ...share, notified: [...(share.notified ?? []), ...fresh.map((v) => v.id)] });
 }
