@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.11.0",
+    "date": "2026-11-06",
+    "title": "Office account controls",
+    "points": [
+      "The hostel office can turn an account off and on again. Turning it off signs that person out everywhere and keeps their history.",
+      "The hostel office can correct a student's name, roll no. or phone, and admins can fix an email address, cancel an invite nobody used, or add one person at a time.",
+      "Emails about your account and your return now show a clear button, and reminders give the exact time you were due back."
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-11-06",
     "title": "Fix an outing that went wrong",
