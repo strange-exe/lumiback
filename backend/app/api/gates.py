@@ -87,6 +87,23 @@ async def scan(
     except svc.ScanRejected as e:
         await release_unused(limiter, slot, None)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.message) from None
+    except svc.StaleOuting as e:
+        await release_unused(limiter, slot, None)
+        left = e.left_at.astimezone(rules.IST)
+        never_closed = f"Your outing from {left:%a} {left.day} {left:%b} was never closed."
+        if not body.ask_if_stale:  # an older app shows `detail` as text
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=f"{never_closed} Tap I'm back in the app, then scan again to go out.",
+            ) from None
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale_outing",
+                "left_at": left.isoformat(),
+                "message": f"{never_closed} Are you coming back in, or going out now?",
+            },
+        ) from None
     except svc.AlreadyScanned:
         await release_unused(limiter, slot, None)
         raise HTTPException(
@@ -103,10 +120,10 @@ async def scan(
     # A tap-in starts nothing (the outing it closes may have a share of its own).
     started = outcome.outing if outcome.direction is ScanDirection.OUT else None
     await release_unused(limiter, slot, started)
+    # Ended first: going out again can close an earlier day's outing (and its share).
+    await safe_return_ended(outcome.back, hub=hub, mailer=mailer, tasks=tasks)
     if outcome.direction is ScanDirection.OUT:
         await safe_return_started(outcome.outing, me, mailer=mailer, settings=settings, tasks=tasks)
-    else:
-        await safe_return_ended(outcome.back, hub=hub, mailer=mailer, tasks=tasks)
     return GateScanOut(
         direction=outcome.direction.value,
         gate=outcome.gate.name,

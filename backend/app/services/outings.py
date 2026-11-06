@@ -14,7 +14,7 @@ from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Outing, OutingRequest, RequestStatus, ShareSession, User, Via
+from app.models import InVia, Outing, OutingRequest, RequestStatus, ShareSession, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
 from app.services import requests, rules, safe_return
 
@@ -179,10 +179,15 @@ async def mark_return(
     pepper: str,
     gate_id: uuid.UUID | None = None,
     commit: bool = True,
+    at: datetime | None = None,
+    via: InVia | None = None,
 ) -> Returned | None:
     """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once. Ends its
     safe-return share in the same transaction (`pepper`: the code pepper, which identifies
     the contact's viewer row).
+
+    `at` and `via` are for the hostel office's corrections (app/services/corrections.py) and
+    an unrecorded return; students and gates always get the database clock.
 
     Lock order: the safe-return share before the outing, as stopping a share and the sweep's
     expiry take them (share, then forget_address on the outing); the opposite order would
@@ -208,8 +213,8 @@ async def mark_return(
             # This outing only: if a parallel request closed it first, there's nothing to do.
             .where(Outing.id == open_outing.id, Outing.returned_at.is_(None))
             .values(
-                returned_at=func.now(),
-                in_via=Via.GATE if gate_id else Via.SELF,
+                returned_at=at if at is not None else func.now(),
+                in_via=via or (InVia.GATE if gate_id else InVia.SELF),
                 in_gate_id=gate_id,
             )
             .returning(Outing)
@@ -244,7 +249,11 @@ async def summary(session: AsyncSession, student_id: uuid.UUID) -> OutingSummary
             select(
                 func.count(),
                 func.count(Outing.returned_at),
-                func.count().filter(Outing.returned_at > Outing.expected_return_at),
+                # An unrecorded return (closed at the next tap-out) isn't known to be late.
+                func.count().filter(
+                    Outing.returned_at > Outing.expected_return_at,
+                    Outing.in_via.is_distinct_from(InVia.UNRECORDED),
+                ),
             ).where(Outing.student_id == student_id)
         )
     ).one()

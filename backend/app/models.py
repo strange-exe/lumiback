@@ -127,6 +127,19 @@ class Via(enum.StrEnum):
     GATE = "gate"
 
 
+class InVia(enum.StrEnum):
+    """How an outing was closed: the two ways above, or by the hostel office.
+
+    STAFF: the office recorded the return (or a corrected time). UNRECORDED: the student
+    tapped out again at a gate while an earlier day's outing was still open, so it was closed
+    without knowing when they really came back; the office can fix the time."""
+
+    SELF = "self"
+    GATE = "gate"
+    STAFF = "staff"
+    UNRECORDED = "unrecorded"
+
+
 class LateReply(enum.StrEnum):
     """A late student's answer to the "are you OK?" alert."""
 
@@ -223,7 +236,7 @@ class Outing(Base):
     returned_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
     out_via: Mapped[Via] = mapped_column(str_enum(Via, "outing_via"), server_default=Via.SELF.value)
-    in_via: Mapped[Via | None] = mapped_column(str_enum(Via, "outing_in_via"))
+    in_via: Mapped[InVia | None] = mapped_column(str_enum(InVia, "outing_in_via"))
     out_gate_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("gates.id", ondelete="SET NULL")
     )
@@ -324,6 +337,51 @@ class RequestStatus(enum.StrEnum):
     APPROVED = "approved"
     DECLINED = "declined"
     CANCELLED = "cancelled"
+
+
+class CorrectionKind(enum.StrEnum):
+    RETURN = "return"  # close an open outing at the stated time
+    RETURN_TIME = "return_time"  # change when a closed outing ended
+    CANCEL = "cancel"  # a mistaken tap: the trip never happened
+
+
+class OutingCorrection(Base):
+    """A change to an outing's record, with the old and new times kept. The hostel office
+    applies one directly (status approved, decided_by = asked_by); a student only asks, and
+    staff covering the outing's hostel approve or decline."""
+
+    __tablename__ = "outing_corrections"
+    __table_args__ = (
+        CheckConstraint("kind = 'cancel' OR returned_at IS NOT NULL", name="time_unless_cancel"),
+        # One open question per outing at a time.
+        Index(
+            "uq_outing_corrections_one_pending",
+            "outing_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index("ix_outing_corrections_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    outing_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("outings.id", ondelete="CASCADE"))
+    kind: Mapped[CorrectionKind] = mapped_column(str_enum(CorrectionKind, "correction_kind"))
+    status: Mapped[RequestStatus] = mapped_column(
+        str_enum(RequestStatus, "correction_status"), server_default=RequestStatus.PENDING.value
+    )
+    returned_at: Mapped[datetime | None]  # the time asked for (none for a cancel)
+    reason: Mapped[str] = mapped_column(String(300))
+    # What the record said before (set when applied).
+    old_returned_at: Mapped[datetime | None]
+    old_in_via: Mapped[InVia | None] = mapped_column(str_enum(InVia, "correction_old_in_via"))
+    asked_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    by_staff: Mapped[bool] = mapped_column(server_default=text("false"))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None]
+    note: Mapped[str | None] = mapped_column(String(300))  # staff's reply to a student's ask
+    created_at: Mapped[datetime] = created_at()
 
 
 class OutingRequest(Base):

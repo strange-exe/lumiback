@@ -16,6 +16,7 @@ from app.api.deps import (
     PushDep,
     SessionDep,
     SettingsDep,
+    enforce,
 )
 from app.config import Settings
 from app.email import Mailer
@@ -23,6 +24,8 @@ from app.models import LateReply, Outing, User
 from app.push import PushMessage
 from app.realtime import AccessChanged, Hub
 from app.schemas import (
+    CorrectionIn,
+    CorrectionOut,
     LateReplyIn,
     OutingCreateIn,
     OutingOut,
@@ -31,11 +34,14 @@ from app.schemas import (
     OutingRequestOut,
     OutingSummary,
 )
-from app.security.rate_limit import RateLimiter
-from app.services import escalations, requests, rules, safe_return, staff
+from app.security.rate_limit import Limit, RateLimiter
+from app.services import corrections, escalations, requests, rules, safe_return, staff
 from app.services import outings as svc
 
 router = APIRouter(prefix="/outings", tags=["outings"])
+
+# Asking the office to correct an outing: a few a day is plenty.
+CORRECTION_ASKS = Limit(max_hits=10, window_seconds=86_400)
 
 NOT_OUT = HTTPException(status.HTTP_404_NOT_FOUND, detail="You are not on an outing")
 
@@ -138,10 +144,51 @@ async def check_out(
     return svc.to_out(outing, datetime.now(UTC))
 
 
+async def _with_corrections(session: SessionDep, items: list[OutingOut]) -> list[OutingOut]:
+    found = await corrections.latest(session, [o.id for o in items])
+    for o in items:
+        o.correction = found.get(o.id)
+    return items
+
+
 @router.get("/current")
 async def current(me: CurrentUser, session: SessionDep) -> OutingOut | None:
     outing = await svc.current(session, me.id)
-    return svc.to_out(outing, datetime.now(UTC)) if outing else None
+    if outing is None:
+        return None
+    return (await _with_corrections(session, [svc.to_out(outing, datetime.now(UTC))]))[0]
+
+
+@router.post("/{outing_id}/correction", status_code=status.HTTP_201_CREATED)
+async def ask_correction(
+    outing_id: uuid.UUID,
+    body: CorrectionIn,
+    me: CurrentUser,
+    session: SessionDep,
+    limiter: LimiterDep,
+    push: PushDep,
+) -> CorrectionOut:
+    """Ask the hostel office to fix an outing: a forgotten tap-in, a wrong tap. The office
+    decides; nothing changes until they approve."""
+    await enforce(limiter, "correction:user", str(me.id), CORRECTION_ASKS)
+    name = me.name
+    try:
+        out = await corrections.ask(session, me, outing_id, body)
+    except corrections.Refused as e:
+        raise HTTPException(e.status, detail=e.message) from None
+    outing = await session.get(Outing, outing_id)
+    assert outing is not None
+    for person in await staff.office_for(session, outing.hostel_id):
+        push.to_user(
+            person.id,
+            PushMessage(
+                title="Outing correction asked",
+                body=f"{name} asked the office to correct an outing.",
+                url="/office/corrections",
+                channel="share-status",  # the app's "Sharing and requests" switch
+            ),
+        )
+    return out
 
 
 @router.patch("/current", deprecated=True)
@@ -181,7 +228,9 @@ async def history(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="before must include a timezone offset"
         )
-    return await svc.history(session, me.id, limit=limit, before=before)
+    page = await svc.history(session, me.id, limit=limit, before=before)
+    await _with_corrections(session, page.items)
+    return page
 
 
 @router.get("/summary")

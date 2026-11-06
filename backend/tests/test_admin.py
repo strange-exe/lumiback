@@ -113,6 +113,7 @@ def test_overview_and_who_is_out(client, db, admin, riya):
         "active_gates": 1,
         "pending_requests": 0,
         "open_escalations": 0,
+        "corrections": 0,
     }
 
     everyone = client.get("/admin/outings", headers=admin).json()

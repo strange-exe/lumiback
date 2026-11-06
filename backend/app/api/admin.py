@@ -63,7 +63,7 @@ async def overview(staff: StaffUser, session: SessionDep) -> AdminOverview:
 async def open_outings(
     staff: StaffUser,
     session: SessionDep,
-    state: Literal["all", "out", "overdue"] = "all",
+    state: Literal["all", "out", "overdue", "back"] = "all",
 ) -> list[AdminOuting]:
     return await svc.open_outings(session, staff, state)
 

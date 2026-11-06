@@ -350,6 +350,60 @@ class OutingCreateIn(Input):
     safe_return: bool = False
 
 
+InVia = Literal["self", "gate", "staff", "unrecorded"]
+CorrectionKindLit = Literal["return", "return_time", "cancel"]
+CorrectionReason = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=3, max_length=300),
+    BeforeValidator(_no_control_characters),
+]
+
+
+class CorrectionIn(Input):
+    """return: they came back at `returned_at` (an open outing). return_time: they came back
+    at `returned_at` instead (a closed one). cancel: the tap was a mistake, no trip."""
+
+    kind: CorrectionKindLit
+    returned_at: AwareDatetime | None = None
+    reason: CorrectionReason
+
+    @model_validator(mode="after")
+    def _time_unless_cancel(self) -> "CorrectionIn":
+        if self.kind != "cancel" and self.returned_at is None:
+            raise ValueError("Say when they came back")
+        return self
+
+
+class CorrectionOut(BaseModel):
+    """The latest correction on an outing: applied by the office, or asked for by the student."""
+
+    id: uuid.UUID
+    kind: CorrectionKindLit
+    status: Literal["pending", "approved", "declined", "cancelled"]
+    returned_at: datetime | None
+    reason: str
+    by_staff: bool  # the office made it (else the student asked)
+    old_returned_at: datetime | None  # what the record said before, once applied
+    note: str | None  # the office's reply to a student's ask
+    created_at: datetime
+
+    @field_serializer("returned_at", "old_returned_at", "created_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class CorrectionDecisionIn(Input):
+    approve: bool
+    note: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, max_length=300),
+            BeforeValidator(_no_control_characters),
+        ]
+        | None
+    ) = None
+
+
 class OutingOut(BaseModel):
     """Times are returned in IST (+05:30). Status is derived, never stored."""
 
@@ -363,11 +417,14 @@ class OutingOut(BaseModel):
     late_minutes: int  # past expected return: when returned, or so far if overdue
     duration_minutes: int | None  # once returned
     out_via: Literal["self", "gate"] = "self"  # tapped out at a gate, or logged in the app
-    in_via: Literal["self", "gate"] | None = None
+    # staff: the hostel office recorded or corrected the return. unrecorded: closed when they
+    # tapped out again on a later day, so when they came back isn't known.
+    in_via: InVia | None = None
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the "are you OK?" alert
     # The share the emergency contact follows (safe return), for the app or website to send
     # location to. None: not chosen, or it couldn't start (e.g. today's email limit).
     safe_return_session_id: uuid.UUID | None = None
+    correction: CorrectionOut | None = None  # the latest one, if any
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -518,6 +575,11 @@ class GateScanIn(Input):
     destination: Destination | None = None
     # Tapping out only: safe return, as in OutingCreateIn. Ignored when tapping in.
     safe_return: bool = False
+    # The answer to "your outing from an earlier day is still open": coming back in, or going
+    # out again (that old outing is then closed as an unrecorded return). Ignored otherwise.
+    intent: Literal["in", "out"] | None = None
+    # Sent by apps that can show that question (1.10.0+). Older apps get a plain message.
+    ask_if_stale: bool = False
 
 
 class GateScanOut(BaseModel):
@@ -619,6 +681,7 @@ class AdminOverview(BaseModel):
     active_gates: int
     pending_requests: int = 0  # today's weekend/holiday requests waiting for a decision
     open_escalations: int = 0  # late students who didn't answer, not yet handled
+    corrections: int = 0  # students' correction asks plus unrecorded returns to fix
 
 
 class AdminOuting(BaseModel):
@@ -635,6 +698,7 @@ class AdminOuting(BaseModel):
     late_minutes: int  # past the return time: when they came back, or so far
     out_via: Literal["self", "gate"]
     out_gate: str | None
+    in_via: InVia | None = None
     hostel: str | None = None
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the late alert
     on_request: bool = False  # a weekend/holiday outing an admin approved
@@ -642,6 +706,19 @@ class AdminOuting(BaseModel):
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
+
+
+class CorrectionAsk(BaseModel):
+    """A student's correction ask, with the outing as it stands."""
+
+    correction: CorrectionOut
+    outing: AdminOuting
+
+
+class CorrectionQueue(BaseModel):
+    asks: list[CorrectionAsk]
+    # Closed when the student tapped out again on a later day: when they came back is unknown.
+    unrecorded: list[AdminOuting]
 
 
 class AdminScan(BaseModel):

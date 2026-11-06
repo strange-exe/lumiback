@@ -5,11 +5,20 @@ import uuid
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import PushDep, RulesUser, SessionDep, StaffUser
+from app.api.deps import (
+    HubDep,
+    MailerDep,
+    PushDep,
+    RulesUser,
+    SessionDep,
+    SettingsDep,
+    StaffUser,
+)
+from app.api.outings import safe_return_ended
 from app.email_templates import request_decision_email
 from app.models import (
     DayRule,
@@ -24,7 +33,12 @@ from app.models import (
 )
 from app.push import PushMessage
 from app.schemas import (
+    AdminOuting,
     AdminRequestOut,
+    CorrectionDecisionIn,
+    CorrectionIn,
+    CorrectionOut,
+    CorrectionQueue,
     DayRuleIO,
     EscalationOut,
     EscalationResolveIn,
@@ -37,7 +51,7 @@ from app.schemas import (
     RuleSetOut,
 )
 from app.services import admin as audit_svc
-from app.services import escalations, requests, rules
+from app.services import corrections, escalations, requests, rules
 from app.services.gates import campus_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -478,6 +492,91 @@ async def resolve_escalation(
         raise NOT_FOUND from None
     audit_svc.audit(session, staff.user, "escalation:resolve", str(escalation_id))
     await session.commit()
+
+
+# ---------- outing corrections ----------
+
+
+def _correction_refused(e: corrections.Refused) -> HTTPException:
+    return HTTPException(e.status, detail=e.message)
+
+
+@router.get("/corrections")
+async def correction_queue(staff: StaffUser, session: SessionDep) -> CorrectionQueue:
+    """Students' correction asks, and returns the gate never saw, in this office's hostels."""
+    return await corrections.queue(session, staff)
+
+
+@router.post("/outings/{outing_id}/correction")
+async def correct_outing(
+    outing_id: uuid.UUID,
+    body: CorrectionIn,
+    staff: StaffUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    push: PushDep,
+    hub: HubDep,
+    mailer: MailerDep,
+    tasks: BackgroundTasks,
+) -> AdminOuting:
+    """Record a return, fix a return time, or cancel a mistaken tap, with a reason."""
+    try:
+        done = await corrections.by_staff(
+            session, staff, outing_id, body, settings.code_pepper.get_secret_value()
+        )
+    except corrections.Refused as e:
+        raise _correction_refused(e) from None
+    await safe_return_ended(done.back, hub=hub, mailer=mailer, tasks=tasks)
+    push.to_user(
+        done.student_id,
+        PushMessage(
+            title="Your outing was updated",
+            body="The hostel office corrected one of your outings. See History.",
+            url="/history",
+            channel="share-status",
+        ),
+    )
+    return done.outing
+
+
+@router.post("/corrections/{correction_id}/decision")
+async def decide_correction(
+    correction_id: uuid.UUID,
+    body: CorrectionDecisionIn,
+    staff: StaffUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    push: PushDep,
+    hub: HubDep,
+    mailer: MailerDep,
+    tasks: BackgroundTasks,
+) -> CorrectionOut:
+    try:
+        done = await corrections.decide(
+            session,
+            staff,
+            correction_id,
+            body.approve,
+            body.note,
+            settings.code_pepper.get_secret_value(),
+        )
+    except corrections.Refused as e:
+        raise _correction_refused(e) from None
+    await safe_return_ended(done.back, hub=hub, mailer=mailer, tasks=tasks)
+    push.to_user(
+        done.student_id,
+        PushMessage(
+            title="Correction approved" if body.approve else "Correction declined",
+            body=(
+                "The hostel office fixed your outing. See History."
+                if body.approve
+                else (body.note or "Ask the hostel office if you have questions.")
+            ),
+            url="/history",
+            channel="share-status",
+        ),
+    )
+    return done.correction
 
 
 # ---------- the warden's own hostels ----------

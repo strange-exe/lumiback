@@ -18,7 +18,16 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CampusSettings, Gate, GateScan, Outing, ScanDirection, ScanResult, User
+from app.models import (
+    CampusSettings,
+    Gate,
+    GateScan,
+    InVia,
+    Outing,
+    ScanDirection,
+    ScanResult,
+    User,
+)
 from app.schemas import GateScanIn, OutingCreateIn
 from app.security.gate_codes import code_is_valid, hash_kiosk_token, parse_qr
 from app.services import outings, rules
@@ -41,12 +50,23 @@ class AlreadyScanned(Exception):
     pass
 
 
+class StaleOuting(Exception):
+    """An outing from an earlier day is still open: ask whether they're coming in or going
+    out, instead of counting this scan as the return the gate never saw."""
+
+    def __init__(self, left_at: datetime) -> None:
+        super().__init__("stale outing")
+        self.left_at = left_at
+
+
 @dataclass(frozen=True)
 class ScanOutcome:
     direction: ScanDirection
     gate: Gate
     outing: Outing
-    back: Back | None = None  # tap-in that ended a safe-return share
+    # A safe-return share this scan ended: a tap-in's, or (going out again) the share of the
+    # earlier day's outing closed as an unrecorded return.
+    back: Back | None = None
 
 
 def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -149,6 +169,20 @@ async def scan(
         raise AlreadyScanned  # nothing recorded: the earlier scan already did the work
 
     back = None
+    if open_outing is not None and rules.ist_date(open_outing.left_at) < rules.ist_date(now):
+        # Left on an earlier day and never tapped in: probably back long ago. Counting this
+        # scan as the return would mark them in while they walk out. Ask (nothing recorded).
+        if body.intent is None:
+            raise StaleOuting(open_outing.left_at)
+        if body.intent == "out":
+            closed = await outings.mark_return(
+                session, user_id, pepper=pepper, commit=False, via=InVia.UNRECORDED
+            )
+            if closed is None:  # closed by a simultaneous request; treat as a double scan
+                raise AlreadyScanned
+            back = closed.back
+            direction = ScanDirection.OUT
+
     if direction is ScanDirection.IN:
         returned = await outings.mark_return(
             session, user_id, pepper=pepper, gate_id=gate.id, commit=False

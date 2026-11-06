@@ -22,7 +22,9 @@ from app.models import (
     Gate,
     GateScan,
     Hostel,
+    InVia,
     Outing,
+    OutingCorrection,
     OutingRequest,
     RequestStatus,
     ScanResult,
@@ -45,6 +47,8 @@ from app.services.staff import Staff, warden_hostel_ids
 
 IST = timedelta(hours=5, minutes=30)
 MAX_EXPORT_DAYS = 92
+# How far back the office can correct an outing (app/services/corrections.py).
+CORRECTABLE_FOR = timedelta(days=30)
 
 
 class LastAdmin(Exception):
@@ -95,6 +99,24 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
         .join(User, User.id == Outing.student_id)
         .where(mine, Escalation.resolved_at.is_(None))
     )
+    # The corrections queue (app/services/corrections.py): students' asks and unrecorded returns.
+    to_fix = await session.scalar(
+        select(func.count())
+        .select_from(Outing)
+        .where(
+            mine_out,
+            Outing.left_at >= now - CORRECTABLE_FOR,
+            or_(
+                Outing.in_via == InVia.UNRECORDED,
+                select(OutingCorrection.id)
+                .where(
+                    OutingCorrection.outing_id == Outing.id,
+                    OutingCorrection.status == RequestStatus.PENDING,
+                )
+                .exists(),
+            ),
+        )
+    )
     return AdminOverview(
         out_now=out_now or 0,
         overdue=overdue or 0,
@@ -103,21 +125,28 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
         active_gates=gates or 0,
         pending_requests=pending or 0,
         open_escalations=escalated or 0,
+        corrections=to_fix or 0,
     )
 
 
 async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[AdminOuting]:
-    """Students currently out: `overdue`, `out` (not yet due) or `all`. Most urgent first."""
+    """Students currently out: `overdue`, `out` (not yet due) or `all`. Most urgent first.
+    `back`: outings that ended today (IST), latest first, for the office to correct."""
     now = datetime.now(UTC)
     query = (
         select(Outing, User, Gate.name, Hostel.name)
         .join(User, User.id == Outing.student_id)
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
-        .where(staff.covers(Outing.hostel_id), Outing.returned_at.is_(None))
-        .order_by(Outing.expected_return_at)
+        .where(staff.covers(Outing.hostel_id))
         .limit(500)
     )
+    if state == "back":
+        rows = await session.execute(
+            query.where(Outing.returned_at >= ist_midnight(now)).order_by(Outing.returned_at.desc())
+        )
+        return [_register_row(o, u, gate_name, hostel, now) for o, u, gate_name, hostel in rows]
+    query = query.where(Outing.returned_at.is_(None)).order_by(Outing.expected_return_at)
     if state == "overdue":
         query = query.where(Outing.expected_return_at < now)
     elif state == "out":
@@ -144,6 +173,7 @@ def _register_row(
         late_minutes=max(0, int((end - o.expected_return_at).total_seconds() // 60)),
         out_via=o.out_via.value,
         out_gate=gate_name,
+        in_via=o.in_via.value if o.in_via else None,
         hostel=hostel,
         late_reply=o.late_reply.value if o.late_reply else None,
         on_request=o.request_id is not None,
