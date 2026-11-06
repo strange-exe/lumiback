@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.8.1",
+    "date": "2026-11-06",
+    "title": "Safer links",
+    "points": [
+      "Links far too long to be a real Lumiback link open the home screen instead, so a crafted link can't freeze the app."
+    ]
+  },
+  {
     "version": "1.8.0",
     "date": "2026-11-06",
     "title": "Safer taps",
