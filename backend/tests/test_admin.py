@@ -355,8 +355,13 @@ def test_bootstrap_script_makes_the_first_admin(client, test_db_url):
 
 
 def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
-    if ist_now_minutes() < 60:  # like set_rules: the returns below were due up to 50 min ago
-        pytest.skip("too soon after midnight IST for returns due earlier to be today's")
+    # "Today" is the IST day, so both returns must have been due since IST midnight: 20 and 50
+    # minutes ago normally, closer together just after midnight (still out = most late).
+    since_midnight = ist_now_minutes()
+    if since_midnight < 3:
+        pytest.skip("too soon after midnight IST for two returns due earlier today")
+    back_mins = 20 if since_midnight > 51 else max(1, (since_midnight - 1) // 3)
+    out_mins = 50 if since_midnight > 51 else 2 * back_mins
 
     def student(email: str, name: str) -> dict:
         headers = signup(client, email, name)[1]
@@ -367,7 +372,7 @@ def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
     back_late = student("backlate@example.com", "Backlate")
     still_out = student("stillout@example.com", "Stillout")
     client.post("/outings/current/return", headers=on_time)
-    for email, minutes in (("backlate@example.com", 20), ("stillout@example.com", 50)):
+    for email, minutes in (("backlate@example.com", back_mins), ("stillout@example.com", out_mins)):
         db.execute(
             text(
                 "UPDATE outings SET left_at = now() - interval '2 hours', "
@@ -377,14 +382,15 @@ def test_late_today_lists_latecomers_back_or_still_out(client, db, admin):
             {"m": minutes, "e": email},
         )
     db.commit()
-    client.post("/outings/current/return", headers=back_late)  # 20 min after its return time
+    client.post("/outings/current/return", headers=back_late)  # back_mins after its return time
 
     late = client.get("/admin/late-today", headers=admin).json()
     assert [(r["name"], r["status"]) for r in late] == [
         ("Stillout", "overdue"),  # most late first
         ("Backlate", "returned"),
     ]
-    assert 19 <= late[1]["late_minutes"] <= 21 and late[1]["returned_at"] is not None
+    assert back_mins - 1 <= late[1]["late_minutes"] <= back_mins + 1
+    assert late[1]["returned_at"] is not None
     assert client.get("/admin/late-today", headers=still_out).status_code == 403
 
 
