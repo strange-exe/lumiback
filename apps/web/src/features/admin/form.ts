@@ -3,6 +3,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 
 import { ApiError } from "@/lib/backend";
+import { isUuid, MISSING_ITEM } from "@/lib/ids";
 import { accessToken } from "@/lib/session";
 import type { FormState } from "@/lib/types";
 
@@ -23,6 +24,15 @@ export function number(form: FormData, name: string): number | null {
   if (raw === "") return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * A record id from a form, ready for a backend path. Not a UUID: throws the same 404 the
+ * backend would give, so `attempt` shows it and nothing is sent. Call it inside the attempt.
+ */
+export function pathId(id: string): string {
+  if (!isUuid(id)) throw new ApiError(404, MISSING_ITEM);
+  return id;
 }
 
 export async function attempt<T>(

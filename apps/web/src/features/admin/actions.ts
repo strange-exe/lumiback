@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { accountFilter, editBody, personBody } from "@/features/admin/accounts";
-import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
+import { attempt, number, pathId, text, tokenOrSignIn } from "@/features/admin/form";
 import { correctionBody } from "@/features/outings/corrections";
 import { callBackend } from "@/lib/backend";
 import type {
@@ -58,7 +58,7 @@ export async function updateGate(_: GateFormState, form: FormData): Promise<Gate
   const name = text(form, "name");
   const radius = number(form, "radius_m");
   const result = await attempt(() =>
-    callBackend(`/admin/gates/${encodeURIComponent(id)}`, {
+    callBackend(`/admin/gates/${pathId(id)}`, {
       method: "PATCH",
       token,
       body: { name: name || undefined, radius_m: radius === null ? undefined : Math.round(radius) },
@@ -76,7 +76,7 @@ export async function setGateActive(_: GateFormState, form: FormData): Promise<G
   const token = await tokenOrSignIn();
   const id = text(form, "gate_id");
   const result = await attempt(() =>
-    callBackend(`/admin/gates/${encodeURIComponent(id)}`, {
+    callBackend(`/admin/gates/${pathId(id)}`, {
       method: "PATCH",
       token,
       body: { active: text(form, "active") === "true" },
@@ -93,7 +93,7 @@ export async function removeGate(_: GateFormState, form: FormData): Promise<Gate
   const token = await tokenOrSignIn();
   const id = text(form, "gate_id");
   const result = await attempt(() =>
-    callBackend<void>(`/admin/gates/${encodeURIComponent(id)}`, { method: "DELETE", token }),
+    callBackend<void>(`/admin/gates/${pathId(id)}`, { method: "DELETE", token }),
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/gates");
@@ -105,7 +105,7 @@ export async function newKioskLink(_: GateFormState, form: FormData): Promise<Ga
   const token = await tokenOrSignIn();
   const id = text(form, "gate_id");
   const result = await attempt(() =>
-    callBackend<GateCreated>(`/admin/gates/${encodeURIComponent(id)}/kiosk-token`, {
+    callBackend<GateCreated>(`/admin/gates/${pathId(id)}/kiosk-token`, {
       method: "POST",
       token,
     }),
@@ -144,7 +144,7 @@ export async function moveStudent(_: FormState, form: FormData): Promise<FormSta
   const hostelId = text(form, "hostel_id");
   if (!hostelId) return { error: "Choose the hostel to move them to." };
   const result = await attempt(() =>
-    callBackend(`/admin/students/${encodeURIComponent(id)}/hostel`, {
+    callBackend(`/admin/students/${pathId(id)}/hostel`, {
       method: "POST",
       token,
       body: { hostel_id: hostelId },
@@ -166,7 +166,7 @@ export async function setRole(_: FormState, form: FormData): Promise<FormState> 
       ? form.getAll("hostel_ids").filter((v): v is string => typeof v === "string")
       : [];
   const result = await attempt(() =>
-    callBackend(`/admin/users/${encodeURIComponent(id)}/role`, {
+    callBackend(`/admin/users/${pathId(id)}/role`, {
       method: "POST",
       token,
       body: { role, hostel_ids: hostelIds },
@@ -210,7 +210,7 @@ export async function correctOuting(_: FormState, form: FormData): Promise<FormS
   if ("error" in checked) return { error: checked.error, fields };
   const result = await attempt(
     () =>
-      callBackend(`/admin/outings/${encodeURIComponent(id)}/correction`, {
+      callBackend(`/admin/outings/${pathId(id)}/correction`, {
         method: "POST",
         token,
         body: checked.body,
@@ -239,7 +239,7 @@ export async function decideCorrection(_: FormState, form: FormData): Promise<Fo
   }
   const result = await attempt(
     () =>
-      callBackend(`/admin/corrections/${encodeURIComponent(id)}/decision`, {
+      callBackend(`/admin/corrections/${pathId(id)}/decision`, {
         method: "POST",
         token,
         body: { approve, note: note || null },
@@ -298,7 +298,7 @@ export async function sendPasswordLink(_: FormState, form: FormData): Promise<Fo
   const token = await tokenOrSignIn();
   const id = text(form, "user_id");
   const result = await attempt(() =>
-    callBackend<PasswordLinkSent>(`/admin/users/${encodeURIComponent(id)}/password-link`, {
+    callBackend<PasswordLinkSent>(`/admin/users/${pathId(id)}/password-link`, {
       method: "POST",
       token,
     }),
@@ -334,7 +334,7 @@ export async function editAccount(_: FormState, form: FormData): Promise<FormSta
   if ("error" in checked) return { error: checked.error, fields };
   const result = await attempt(
     () =>
-      callBackend<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, {
+      callBackend<AdminUser>(`/admin/users/${pathId(id)}`, {
         method: "PATCH",
         token,
         body: checked.body,
@@ -352,7 +352,7 @@ export async function setAccountOn(_: FormState, form: FormData): Promise<FormSt
   const id = text(form, "user_id");
   const on = text(form, "on") === "true";
   const result = await attempt(() =>
-    callBackend<AdminUser>(`/admin/users/${encodeURIComponent(id)}/active`, {
+    callBackend<AdminUser>(`/admin/users/${pathId(id)}/active`, {
       method: "POST",
       token,
       body: { on },
@@ -373,7 +373,7 @@ export async function cancelInvite(_: FormState, form: FormData): Promise<FormSt
   const token = await tokenOrSignIn();
   const id = text(form, "user_id");
   const result = await attempt(() =>
-    callBackend<void>(`/admin/users/${encodeURIComponent(id)}/invite`, {
+    callBackend<void>(`/admin/users/${pathId(id)}/invite`, {
       method: "DELETE",
       token,
     }),

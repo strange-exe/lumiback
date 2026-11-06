@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { pathId } from "@/features/admin/form";
 import { correctionBody } from "@/features/outings/corrections";
 import { safeReturnShareToSend } from "@/features/outings/safe-return";
 import { ApiError, callBackend } from "@/lib/backend";
@@ -129,9 +130,7 @@ export async function sendRequest(_: FormState, form: FormData): Promise<FormSta
 export async function cancelRequest(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const id = text(form, "request_id");
-  return run(() =>
-    callBackend(`/outings/request/${encodeURIComponent(id)}`, { method: "DELETE", token }),
-  );
+  return run(() => callBackend(`/outings/request/${pathId(id)}`, { method: "DELETE", token }));
 }
 
 // ---------- corrections ----------
@@ -160,7 +159,7 @@ export async function askCorrection(_: FormState, form: FormData): Promise<FormS
   if ("error" in checked) return { error: checked.error, fields };
   return run(
     () =>
-      callBackend(`/outings/${encodeURIComponent(id)}/correction`, {
+      callBackend(`/outings/${pathId(id)}/correction`, {
         method: "POST",
         token,
         body: checked.body,

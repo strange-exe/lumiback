@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
+import { attempt, number, pathId, text, tokenOrSignIn } from "@/features/admin/form";
 import { callBackend } from "@/lib/backend";
 import type { DayRule, DayType, FormState, RuleSet } from "@/lib/types";
 
@@ -19,7 +19,7 @@ export async function decideRequest(_: FormState, form: FormData): Promise<FormS
     return { error: "Say why, so the student knows what to do.", fields: { note } };
   }
   const result = await attempt(() =>
-    callBackend(`/admin/requests/${encodeURIComponent(id)}/decision`, {
+    callBackend(`/admin/requests/${pathId(id)}/decision`, {
       method: "POST",
       token,
       body: { approve, note: note || null },
@@ -38,7 +38,7 @@ export async function resolveEscalation(_: FormState, form: FormData): Promise<F
   const note = text(form, "note");
   if (!note) return { error: "Note what happened, for the record." };
   const result = await attempt(() =>
-    callBackend(`/admin/escalations/${encodeURIComponent(id)}/resolve`, {
+    callBackend(`/admin/escalations/${pathId(id)}/resolve`, {
       method: "POST",
       token,
       body: { note },
@@ -98,7 +98,7 @@ export async function saveRuleSet(_: FormState, form: FormData): Promise<FormSta
   const parsed = daysFrom(form);
   if ("error" in parsed) return { error: parsed.error, fields: { name } };
   const result = await attempt(() =>
-    callBackend(`/admin/rule-sets/${encodeURIComponent(id)}`, {
+    callBackend(`/admin/rule-sets/${pathId(id)}`, {
       method: "PUT",
       token,
       body: { name, days: parsed.days },
@@ -134,7 +134,7 @@ export async function makeDefaultRuleSet(_: FormState, form: FormData): Promise<
   const token = await tokenOrSignIn();
   const id = text(form, "rule_set_id");
   const result = await attempt(() =>
-    callBackend(`/admin/rule-sets/${encodeURIComponent(id)}/default`, { method: "POST", token }),
+    callBackend(`/admin/rule-sets/${pathId(id)}/default`, { method: "POST", token }),
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/rules");
@@ -145,7 +145,7 @@ export async function deleteRuleSet(_: FormState, form: FormData): Promise<FormS
   const token = await tokenOrSignIn();
   const id = text(form, "rule_set_id");
   const result = await attempt(() =>
-    callBackend(`/admin/rule-sets/${encodeURIComponent(id)}`, { method: "DELETE", token }),
+    callBackend(`/admin/rule-sets/${pathId(id)}`, { method: "DELETE", token }),
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/rules");
@@ -173,7 +173,7 @@ export async function saveHostel(_: FormState, form: FormData): Promise<FormStat
   };
   const result = await attempt(
     () =>
-      callBackend(id ? `/admin/hostels/${encodeURIComponent(id)}` : "/admin/hostels", {
+      callBackend(id ? `/admin/hostels/${pathId(id)}` : "/admin/hostels", {
         method: id ? "PUT" : "POST",
         token,
         body,
@@ -195,7 +195,7 @@ export async function saveHostelContact(_: FormState, form: FormData): Promise<F
   };
   const result = await attempt(
     () =>
-      callBackend(`/admin/hostels/${encodeURIComponent(id)}/contact`, {
+      callBackend(`/admin/hostels/${pathId(id)}/contact`, {
         method: "PATCH",
         token,
         body: {
@@ -214,7 +214,7 @@ export async function deleteHostel(_: FormState, form: FormData): Promise<FormSt
   const token = await tokenOrSignIn();
   const id = text(form, "hostel_id");
   const result = await attempt(() =>
-    callBackend(`/admin/hostels/${encodeURIComponent(id)}`, { method: "DELETE", token }),
+    callBackend(`/admin/hostels/${pathId(id)}`, { method: "DELETE", token }),
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/rules");

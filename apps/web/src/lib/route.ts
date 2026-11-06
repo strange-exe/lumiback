@@ -4,11 +4,7 @@ import { NextResponse } from "next/server";
 
 import { ApiError } from "@/lib/backend";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function isUuid(value: string): boolean {
-  return UUID.test(value);
-}
+export { isUuid } from "@/lib/ids";
 
 /**
  * Route Handlers have no built-in CSRF check (Server Actions do), so state-changing handlers
