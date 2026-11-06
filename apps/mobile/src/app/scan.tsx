@@ -9,6 +9,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { consumeSafeReturn, safeReturnFor } from "@/gate/intent";
 import {
+  blockedTapCopy,
   confirmCopy,
   gateCode,
   phaseForNewLink,
@@ -29,6 +30,7 @@ import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
 import { Button, Press } from "@/ui/kit";
 import { radius, space, type, useColors } from "@/ui/theme";
+import { TouchGuard } from "../../modules/touch-guard";
 
 type Phase =
   | { kind: "camera" }
@@ -329,12 +331,7 @@ function Body({
         <Panel art>
           <Title>{copy.title}</Title>
           <Detail>{copy.detail}</Detail>
-          <Button
-            label={copy.action}
-            variant="onHero"
-            busy={!ready}
-            onPress={() => onConfirm(phase.qr)}
-          />
+          <GuardedConfirm label={copy.action} busy={!ready} onPress={() => onConfirm(phase.qr)} />
           <Button
             label="Cancel"
             variant="onHeroOutline"
@@ -492,6 +489,49 @@ function Done({ result, notice }: { result: GateScanned; notice: string | null }
         }}
       />
     </Panel>
+  );
+}
+
+/**
+ * The linked code's confirm button, behind the native touch guard: while another app draws over
+ * Lumiback, Android's tap is refused and the student is told why, instead of a hidden overlay
+ * steering them into tapping in or out.
+ */
+function GuardedConfirm({
+  label,
+  busy,
+  onPress,
+}: {
+  label: string;
+  busy: boolean;
+  onPress: () => void;
+}): ReactNode {
+  const c = useColors();
+  const [blocked, setBlocked] = useState(false);
+  return (
+    <View style={{ gap: space(3) }}>
+      <TouchGuard
+        onBlockedTouch={() => {
+          haptic.warning();
+          setBlocked(true);
+        }}
+      >
+        <Button
+          label={label}
+          variant="onHero"
+          busy={busy}
+          onPress={() => {
+            setBlocked(false);
+            onPress();
+          }}
+        />
+      </TouchGuard>
+      {blocked ? (
+        <Text accessibilityRole="alert" style={[type.body, { color: c.onHero }]}>
+          {blockedTapCopy}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
