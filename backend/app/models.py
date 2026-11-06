@@ -231,6 +231,11 @@ class Outing(Base):
         Index("ix_outings_hostel_left", "hostel_id", "left_at"),
         # "Was this approval used?" (requests queue, profile checks, the sweep).
         Index("ix_outings_request_id", "request_id"),
+        # The campus-wide register by day (admins and head wardens: no hostel filter).
+        Index("ix_outings_left_at", "left_at"),
+        # Which gates are in use (a used gate can't be removed), and SET NULL when one is.
+        Index("ix_outings_out_gate_id", "out_gate_id"),
+        Index("ix_outings_in_gate_id", "in_gate_id"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -501,6 +506,7 @@ class GateScan(Base):
     __table_args__ = (
         Index("ix_gate_scans_scanned", "scanned_at"),
         Index("ix_gate_scans_user_scanned", "user_id", "scanned_at"),
+        Index("ix_gate_scans_gate_id", "gate_id"),  # used gates; SET NULL on removal
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
