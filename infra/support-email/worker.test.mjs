@@ -558,7 +558,7 @@ test("only Cloudflare's own first Authentication-Results with dmarc=pass allows 
   const ok = (...r) => worker.dmarcReason(withResults(...r)) === null;
   assert.equal(ok(CF_PASS), true);
   // Case-insensitive, with an optional version after the authserv-id, and comments ignored.
-  assert.equal(ok("MX.Cloudflare.NET 1; spf=pass (mx.cloudflare.net: a, b) smtp.mailfrom=x.in; dmarc=PASS header.from=x.in"), true);
+  assert.equal(ok("MX.Cloudflare.NET 1; dmarc=PASS header.from=x.in; spf=pass (mx.cloudflare.net: a, b) smtp.mailfrom=x.in"), true);
   // No result, or not Cloudflare's: no reply.
   assert.equal(ok(), false);
   assert.equal(ok("evil.example; dmarc=pass header.from=geu.ac.in"), false);
@@ -586,11 +586,57 @@ test("sender text quoted inside Cloudflare's result is never read as structure (
   // inject a pass nor cut off Cloudflare's real result.
   assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x;dmarc=pass,"@victim.example; dmarc=none header.from=victim.example'), false);
   assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x;dmarc=pass"@victim.example; dmarc=none header.from=victim.example'), false);
-  // The real result after a quoted string still counts.
-  assert.equal(ok('mx.cloudflare.net; spf=pass smtp.mailfrom="a,b;c"@x.in; dmarc=pass header.from=x.in'), true);
+  // A quoted string after the real result (Cloudflare's order: DKIM, DMARC, SPF, ARC) leaves it alone.
+  assert.equal(ok('mx.cloudflare.net; dmarc=pass header.from=x.in; spf=pass smtp.mailfrom="a,b;c"@x.in'), true);
   // Unbalanced quotes or comments: unreadable, so no reply.
   assert.equal(ok('mx.cloudflare.net; spf=none smtp.mailfrom="x@y; dmarc=pass header.from=x.in'), false);
   assert.equal(ok("mx.cloudflare.net; spf=none (open comment; dmarc=pass header.from=x.in"), false);
+});
+
+// A real Email Routing header (Gmail to the support address, 2026-11-06; the sender's
+// address replaced). Cloudflare quotes the remote IP (it holds ":") and leaves plain tokens bare.
+const CF_REAL =
+  "mx.cloudflare.net; dkim=pass header.d=gmail.com header.s=20260707 header.b=QM2IN6Kl; " +
+  "dmarc=pass header.from=gmail.com policy.dmarc=none; " +
+  "spf=none (mx.cloudflare.net: no SPF records found for postmaster@mail-ed1-x529.google.com) smtp.helo=mail-ed1-x529.google.com; " +
+  "spf=pass (mx.cloudflare.net: domain of sender@gmail.com designates 2a00:1450:4864:20::529 as permitted sender) smtp.mailfrom=sender@gmail.com; " +
+  'arc=pass smtp.remote-ip="2a00:1450:4864:20::529"';
+
+test("a real Email Routing header passes, and the sender who signed it gets the reply", async () => {
+  assert.equal(worker.dmarcReason(withResults(CF_REAL)), null);
+  const signed = withResults(CF_REAL);
+  signed.set("From", "Sender <sender@gmail.com>");
+  assert.equal(worker.senderReason("sender@gmail.com", signed), null);
+  // The same pass never covers another domain's mailbox.
+  const other = withResults(CF_REAL);
+  other.set("From", "victim@victim.example");
+  assert.match(worker.senderReason("victim@victim.example", other), /not the DMARC-authenticated gmail\.com/);
+});
+
+test("sender text echoed unquoted in Cloudflare's result can't hide or replace its DMARC result", () => {
+  const reason = (r) => worker.dmarcReason(withResults(r));
+  // Cloudflare's real result is a fail; the sender's DKIM selector and HELO are written in
+  // without the quotes RFC 8601 asks for. Each trick is refused rather than read as a pass.
+  const withFields = (selector, helo) =>
+    `mx.cloudflare.net; dkim=pass header.d=victim.example header.s=${selector} header.b=abc; ` +
+    "dmarc=fail header.from=victim.example policy.dmarc=reject; " +
+    `spf=none (mx.cloudflare.net: no SPF records found for postmaster@${helo}) smtp.helo=${helo}; ` +
+    'arc=none smtp.remote-ip="192.0.2.1"';
+  const fake = "dmarc=pass header.from=victim.example";
+  // A ";" adds a second dmarc result.
+  assert.match(reason(withFields(`s1; ${fake}`, "mx.example")), /more than one dmarc/);
+  assert.match(reason(withFields("s1", `mx.example; ${fake}`)), /more than one dmarc/);
+  // A "," ends the first header before Cloudflare's result.
+  assert.match(reason(withFields(`s1, x`, "mx.example")), /no dmarc result/);
+  // A quote or comment opened in the selector swallows the real result, and a later field
+  // closes it and adds a pass. Without the order rule this read as the only result: a pass.
+  const hidden = (open, close) =>
+    `mx.cloudflare.net; dkim=pass header.d=victim.example header.s=s1${open} header.b=abc; ` +
+    `dmarc=fail header.from=victim.example policy.dmarc=reject; spf=none smtp.helo=x${close}; ${fake}`;
+  assert.match(reason(hidden('"', '"')), /a quote or comment at or before/);
+  assert.match(reason(hidden("(", ")")), /a quote or comment at or before/);
+  // A quote inside the dmarc result itself is refused the same way.
+  assert.match(reason('mx.cloudflare.net; dmarc=pass reason="a" header.from=x.in'), /a quote or comment at or before/);
 });
 
 test("the reply goes only to an envelope sender in the domain DMARC authenticated", async () => {
@@ -632,7 +678,8 @@ test("the reply goes only to an envelope sender in the domain DMARC authenticate
   // header.from text inside a quoted value is not the property; two of them is ambiguous.
   const quotedFrom = 'mx.cloudflare.net; dmarc=pass reason="x header.from=victim.example" header.from=geu.ac.in';
   assert.equal((await replied("victim@victim.example", quotedFrom)).sent, false);
-  assert.equal((await replied("riya@geu.ac.in", quotedFrom)).sent, true);
+  // Cloudflare writes no quoted value in its DMARC result, so one there means no reply at all.
+  assert.equal((await replied("riya@geu.ac.in", quotedFrom)).sent, false);
   const twoFroms = "mx.cloudflare.net; dmarc=pass header.from=geu.ac.in header.from=victim.example";
   assert.equal((await replied("riya@geu.ac.in", twoFroms)).sent, false);
 });

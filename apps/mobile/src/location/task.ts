@@ -117,9 +117,28 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(
 
 export type StartResult = "started" | "denied" | "servicesOff";
 
+/**
+ * Whether the phone's location is on, asking Android to turn it on when it's off. Without
+ * the ask, every tap of "Send my location" with location off only repeated the same warning,
+ * which looked like nothing happened. enableNetworkProviderAsync shows Google Play services'
+ * own dialog; it rejects when the student declines (or the dialog can't be shown).
+ * Docs: https://docs.expo.dev/versions/v57.0.0/sdk/location/#locationenablenetworkproviderasync
+ */
+async function locationOn(): Promise<boolean> {
+  if (await Location.hasServicesEnabledAsync()) return true;
+  try {
+    await Location.enableNetworkProviderAsync();
+  } catch {
+    return false;
+  }
+  // Resolved: the student accepted, and Play services has switched location on. (Reading
+  // hasServicesEnabledAsync again right away can still see the old state.)
+  return true;
+}
+
 /** Asks for while-in-use location and starts the foreground service for this share. */
 export async function startSending(sessionId: string, endsAt: string): Promise<StartResult> {
-  if (!(await Location.hasServicesEnabledAsync())) return "servicesOff";
+  if (!(await locationOn())) return "servicesOff";
   const { granted } = await Location.requestForegroundPermissionsAsync();
   if (!granted) return "denied";
 
