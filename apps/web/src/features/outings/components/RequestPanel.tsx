@@ -34,17 +34,30 @@ export function RequestPanel({
 }): ReactNode {
   const live = request && request.status !== "cancelled" ? request : null;
   if (live?.status === "pending") return <Pending request={live} />;
+  if (live?.status === "approved" && live.used) {
+    // The approval is used up; another outing today needs a new request (and approval).
+    return <RequestForm rules={rules} profile={profile} declined={null} now={now} again />;
+  }
   if (live?.status === "approved") {
     return (
       <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
-        <strong className="text-good">Approved.</strong>{" "}
-        {live.used
-          ? "You've used today's approval."
-          : `Tap out at the gate, or check out below. You'll be due back ${approvedDue(rules, live.requested_minutes)}.`}
+        <strong className="text-good">
+          {live.again ? "Another outing approved." : "Approved."}
+        </strong>{" "}
+        Tap out at the gate, or check out below. You&apos;ll be due back{" "}
+        {approvedDue(rules, live.requested_minutes)}.
       </p>
     );
   }
-  return <RequestForm rules={rules} profile={profile} declined={live} now={now} />;
+  return (
+    <RequestForm
+      rules={rules}
+      profile={profile}
+      declined={live}
+      now={now}
+      again={Boolean(live?.again)}
+    />
+  );
 }
 
 function Pending({ request }: { request: OutingRequest }): ReactNode {
@@ -52,8 +65,11 @@ function Pending({ request }: { request: OutingRequest }): ReactNode {
   return (
     <div role="status" className="flex flex-col gap-2 rounded-control bg-accent-soft px-4 py-3">
       <p className="text-ink">
-        <strong className="text-accent">Waiting for approval.</strong> {sentence(request.purpose)}{" "}
-        The hostel office will decide soon; this page shows it when they do.
+        <strong className="text-accent">
+          {request.again ? "Another outing: waiting for approval." : "Waiting for approval."}
+        </strong>{" "}
+        {sentence(request.purpose)} The hostel office will decide soon; this page shows it when they
+        do.
       </p>
       <form action={action}>
         <input type="hidden" name="request_id" value={request.id} />
@@ -71,11 +87,14 @@ function RequestForm({
   profile,
   declined,
   now,
+  again = false,
 }: {
   rules: TodayRules;
   profile: Profile | null;
   declined: OutingRequest | null;
   now: number;
+  /** Today's approval was used: this asks for another outing the same day. */
+  again?: boolean;
 }): ReactNode {
   const [state, action] = useActionState(sendRequest, INITIAL);
   const value = (name: string, fallback: string | null | undefined): string =>
@@ -92,11 +111,12 @@ function RequestForm({
     >
       <div className="flex flex-col gap-1">
         <h2 id="request-heading" className="font-display text-xl text-ink">
-          Ask for today&apos;s outing
+          {again ? "Want to go out again?" : "Ask for today's outing"}
         </h2>
         <p className="text-sm text-muted">
-          {rules.label} outings need the hostel office&apos;s OK. Send this today; once it&apos;s
-          approved you can tap out at the gate or check out here.
+          {again
+            ? "You've used today's approval. Ask the hostel office for another outing; once they approve it you can tap out at the gate or check out here."
+            : `${rules.label} outings need the hostel office's OK. Send this today; once it's approved you can tap out at the gate or check out here.`}
         </p>
         {declined?.status === "declined" ? (
           <p className="text-sm font-bold text-danger">

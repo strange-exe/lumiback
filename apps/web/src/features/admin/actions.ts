@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { attempt, number, text, tokenOrSignIn } from "@/features/admin/form";
 import { callBackend } from "@/lib/backend";
-import type { FormState, GateCreated } from "@/lib/types";
+import type { FormState, GateCreated, PasswordLinkSent, StudentImportResult } from "@/lib/types";
 
 /** Gate forms also hand back a kiosk token, the one time it exists in plain text. */
 export interface GateFormState extends FormState {
@@ -158,4 +158,60 @@ export async function setRole(_: FormState, form: FormData): Promise<FormState> 
     student: "Now a student.",
   };
   return { error: null, notice: notice[role] };
+}
+
+// ---------- adding students, password links ----------
+
+/** What checking or adding a CSV hands back. `confirmed`: this was the "add" step. */
+export interface ImportState extends FormState {
+  result?: StudentImportResult | null;
+  confirmed?: boolean;
+}
+
+/** The backend's own limit on the text (it also caps the file at 512 KB). */
+const MAX_CSV_CHARS = 600_000;
+
+/**
+ * Checks a CSV of people (confirm=false), or adds the new ones and emails each a link to
+ * choose a password (confirm=true). The browser reads the file and sends its text as a form
+ * field; the backend checks every row again when confirming, so nothing is trusted from the
+ * earlier check.
+ */
+export async function importStudents(_: ImportState, form: FormData): Promise<ImportState> {
+  const token = await tokenOrSignIn();
+  const csv = form.get("csv");
+  const confirm = text(form, "confirm") === "true";
+  if (typeof csv !== "string" || csv.trim() === "") return { error: "Choose a CSV file first." };
+  if (csv.length > MAX_CSV_CHARS) {
+    return { error: "The file is larger than 512 KB. Split it into smaller files." };
+  }
+  const result = await attempt(() =>
+    callBackend<StudentImportResult>("/admin/students/import", {
+      method: "POST",
+      token,
+      body: { csv, confirm },
+    }),
+  );
+  if ("error" in result) return result.error;
+  if (confirm) revalidatePath("/admin/people");
+  return { error: null, result: result.ok, confirmed: confirm };
+}
+
+/**
+ * Emails someone (student or staff, never the admin themself) a one-time link to choose a
+ * password: their set-up link again if they haven't set up yet, otherwise a reset (their
+ * current password stops working at once).
+ */
+export async function sendPasswordLink(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const id = text(form, "user_id");
+  const result = await attempt(() =>
+    callBackend<PasswordLinkSent>(`/admin/users/${encodeURIComponent(id)}/password-link`, {
+      method: "POST",
+      token,
+    }),
+  );
+  if ("error" in result) return result.error;
+  revalidatePath("/admin/people");
+  return { error: null, notice: `Sent to ${result.ok.email}` };
 }

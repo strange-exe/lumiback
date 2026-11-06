@@ -2,10 +2,11 @@
 
 import { redirect } from "next/navigation";
 
+import { isLinkToken } from "@/features/auth/link-token";
 import { shareApi } from "@/features/share/api";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
 import { accessToken, clearTokens, refreshToken, storeTokens } from "@/lib/session";
-import type { FormState, TokenPair } from "@/lib/types";
+import type { FormState, PasswordLinkInfo, TokenPair } from "@/lib/types";
 
 function text(form: FormData, key: string): string {
   const value = form.get(key);
@@ -197,4 +198,65 @@ export async function resetPassword(_: FormState, form: FormData): Promise<FormS
   }
   await storeTokens(tokens);
   redirect("/home");
+}
+
+// ---------- set-password links (imported students, or sent by an admin) ----------
+
+const LINK_GONE = "This link has expired or was already used.";
+
+/** Whose link this is, so the page can greet them. `gone`: the link doesn't work any more. */
+export type LinkLookup = { info: PasswordLinkInfo } | { error: string; gone: boolean };
+
+/**
+ * The page reads the token from the URL fragment and passes it here; it travels only in
+ * request bodies (Server Action, then the backend's POST), never in a URL.
+ */
+export async function lookUpPasswordLink(token: string): Promise<LinkLookup> {
+  if (!isLinkToken(token)) return { error: LINK_GONE, gone: true };
+  try {
+    const info = await callBackend<PasswordLinkInfo>("/auth/password-link", {
+      method: "POST",
+      body: { token },
+      clientIp: await visitorIp(),
+    });
+    return { info: { name: info.name, email: info.email, invite: info.invite } };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 422) return { error: LINK_GONE, gone: true }; // malformed token
+      return { error: error.detail, gone: error.status === 404 };
+    }
+    throw error;
+  }
+}
+
+export interface SetPasswordState extends FormState {
+  /** Set once the password is saved: the account's email, to sign in with. */
+  email?: string | null;
+  /** The link expired or was used meanwhile. */
+  gone?: boolean;
+}
+
+export async function setPasswordWithLink(
+  _: SetPasswordState,
+  form: FormData,
+): Promise<SetPasswordState> {
+  const token = form.get("token");
+  const password = form.get("password");
+  const confirm = form.get("confirm");
+  if (!isLinkToken(token)) return { error: LINK_GONE, gone: true };
+  if (typeof password !== "string" || !password) return { error: "Choose a password." };
+  if (password !== confirm) return { error: "The two passwords don't match. Type them again." };
+  try {
+    const done = await callBackend<{ email: string }>("/auth/set-password", {
+      method: "POST",
+      body: { token, password },
+      clientIp: await visitorIp(),
+    });
+    return { error: null, email: done.email };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.detail, gone: error.status === 404 };
+    }
+    throw error;
+  }
 }

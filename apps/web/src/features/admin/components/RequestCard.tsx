@@ -38,9 +38,16 @@ export function RequestCard({ request }: { request: AdminRequest }): ReactNode {
               .join(" · ")}
           </p>
         </div>
-        <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${status.className}`}>
-          {status.label}
-          {request.used ? " · used" : ""}
+        <span className="flex flex-wrap gap-1.5">
+          {request.again ? (
+            <span className="rounded-full border border-line px-2.5 py-0.5 text-sm font-bold text-ink">
+              Another outing today
+            </span>
+          ) : null}
+          <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${status.className}`}>
+            {status.label}
+            {request.used ? " · used" : ""}
+          </span>
         </span>
       </header>
 

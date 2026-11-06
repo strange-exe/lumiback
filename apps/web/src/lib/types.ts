@@ -87,6 +87,8 @@ export interface OutingRequest {
   decided_at: string | null;
   created_at: string;
   used: boolean;
+  /** Asked after an earlier approval that day was used: another outing the same day. */
+  again?: boolean;
 }
 
 export interface Profile {
@@ -342,6 +344,8 @@ export interface AdminRequest {
   decided_at: string | null;
   created_at: string;
   used: boolean;
+  /** Another outing the same day, asked after an earlier approval was used. */
+  again?: boolean;
 }
 
 export interface LastSeen {
@@ -396,6 +400,50 @@ export interface AdminUser {
   /** The hostel they live in (students), so the office can move them. */
   home_hostel_id?: string | null;
   home_hostel?: string | null;
+  /** invited: added from a CSV, no password chosen yet; reset: an admin sent a password link. */
+  account?: AccountState;
+}
+
+export type AccountState = "active" | "invited" | "reset";
+
+// ---------- adding students from a CSV, set-password links ----------
+
+export type ImportRowStatus = "new" | "exists" | "error" | "added";
+
+export interface StudentImportRow {
+  /** The line in the file, counting the header as line 1. */
+  line: number;
+  student_id: string;
+  name: string;
+  email: string;
+  /** For a warden, the hostel they look after; otherwise the hostel they live in. */
+  hostel: string | null;
+  /** The account's role: student unless the file's role column says otherwise. */
+  role?: Role;
+  status: ImportRowStatus;
+  error: string | null;
+}
+
+/** POST /admin/students/import. `added` is 0 and `new` counts the rows to add until confirmed. */
+export interface StudentImportResult {
+  rows: StudentImportRow[];
+  added: number;
+  new: number;
+  existing: number;
+  errors: number;
+}
+
+/** POST /admin/users/{id}/password-link. reset: the old password stopped working. */
+export interface PasswordLinkSent {
+  kind: "invite" | "reset";
+  email: string;
+}
+
+/** POST /auth/password-link: whose link this is. invite: a new account, otherwise a reset. */
+export interface PasswordLinkInfo {
+  name: string;
+  email: string;
+  invite: boolean;
 }
 
 /** What a gate kiosk shows (GET /kiosk/qr). */

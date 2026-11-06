@@ -9,12 +9,13 @@ import { currentUser } from "@/lib/session";
 export const metadata: Metadata = { title: "Sign in" };
 
 interface PageProps {
-  searchParams: Promise<{ verified?: string; deleted?: string; reset?: string }>;
+  /** set: a password chosen with an emailed link (/set-password). */
+  searchParams: Promise<{ verified?: string; deleted?: string; reset?: string; set?: string }>;
 }
 
 export default async function SignInPage({ searchParams }: PageProps): Promise<ReactNode> {
   if (await currentUser()) redirect("/home");
-  const { verified, deleted, reset } = await searchParams;
+  const { verified, deleted, reset, set } = await searchParams;
 
   return (
     <AuthShell>
@@ -40,7 +41,12 @@ export default async function SignInPage({ searchParams }: PageProps): Promise<R
             Password changed. Sign in with your new password.
           </p>
         )}
-        <SignInForm email={verified ?? reset} />
+        {set && (
+          <p role="status" className="rounded-control bg-good-soft px-4 py-3 text-ink">
+            Password set. Sign in with it to continue.
+          </p>
+        )}
+        <SignInForm email={verified ?? reset ?? set} />
       </section>
     </AuthShell>
   );

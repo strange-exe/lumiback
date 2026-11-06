@@ -61,6 +61,12 @@ const SCREENS: Screen[] = [
     primary: (page) => page.getByRole("button", { name: "Send code" }),
   },
   {
+    name: "set-password-expired",
+    auth: false,
+    prepare: async (page) => void (await page.goto(`/set-password#t=${"x".repeat(43)}`)),
+    primary: (page) => page.getByRole("link", { name: "Forgot password" }),
+  },
+  {
     name: "forgot-password-code",
     auth: false,
     prepare: async (page) =>
@@ -188,6 +194,12 @@ const SCREENS: Screen[] = [
     auth: "admin",
     prepare: async (page) => void (await page.goto("/admin/people?q=sharma")),
     primary: (page) => page.getByRole("button", { name: "Search" }),
+  },
+  {
+    name: "admin-people-import",
+    auth: "admin",
+    prepare: async (page) => void (await page.goto("/admin/people/import")),
+    primary: (page) => page.getByRole("button", { name: /check file/i }),
   },
   {
     name: "admin-requests",

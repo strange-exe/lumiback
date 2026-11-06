@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { MoveForm } from "@/features/admin/components/MoveForm";
+import { PasswordLinkForm } from "@/features/admin/components/PasswordLinkForm";
 import { RoleForm } from "@/features/admin/components/RoleForm";
 import { requireAdmin } from "@/lib/session";
-import { ROLE_LABEL } from "@/lib/types";
+import { ROLE_LABEL, type AccountState } from "@/lib/types";
 
 export const metadata: Metadata = { title: "People" };
+
+/** Accounts that can't be signed into yet, said in words (not by colour). */
+const ACCOUNT_LABEL: Record<Exclude<AccountState, "active">, string> = {
+  invited: "Invited, not set up",
+  reset: "Password reset sent",
+};
 
 interface PageProps {
   searchParams: Promise<{ q?: string }>;
@@ -35,6 +43,12 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
           people and settings. None of them sees a live location, except a sharing student&apos;s
           last position when that student is late and hasn&apos;t answered.
         </p>
+        <Link
+          href="/admin/people/import"
+          className="flex min-h-11 items-center self-start font-bold text-accent underline-offset-4 hover:underline"
+        >
+          Add people from a CSV
+        </Link>
       </div>
       <form method="get" role="search" className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-bold text-ink">
@@ -60,7 +74,8 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
       {results !== null &&
         (results.length === 0 ? (
           <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
-            Nobody matches &ldquo;{q}&rdquo;. They need to sign up and verify their email first.
+            Nobody matches &ldquo;{q}&rdquo;. They need to sign up and verify their email first, or
+            be added from a CSV.
           </p>
         ) : (
           <ul className="divide-y divide-line border-y border-line">
@@ -79,6 +94,13 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                     )}
                     {person.id === user.id && <span className="text-xs text-muted">(you)</span>}
                   </p>
+                  {person.account && person.account !== "active" && (
+                    <p className="mt-1">
+                      <span className="inline-block rounded-full border border-line px-2 py-0.5 text-xs font-bold text-muted">
+                        {ACCOUNT_LABEL[person.account]}
+                      </span>
+                    </p>
+                  )}
                   <p className="truncate text-sm text-muted">
                     {[person.email, person.roll_no].filter(Boolean).join(" · ")}
                   </p>
@@ -88,6 +110,8 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                 </div>
                 <div className="flex min-w-0 flex-col gap-4">
                   {person.role === "student" && <MoveForm person={person} hostels={hostels} />}
+                  {/* Your own password: Account or Forgot password (the API refuses it here). */}
+                  {person.id !== user.id && <PasswordLinkForm person={person} />}
                   <RoleForm person={person} hostels={hostels} isMe={person.id === user.id} />
                 </div>
               </li>
