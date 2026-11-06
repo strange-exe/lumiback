@@ -11,6 +11,7 @@ import { formatTime } from "@/lib/time";
 import type { AccessLogEntry, JoinCode, ShareSession, Viewer } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { mockState, type Positions } from "@/location/mock";
+import { openLocationSettings, settingsLabel } from "@/location/settings";
 import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
@@ -34,6 +35,26 @@ const START_PROBLEM: Record<Exclude<StartResult, "started">, string> = {
   denied: "Lumiback needs location access while you share. Allow it in Settings, then try again.",
   servicesOff: "Location is turned off on this phone. Turn it on, then try again.",
 };
+
+/** Which failed start an error message reports, so its settings button can fix it. */
+function problemOf(error: string | null): Exclude<StartResult, "started"> | null {
+  if (error === START_PROBLEM.denied) return "denied";
+  if (error === START_PROBLEM.servicesOff) return "servicesOff";
+  return null;
+}
+
+/** A button to the settings that fix a failed start (location off, or not allowed). */
+function SettingsFix({ error }: { error: string | null }): ReactNode {
+  const problem = problemOf(error);
+  if (!problem) return null;
+  return (
+    <Button
+      label={settingsLabel(problem)}
+      variant="secondary"
+      onPress={() => void openLocationSettings(problem)}
+    />
+  );
+}
 
 function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
@@ -186,13 +207,7 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
           ))}
         </View>
         <FormError message={error} />
-        {error === START_PROBLEM.denied ? (
-          <Button
-            label="Open settings"
-            variant="secondary"
-            onPress={() => void Linking.openSettings()}
-          />
-        ) : null}
+        <SettingsFix error={error} />
         <Button
           label="Start sharing"
           busy={busy}
@@ -381,6 +396,7 @@ function Live({
       <WhoLooked looks={looks} />
 
       <FormError message={error} />
+      <SettingsFix error={error} />
       <Button
         label="Stop sharing"
         variant="danger"

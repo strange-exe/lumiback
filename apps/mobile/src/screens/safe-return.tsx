@@ -6,6 +6,7 @@ import { Text, View } from "react-native";
 import { api } from "@/lib/api";
 import { safeReturnNotice, type OutingShareStart, type SafeReturnOffer } from "@/lib/safe-return";
 import type { ShareSession } from "@/lib/types";
+import { openLocationSettings, settingsLabel } from "@/location/settings";
 import { isSending, startOutingShare } from "@/location/task";
 import { haptic } from "@/ui/haptics";
 import { Button, Press } from "@/ui/kit";
@@ -98,6 +99,8 @@ export function SafeReturnStatus({
   const c = useColors();
   const [status, setStatus] = useState<Status>("loading");
   const [problem, setProblem] = useState<string | null>(notice);
+  // What the last tap couldn't get past, so the settings that fix it are one tap away.
+  const [fix, setFix] = useState<"denied" | "servicesOff" | null>(null);
   const [busy, setBusy] = useState(false);
 
   const check = useCallback(async (): Promise<void> => {
@@ -120,6 +123,7 @@ export function SafeReturnStatus({
     setBusy(true);
     const result = await sendForOuting(sessionId);
     setProblem(safeReturnNotice(true, sessionId, result));
+    setFix(result === "denied" || result === "servicesOff" ? result : null);
     if (result === "started") haptic.success();
     else haptic.warning();
     await check();
@@ -154,6 +158,14 @@ export function SafeReturnStatus({
             <Text style={[type.caption, { color: c.heroMuted }]} accessibilityRole="alert">
               {problem}
             </Text>
+          ) : null}
+          {fix ? (
+            <Button
+              label={settingsLabel(fix)}
+              variant="onHeroOutline"
+              style={{ minHeight: 44 }}
+              onPress={() => void openLocationSettings(fix)}
+            />
           ) : null}
           <Button
             label="Send my location"

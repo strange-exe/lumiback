@@ -1,14 +1,22 @@
-import { sendingShareId, stopSending } from "@/location/task";
+import { sendingShareId, startSending, stopSending } from "@/location/task";
 
 // jest.mock calls are hoisted above the import; the factories read these only when called.
 const mockHasStarted = jest.fn();
 const mockStop = jest.fn(async () => undefined);
 const mockStore = new Map<string, string>();
+const mockServicesOn = jest.fn();
+const mockEnable = jest.fn();
+const mockAsk = jest.fn();
+const mockStart = jest.fn(async () => undefined);
 
 jest.mock("expo-location", () => ({
   Accuracy: { High: 4 },
   hasStartedLocationUpdatesAsync: () => mockHasStarted(),
   stopLocationUpdatesAsync: () => mockStop(),
+  hasServicesEnabledAsync: () => mockServicesOn(),
+  enableNetworkProviderAsync: () => mockEnable(),
+  requestForegroundPermissionsAsync: () => mockAsk(),
+  startLocationUpdatesAsync: () => mockStart(),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -52,6 +60,53 @@ describe("stopSending is fail-safe", () => {
     mockHasStarted.mockRejectedValue(new Error("gone"));
     mockStop.mockRejectedValueOnce(new Error("not registered"));
     await expect(stopSending()).resolves.toBeUndefined();
+  });
+});
+
+describe("starting to send with the phone's location switched off", () => {
+  const later = () => new Date(Date.now() + 3_600_000).toISOString();
+  beforeEach(() => {
+    mockServicesOn.mockReset();
+    mockEnable.mockReset();
+    mockAsk.mockReset().mockResolvedValue({ granted: true, canAskAgain: true });
+    mockStart.mockClear();
+  });
+
+  it("asks Android to turn location on, and starts once the student accepts", async () => {
+    mockServicesOn.mockResolvedValue(false);
+    mockEnable.mockResolvedValue(undefined);
+    expect(await startSending("s1", later())).toBe("started");
+    expect(mockEnable).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports location off, and starts nothing, when the student declines the prompt", async () => {
+    mockServicesOn.mockResolvedValue(false);
+    mockEnable.mockRejectedValue(new Error("denied"));
+    expect(await startSending("s1", later())).toBe("servicesOff");
+    expect(mockAsk).not.toHaveBeenCalled();
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it("asks again on every tap, so a second tap is never a silent repeat", async () => {
+    mockServicesOn.mockResolvedValue(false);
+    mockEnable.mockRejectedValue(new Error("denied"));
+    await startSending("s1", later());
+    await startSending("s1", later());
+    expect(mockEnable).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows no prompt when location is already on", async () => {
+    mockServicesOn.mockResolvedValue(true);
+    expect(await startSending("s1", later())).toBe("started");
+    expect(mockEnable).not.toHaveBeenCalled();
+  });
+
+  it("still reports a refused permission after location is turned on", async () => {
+    mockServicesOn.mockResolvedValue(true);
+    mockAsk.mockResolvedValue({ granted: false, canAskAgain: false });
+    expect(await startSending("s1", later())).toBe("denied");
+    expect(mockStart).not.toHaveBeenCalled();
   });
 });
 
