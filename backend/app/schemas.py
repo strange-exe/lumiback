@@ -120,6 +120,11 @@ class ResetPasswordIn(Input):
     password: str = Field(max_length=MAX_LENGTH)  # never stripped or altered
 
 
+class ChangePasswordIn(Input):
+    current_password: str = Field(max_length=1024)  # re-entered: a stolen session alone can't
+    password: str = Field(max_length=MAX_LENGTH)  # the new one; never stripped or altered
+
+
 class DeleteAccountIn(Input):
     password: str = Field(max_length=1024)  # re-entered: a stolen session alone cannot delete
 
@@ -682,6 +687,9 @@ class GateOut(BaseModel):
     radius_m: int
     active: bool
     created_at: datetime
+    # Any scan or outing names this gate: it stays for the records (switch it off instead).
+    # Only an unused gate can be removed.
+    used: bool = False
 
 
 class GateCreated(BaseModel):

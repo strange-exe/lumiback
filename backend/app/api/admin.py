@@ -47,7 +47,7 @@ from app.security.gate_codes import new_kiosk_token
 from app.security.rate_limit import Limit
 from app.services import account_links, accounts, student_import
 from app.services import admin as svc
-from app.services.gates import campus_settings
+from app.services.gates import campus_settings, used_gate_ids
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -124,7 +124,13 @@ async def scans(
 async def list_gates(_: StaffUser, session: SessionDep) -> list[GateOut]:
     """Readable by wardens too (the scan log filters by gate); changing gates is admin-only."""
     gates = await session.scalars(select(Gate).order_by(Gate.name))
-    return [GateOut.model_validate(g) for g in gates]
+    used = await used_gate_ids(session)
+    return [GateOut.model_validate(g).model_copy(update={"used": g.id in used}) for g in gates]
+
+
+async def _gate_out(session: SessionDep, gate: Gate) -> GateOut:
+    used = bool(await used_gate_ids(session, gate.id))
+    return GateOut.model_validate(gate).model_copy(update={"used": used})
 
 
 @router.post("/gates", status_code=status.HTTP_201_CREATED)
@@ -166,7 +172,26 @@ async def update_gate(
         await session.rollback()
         raise NAME_TAKEN from None
     await session.refresh(gate)
-    return GateOut.model_validate(gate)
+    return await _gate_out(session, gate)
+
+
+@router.delete("/gates/{gate_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_gate(gate_id: uuid.UUID, me: AdminUser, session: SessionDep) -> Response:
+    """Only a gate nobody has used (added by mistake, a test gate). A used gate stays, because
+    scans and outings name it: switch it off instead. The row lock makes a scan arriving at that
+    moment wait, then fail on the missing gate, rather than be recorded against nothing."""
+    gate = await session.get(Gate, gate_id, with_for_update=True)
+    if gate is None:
+        raise NOT_FOUND
+    if await used_gate_ids(session, gate.id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="This gate has been used, so it stays for the records. Switch it off instead.",
+        )
+    svc.audit(session, me, "gate:remove", gate.name)
+    await session.delete(gate)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/gates/{gate_id}/kiosk-token")
@@ -179,7 +204,7 @@ async def rotate_kiosk_token(gate_id: uuid.UUID, me: AdminUser, session: Session
     svc.audit(session, me, "gate:kiosk-token", gate.name)
     await session.commit()
     await session.refresh(gate)
-    return GateCreated(gate=GateOut.model_validate(gate), kiosk_token=token)
+    return GateCreated(gate=await _gate_out(session, gate), kiosk_token=token)
 
 
 # ---------- settings ----------

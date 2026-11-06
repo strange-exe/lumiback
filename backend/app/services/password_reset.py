@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
@@ -19,8 +20,8 @@ from app.email import Mailer
 from app.email_templates import password_reset_email
 from app.models import AccountLink, PasswordReset, User
 from app.security.breached import BREACHED, BreachChecker
-from app.security.passwords import hash_password, password_problem
-from app.services.refresh_tokens import sign_out_everywhere
+from app.security.passwords import hash_password, password_problem, verify_password
+from app.services.refresh_tokens import sign_out_all_but, sign_out_everywhere
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,40 @@ async def finish(
     await sign_out_everywhere(session, user.id, now)  # a lost phone stops here too
     await session.commit()
     return user
+
+
+class WrongPassword(Exception):
+    """The current password given to change it isn't right."""
+
+
+async def change(
+    session: AsyncSession,
+    user: User,
+    current_password: str,
+    new_password: str,
+    breaches: BreachChecker,
+    keep: uuid.UUID | None,
+) -> int:
+    """A signed-in person changes their password, knowing the current one. Every other device
+    is signed out (a lost phone stops here), and this one (`keep`) stays signed in; with no
+    `keep` (a sign-in from before devices had ids) every device is. Any reset code or admin
+    link still out stops working. Returns how many devices were signed out. Commits."""
+    if not verify_password(user.password_hash, current_password):
+        raise WrongPassword
+    problem = password_problem(new_password, email=user.email, name=user.name)
+    if problem is None and new_password == current_password:
+        problem = "must be different from your current one"
+    if problem is None and await breaches.is_breached(new_password):
+        problem = BREACHED
+    if problem:
+        raise WeakPassword(problem)
+    new_hash = hash_password(new_password)  # argon2, slow on purpose: before taking any lock
+    signed_out = await sign_out_all_but(session, user.id, keep)  # locks the user row first
+    user.password_hash = new_hash
+    await session.execute(delete(PasswordReset).where(PasswordReset.user_id == user.id))
+    await session.execute(delete(AccountLink).where(AccountLink.user_id == user.id))
+    await session.commit()
+    return signed_out
 
 
 async def _check_code(session: AsyncSession, email: str, code_hash: bytes) -> User:

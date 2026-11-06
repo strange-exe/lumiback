@@ -232,6 +232,38 @@ def test_gates_crud_is_audited(client, db, admin):
     ]
 
 
+def test_only_an_unused_gate_can_be_removed(client, db, admin):
+    spare_created = create_gate(client, admin, name="Test Gate")
+    spare = spare_created["gate"]
+    main = create_gate(client, admin)
+    assert spare["used"] is False
+    _, riya = signup(client, "riya@example.com", "Riya")
+    qr = kiosk_qr(client, main["kiosk_token"])
+    # Even a refused scan (too far away) names the gate, so it stays for the records.
+    far = client.post(
+        "/gates/scan", json={"qr": qr, "lat": 0, "lng": 0, "accuracy_m": 8}, headers=riya
+    )
+    assert far.status_code == 422, far.text
+    listed = {g["name"]: g["used"] for g in client.get("/admin/gates", headers=admin).json()}
+    assert listed == {"Main Gate": True, "Test Gate": False}
+
+    main_id = main["gate"]["id"]
+    refused = client.delete(f"/admin/gates/{main_id}", headers=admin)
+    assert refused.status_code == 409
+    assert "Switch it off instead" in refused.json()["detail"]
+    patched = client.patch(f"/admin/gates/{main_id}", json={"active": False}, headers=admin)
+    assert patched.json()["used"] is True  # every gate answer says so, not just the list
+
+    assert client.delete(f"/admin/gates/{spare['id']}", headers=riya).status_code == 403
+    assert client.delete(f"/admin/gates/{spare['id']}", headers=admin).status_code == 204
+    assert client.delete(f"/admin/gates/{spare['id']}", headers=admin).status_code == 404
+    assert [g["name"] for g in client.get("/admin/gates", headers=admin).json()] == ["Main Gate"]
+    assert ("gate:remove", "Test Gate") in audit(db)
+    # The removed gate's kiosk link is dead too.
+    kiosk = client.get("/kiosk/qr", headers={"X-Kiosk-Token": spare_created["kiosk_token"]})
+    assert kiosk.status_code == 401
+
+
 def test_settings_round_trip(client, db, admin):
     assert client.get("/admin/settings", headers=admin).json() == {
         "curfew": "21:30",

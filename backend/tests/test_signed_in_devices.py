@@ -173,6 +173,113 @@ def test_a_reset_cant_miss_a_refresh_at_the_same_moment(client, db, riya, monkey
     )
 
 
+def test_signing_a_device_out_cant_miss_its_refresh_at_the_same_moment(
+    client, db, riya, monkeypatch
+):
+    """The lost phone refreshes just as it's signed out from the laptop: the refresh has
+    claimed its token but not saved the successor yet. The successor must not survive."""
+    laptop = sign_in(client, user_agent=CHROME_WINDOWS)
+    lost = sign_in(client, device="Lumiback app on Android 14")
+    lost_id = next(
+        d["id"]
+        for d in client.get("/auth/devices", headers=auth_header(laptop)).json()
+        if not d["current"]
+    )
+    real_issue = refresh_tokens.issue
+
+    async def slow_issue(*args, **kwargs):
+        if kwargs.get("signed_in_at") is not None:  # only the successor in a rotation
+            await asyncio.sleep(1.0)  # the sign-out arrives here
+        return await real_issue(*args, **kwargs)
+
+    monkeypatch.setattr(refresh_tokens, "issue", slow_issue)
+    result: dict = {}
+    refreshing = threading.Thread(
+        target=lambda: result.update(
+            r=client.post("/auth/refresh", json={"refresh_token": lost["refresh_token"]})
+        )
+    )
+    refreshing.start()
+    time.sleep(0.4)
+    gone = client.delete(f"/auth/devices/{lost_id}", headers=auth_header(laptop))
+    refreshing.join(timeout=20)
+    assert gone.status_code == 204, gone.text
+    assert result["r"].status_code == 200  # the refresh finished first...
+    successor = result["r"].json()
+    # ...and the sign-out still stopped it: neither its new tokens nor a list entry survive.
+    assert client.get("/auth/me", headers=auth_header(successor)).status_code == 401
+    assert (
+        client.post("/auth/refresh", json={"refresh_token": successor["refresh_token"]}).status_code
+        == 401
+    )
+    assert live_tokens(db) == 1  # the laptop's
+
+
+# ---------- changing the password while signed in ----------
+
+NEW_PASSWORD = "harbour-lantern-quietly-71"
+
+
+def change(client, tokens, current=PASSWORD, new=NEW_PASSWORD):
+    return client.post(
+        "/auth/change-password",
+        json={"current_password": current, "password": new},
+        headers=auth_header(tokens),
+    )
+
+
+def test_changing_the_password_signs_out_every_other_device(client, db, riya):
+    here = sign_in(client, user_agent=CHROME_WINDOWS)
+    lost = sign_in(client, device="Lumiback app on Android 14")
+    phone_token(client, auth_header(lost), "ExponentPushToken[lostPhone00002]")
+
+    r = change(client, here)
+    assert r.status_code == 200, r.text
+    assert r.json() == {"signed_out": 1, "still_signed_in": True}
+    assert client.get("/auth/me", headers=auth_header(lost)).status_code == 401
+    assert push_tokens(db) == []
+    assert client.get("/auth/me", headers=auth_header(here)).status_code == 200
+    again = client.post("/auth/refresh", json={"refresh_token": here["refresh_token"]})
+    assert again.status_code == 200  # this device keeps going
+
+    old = client.post("/auth/login", json={"email": RIYA, "password": PASSWORD})
+    assert old.status_code == 401
+    assert sign_in(client, password=NEW_PASSWORD)["access_token"]
+
+
+def test_the_current_password_must_be_right_and_guessing_stops(client, riya):
+    here = sign_in(client)
+    for _ in range(5):
+        r = change(client, here, current="not-my-password-at-all")
+        assert r.status_code == 403
+        assert r.json()["detail"] == "Your current password isn't right"
+    assert change(client, here).status_code == 429  # even the right one, for now
+    assert client.get("/auth/me", headers=auth_header(here)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("new", "problem"),
+    [
+        ("short", "at least"),
+        (PASSWORD, "different from your current one"),
+    ],
+)
+def test_a_weak_or_unchanged_password_is_refused(client, riya, new, problem):
+    here = sign_in(client)
+    r = change(client, here, new=new)
+    assert r.status_code == 422
+    assert problem in r.json()["detail"]
+    other = sign_in(client)
+    assert client.get("/auth/me", headers=auth_header(other)).status_code == 200  # nobody out
+
+
+def test_a_change_needs_a_sign_in(client, riya):
+    r = client.post(
+        "/auth/change-password", json={"current_password": PASSWORD, "password": NEW_PASSWORD}
+    )
+    assert r.status_code == 401
+
+
 @pytest.mark.parametrize(
     ("device", "ua", "expected"),
     [

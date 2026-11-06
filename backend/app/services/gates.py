@@ -211,6 +211,20 @@ async def scan(
     return ScanOutcome(direction, gate, outing, back)
 
 
+async def used_gate_ids(session: AsyncSession, gate_id: uuid.UUID | None = None) -> set[uuid.UUID]:
+    """Gates some scan or outing names (all of them, or just `gate_id`). A used gate stays for
+    the records: removing it would blank the gate on those rows."""
+    named = (
+        select(GateScan.gate_id.label("id"))
+        .union(select(Outing.out_gate_id), select(Outing.in_gate_id))
+        .subquery()
+    )
+    query = select(named.c.id).where(named.c.id.is_not(None))
+    if gate_id is not None:
+        query = query.where(named.c.id == gate_id)
+    return set(await session.scalars(query))
+
+
 async def gate_for_kiosk(session: AsyncSession, kiosk_token: str) -> Gate | None:
     return (
         await session.execute(

@@ -138,12 +138,19 @@ async def revoke_by_token(session: AsyncSession, token: str) -> None:
         await session.commit()
 
 
+async def _lock_user(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Every sign-out takes this first. `rotate` holds the same row FOR SHARE from claiming a
+    token until its successor is saved, so a sign-out waits for a refresh in flight and then
+    revokes the successor too, instead of missing it."""
+    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+
+
 async def sign_out_everywhere(
     session: AsyncSession, user_id: uuid.UUID, now: datetime | None = None
 ) -> None:
     """Every device: tokens revoked and push tokens dropped. Doesn't commit (the caller's
     change, a new password or an account turned off, commits with it)."""
-    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+    await _lock_user(session, user_id)
     await session.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
@@ -203,6 +210,7 @@ async def is_live(session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUI
 
 async def sign_out_device(session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUID) -> bool:
     """Signs out one of the user's devices. False if it isn't one of theirs. Commits."""
+    await _lock_user(session, user_id)
     mine = await session.scalar(
         select(RefreshToken.id)
         .where(RefreshToken.user_id == user_id, RefreshToken.family_id == family_id)
@@ -218,8 +226,22 @@ async def sign_out_device(session: AsyncSession, user_id: uuid.UUID, family_id: 
 
 async def sign_out_others(session: AsyncSession, user_id: uuid.UUID, keep: uuid.UUID) -> int:
     """Signs out every device but `keep` (the one asking). Returns how many. Commits."""
+    count = await sign_out_all_but(session, user_id, keep)
+    await session.commit()
+    return count
+
+
+async def sign_out_all_but(
+    session: AsyncSession, user_id: uuid.UUID, keep: uuid.UUID | None
+) -> int:
+    """Every device but `keep` (None: every device, e.g. a sign-in from before devices had ids).
+    Returns how many devices were listed. Doesn't commit: a new password commits with it."""
+    if keep is None:
+        count = len(await devices(session, user_id))
+        await sign_out_everywhere(session, user_id)
+        return count
+    await _lock_user(session, user_id)
     others = [d.id for d in await devices(session, user_id) if d.id != keep]
     for family_id in others:
         await revoke_family(session, family_id)
-    await session.commit()
     return len(others)

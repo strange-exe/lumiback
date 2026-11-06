@@ -20,6 +20,7 @@ from app.api.deps import (
 from app.models import LinkPurpose, SessionStatus, ShareSession, ShareViewer, User
 from app.realtime import AccessChanged
 from app.schemas import (
+    ChangePasswordIn,
     DeleteAccountIn,
     DeviceOut,
     EmailIn,
@@ -63,6 +64,8 @@ FORGOT_PER_IP = Limit(max_hits=10, window_seconds=3600)
 RESET_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 LINK_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 DEVICE_SIGN_OUTS = Limit(max_hits=30, window_seconds=3600)
+# Wrong current passwords: a stolen session can't guess its way to a new password.
+CHANGE_FAILURES_PER_USER = Limit(max_hits=5, window_seconds=3600)
 
 INVALID_LOGIN = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 INVALID_REFRESH = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -430,6 +433,39 @@ async def sign_out_other_devices(
 @router.get("/me")
 async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordIn,
+    user: CurrentUser,
+    request: Request,
+    session: SessionDep,
+    limiter: LimiterDep,
+    breaches: BreachesDep,
+) -> dict[str, int | bool]:
+    """A new password, knowing the current one. Every other device is signed out; this one
+    stays signed in (unless it signed in before devices had ids: then it's signed out too)."""
+    try:
+        await limiter.check("change:user", str(user.id), CHANGE_FAILURES_PER_USER)
+    except RateLimited as e:
+        raise too_many(e) from None
+    current = _current(request)
+    try:
+        signed_out = await password_reset.change(
+            session, user, body.current_password, body.password, breaches, current
+        )
+    except password_reset.WrongPassword:
+        await limiter.record("change:user", str(user.id))
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="Your current password isn't right"
+        ) from None
+    except password_reset.WeakPassword as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Password {e.problem}"
+        ) from None
+    await limiter.reset("login:email", user.email.lower())  # an old lockout ends here too
+    return {"signed_out": signed_out, "still_signed_in": current is not None}
 
 
 @router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT)
