@@ -44,6 +44,8 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
     const route = state.routes.find((r) => r.name === name);
     if (!tab || !route) return null;
     const focused = activeName === name;
+    // Staff have two tabs: both keep their names, so the compact bar keeps one width.
+    const labelled = focused || staff;
     return (
       <Pressable
         key={name}
@@ -65,7 +67,7 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
         style={{
           height: ITEM,
           minWidth: ITEM,
-          paddingHorizontal: focused ? 16 : 0,
+          paddingHorizontal: labelled ? 16 : 0,
           borderRadius: ITEM / 2,
           flexDirection: "row",
           alignItems: "center",
@@ -79,8 +81,14 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           size={22}
           color={focused ? c.onDock : c.dockMuted}
         />
-        {focused ? (
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: c.onDock }}>
+        {labelled ? (
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 13,
+              color: focused ? c.onDock : c.dockMuted,
+            }}
+          >
             {tab.label}
           </Text>
         ) : null}
@@ -98,16 +106,19 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
         bottom: insets.bottom + dock.lift,
         flexDirection: "row",
         alignItems: "center",
+        // Staff get a compact bar in the middle; two tabs across the whole width read as empty.
+        justifyContent: staff ? "center" : undefined,
         gap: 10,
       }}
     >
       <View
         accessibilityRole="tablist"
         style={{
-          flex: 1,
+          flex: staff ? undefined : 1,
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: staff ? "center" : "space-between",
+          gap: staff ? 4 : 0,
           height: dock.height,
           paddingHorizontal: 6,
           borderRadius: dock.height / 2,
