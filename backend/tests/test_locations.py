@@ -68,18 +68,20 @@ def test_old_fix_is_marked_stale(client, shared):
 
 
 @pytest.mark.parametrize(
-    "body",
+    "make",
     [
-        fix(lat=91),
-        fix(lng=-181),
-        fix(accuracy_m=-1),
-        {**fix(), "recorded_at": "2026-10-05T10:00:00"},  # naive: no timezone
-        fix(ago=timedelta(minutes=-10)),  # 10 minutes in the future
-        {**fix(), "speed": 3},  # unknown field
+        lambda: fix(lat=91),
+        lambda: fix(lng=-181),
+        lambda: fix(accuracy_m=-1),
+        lambda: {**fix(), "recorded_at": "2026-10-05T10:00:00"},  # naive: no timezone
+        lambda: fix(ago=timedelta(minutes=-10)),  # 10 minutes in the future
+        lambda: {**fix(), "speed": 3},  # unknown field
     ],
 )
-def test_bad_location_updates_rejected(client, shared, body):
-    assert put(client, shared, body).status_code == 422
+def test_bad_location_updates_rejected(client, shared, make):
+    # Built when the test runs, not when pytest collects: a long suite reaches this test more
+    # than 10 minutes after collection, when a collection-time "future" is already past.
+    assert put(client, shared, make()).status_code == 422
 
 
 def test_only_the_sharer_can_write(client, shared):
