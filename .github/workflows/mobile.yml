@@ -3,9 +3,20 @@ name: mobile
 on:
   push:
     branches: [main]
-    paths: ["apps/mobile/**", ".github/workflows/mobile.yml"]
+    paths:
+      - "apps/mobile/**"
+      # Read by apps/mobile/src/updates/changelog.test.ts.
+      - "apps/web/public/app/android.json"
+      - "apps/web/src/lib/changelog.json"
+      - ".github/workflows/mobile.yml"
   pull_request:
-    paths: ["apps/mobile/**", ".github/workflows/mobile.yml"]
+    paths:
+      - "apps/mobile/**"
+      - "apps/web/public/app/android.json"
+      - "apps/web/src/lib/changelog.json"
+      - ".github/workflows/mobile.yml"
+  schedule:
+    - cron: "30 3 * * 1" # Mondays 09:00 IST: surface new advisories without a push
 
 permissions:
   contents: read
@@ -16,13 +27,16 @@ defaults:
 
 jobs:
   checks:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       EXPO_PUBLIC_API_URL: https://api.example.com # baked into the bundle; never contacted here
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -34,3 +48,18 @@ jobs:
       - run: npm run format:check
       - run: npx expo-doctor
       - run: npx expo export --platform android --output-dir /tmp/export
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # Critical only, for now: the known high advisories (expo-router -> query-string ->
+      # decode-uri-component) are fixed only by expo-router 58, which needs the next native build.
+      # Raise this to --audit-level=high once that build ships.
+      - run: npm audit --omit=dev --audit-level=critical

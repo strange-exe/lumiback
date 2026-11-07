@@ -6,12 +6,15 @@ on:
     paths: ["backend/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]
+  schedule:
+    - cron: "30 3 * * 1" # Mondays 09:00 IST: surface new advisories without a push
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -35,11 +38,28 @@ jobs:
       TEST_DATABASE_URL: postgresql+psycopg://outing_test:outing_test@localhost:5432/outing_test
 
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      # Audit the locked runtime dependencies (hashed, no dev tools) against PyPI's advisory data.
+      - run: uv export --frozen --no-dev --no-emit-project --format requirements.txt -o "$RUNNER_TEMP/requirements.txt"
+      - run: uvx pip-audit@2.10.1 --strict --disable-pip -r "$RUNNER_TEMP/requirements.txt"

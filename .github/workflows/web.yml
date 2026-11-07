@@ -3,9 +3,20 @@ name: web
 on:
   push:
     branches: [main]
-    paths: ["apps/web/**", "backend/**", ".github/workflows/web.yml"]
+    paths:
+      - "apps/web/**"
+      - "backend/**"
+      # Read by apps/web/src/lib/changelog.test.ts.
+      - "apps/mobile/src/updates/changelog.json"
+      - ".github/workflows/web.yml"
   pull_request:
-    paths: ["apps/web/**", "backend/**", ".github/workflows/web.yml"]
+    paths:
+      - "apps/web/**"
+      - "backend/**"
+      - "apps/mobile/src/updates/changelog.json"
+      - ".github/workflows/web.yml"
+  schedule:
+    - cron: "30 3 * * 1" # Mondays 09:00 IST: surface new advisories without a push
 
 permissions:
   contents: read
@@ -16,13 +27,16 @@ defaults:
 
 jobs:
   checks:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       BACKEND_URL: http://127.0.0.1:8100 # required at build time; never contacted here
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -34,7 +48,20 @@ jobs:
       - run: npm run format:check
       - run: npm run build
 
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm audit --omit=dev --audit-level=high
+
   e2e:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -52,11 +79,13 @@ jobs:
       TEST_DATABASE_URL: postgresql+psycopg://outing_test:outing_test@localhost:5432/outing_test
       CORS_ORIGINS: http://localhost:3000
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -74,7 +103,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-results
           path: apps/web/test-results
