@@ -129,25 +129,25 @@ function ScanButton(): ReactNode {
   const c = useColors();
   return (
     <View ref={tourTarget("scan")} collapsable={false}>
-    <Press
-      onPress={() => {
-        haptic.tap();
-        router.push("/scan");
-      }}
-      accessibilityLabel="Scan at the gate"
-      style={{
-        width: dock.height,
-        height: dock.height,
-        borderRadius: 22,
-        borderCurve: "continuous",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: c.accent,
-        boxShadow: "0 10px 24px rgba(232, 80, 26, 0.38)",
-      }}
-    >
-      <Ionicons name="scan" size={26} color={c.onAccent} />
-    </Press>
+      <Press
+        onPress={() => {
+          haptic.tap();
+          router.push("/scan");
+        }}
+        accessibilityLabel="Scan at the gate"
+        style={{
+          width: dock.height,
+          height: dock.height,
+          borderRadius: 22,
+          borderCurve: "continuous",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: c.accent,
+          boxShadow: "0 10px 24px rgba(232, 80, 26, 0.38)",
+        }}
+      >
+        <Ionicons name="scan" size={26} color={c.onAccent} />
+      </Press>
     </View>
   );
 }

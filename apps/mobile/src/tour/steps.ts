@@ -2,12 +2,7 @@ import { compareVersions } from "@/updates/changelog";
 
 /** The controls a tour step can point at. Each one registers itself with useTourTarget. */
 export type TargetId =
-  | "today-board"
-  | "scan"
-  | "tab-today"
-  | "tab-live"
-  | "tab-history"
-  | "tab-profile";
+  "today-board" | "scan" | "tab-today" | "tab-live" | "tab-history" | "tab-profile";
 
 export type Audience = "student" | "staff";
 

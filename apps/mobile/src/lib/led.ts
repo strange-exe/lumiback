@@ -31,7 +31,9 @@ export function clockOf(total: number): string {
 
 /** "32" + "min", or "1:32" + "h": minutes alone under an hour, hours and minutes from one. */
 function figureOf(minutes: number): { text: string; unit: "min" | "h" } {
-  return minutes < 60 ? { text: String(minutes), unit: "min" } : { text: clockOf(minutes), unit: "h" };
+  return minutes < 60
+    ? { text: String(minutes), unit: "min" }
+    : { text: clockOf(minutes), unit: "h" };
 }
 
 /** Counting down to the back-by time: "32 min left", "1:32 h left". */
@@ -45,7 +47,12 @@ export function timeLeft(minutesLeft: number): LedReading {
 export function timeLate(minutesLate: number): LedReading {
   const late = Math.max(1, Math.round(minutesLate));
   const { text, unit } = figureOf(late);
-  return { text: `+${text}`, state: "late", unit: `${unit} late`, label: `${spokenMinutes(late)} late` };
+  return {
+    text: `+${text}`,
+    state: "late",
+    unit: `${unit} late`,
+    label: `${spokenMinutes(late)} late`,
+  };
 }
 
 /** On campus. */

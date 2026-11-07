@@ -280,10 +280,7 @@ function TourOverlay({
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: space(2) }}>
             <Text
-              style={[
-                type.caption,
-                { color: c.accentText, fontFamily: fonts.semibold, flex: 1 },
-              ]}
+              style={[type.caption, { color: c.accentText, fontFamily: fonts.semibold, flex: 1 }]}
             >
               {plan.kind === "new" ? `New in ${CURRENT.version}` : "Quick tour"}
             </Text>

@@ -542,82 +542,78 @@ function Out({
     <FadeIn style={{ gap: space(4) }}>
       <View style={{ gap: space(2) }}>
         <StatusChip label={overdue ? "Late" : "Out"} tone={overdue ? "danger" : "accent"} />
-        <Text
-          style={[type.title, { color: c.ink }]}
-          numberOfLines={2}
-          accessibilityRole="header"
-        >
+        <Text style={[type.title, { color: c.ink }]} numberOfLines={2} accessibilityRole="header">
           {outing.destination ?? "Out and about"}
         </Text>
       </View>
       <View ref={tourTarget("today-board")} collapsable={false}>
-      <LedBoard
-        glow
-        label={overdue ? "Late by" : "Time left"}
-        labelTone={overdue ? "late" : "muted"}
-        aside={gate ? "Verified at the gate" : "Self-reported"}
-        asideTone={gate ? "in" : "muted"}
-        reading={reading}
-      >
-      <TripLine done={done} overdue={overdue} />
-      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space(3) }}>
-        <View style={{ gap: space(0.5) }}>
-          <Text style={[type.caption, { color: c.boardMuted }]}>Left</Text>
-          <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
-            {formatTime(outing.left_at)}
-          </Text>
-        </View>
-        <View style={{ gap: space(0.5), alignItems: "flex-end" }}>
-          <Text style={[type.caption, { color: c.boardMuted }]}>Back by</Text>
-          <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
-            {formatTime(outing.expected_return_at)}
-          </Text>
-        </View>
-      </View>
-
-      {overdue ? (
-        outing.late_reply ? (
-          <Text style={[type.label, { color: c.ledGood }]} accessibilityRole="text">
-            {outing.late_reply === "safe"
-              ? "Thanks. The hostel office knows you're safe."
-              : "Thanks. The hostel office knows you're on your way."}
-          </Text>
-        ) : (
-          <View style={{ gap: space(2) }}>
-            <Text style={[type.body, { color: c.onHero }]}>
-              You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine. With
-              no answer 10 minutes after the 30-minute alert, or still not back an hour after
-              answering, the hostel office is told and may call you or your emergency contact.
-            </Text>
-            <View style={{ flexDirection: "row", gap: space(2) }}>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="On my way"
-                  variant="onHero"
-                  busy={busy === "on_my_way"}
-                  busyLabel="Sending…"
-                  onPress={() => void reply("on_my_way")}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="I'm safe"
-                  variant="onHeroOutline"
-                  busy={busy === "safe"}
-                  busyLabel="Sending…"
-                  onPress={() => void reply("safe")}
-                />
-              </View>
+        <LedBoard
+          glow
+          label={overdue ? "Late by" : "Time left"}
+          labelTone={overdue ? "late" : "muted"}
+          aside={gate ? "Verified at the gate" : "Self-reported"}
+          asideTone={gate ? "in" : "muted"}
+          reading={reading}
+        >
+          <TripLine done={done} overdue={overdue} />
+          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space(3) }}>
+            <View style={{ gap: space(0.5) }}>
+              <Text style={[type.caption, { color: c.boardMuted }]}>Left</Text>
+              <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
+                {formatTime(outing.left_at)}
+              </Text>
+            </View>
+            <View style={{ gap: space(0.5), alignItems: "flex-end" }}>
+              <Text style={[type.caption, { color: c.boardMuted }]}>Back by</Text>
+              <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
+                {formatTime(outing.expected_return_at)}
+              </Text>
             </View>
           </View>
-        )
-      ) : null}
 
-      {outing.safe_return_session_id ? (
-        <SafeReturnStatus sessionId={outing.safe_return_session_id} notice={safeNotice} />
-      ) : null}
+          {overdue ? (
+            outing.late_reply ? (
+              <Text style={[type.label, { color: c.ledGood }]} accessibilityRole="text">
+                {outing.late_reply === "safe"
+                  ? "Thanks. The hostel office knows you're safe."
+                  : "Thanks. The hostel office knows you're on your way."}
+              </Text>
+            ) : (
+              <View style={{ gap: space(2) }}>
+                <Text style={[type.body, { color: c.onHero }]}>
+                  You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine.
+                  With no answer 10 minutes after the 30-minute alert, or still not back an hour
+                  after answering, the hostel office is told and may call you or your emergency
+                  contact.
+                </Text>
+                <View style={{ flexDirection: "row", gap: space(2) }}>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      label="On my way"
+                      variant="onHero"
+                      busy={busy === "on_my_way"}
+                      busyLabel="Sending…"
+                      onPress={() => void reply("on_my_way")}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      label="I'm safe"
+                      variant="onHeroOutline"
+                      busy={busy === "safe"}
+                      busyLabel="Sending…"
+                      onPress={() => void reply("safe")}
+                    />
+                  </View>
+                </View>
+              </View>
+            )
+          ) : null}
 
-      </LedBoard>
+          {outing.safe_return_session_id ? (
+            <SafeReturnStatus sessionId={outing.safe_return_session_id} notice={safeNotice} />
+          ) : null}
+        </LedBoard>
       </View>
 
       <PhaseStrip outing={outing} overdue={overdue} />
@@ -822,7 +818,8 @@ function PhaseStrip({ outing, overdue }: { outing: Outing; overdue: boolean }): 
                 type.caption,
                 {
                   color: ink,
-                  fontFamily: s.state === "now" || s.state === "late" ? fonts.semibold : fonts.medium,
+                  fontFamily:
+                    s.state === "now" || s.state === "late" ? fonts.semibold : fonts.medium,
                   fontVariant: ["tabular-nums"],
                 },
               ]}
