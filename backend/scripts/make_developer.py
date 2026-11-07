@@ -1,6 +1,6 @@
-"""Make an existing, verified account a developer: every admin power, plus a read-only "view as"
-any other account. This script is the only way to grant it; the dashboard can't give, change
-or remove the role.
+"""Make an existing, verified account a developer: every admin power, plus a read-only "View as"
+any other role's screens (with the developer's own data). This script is the only way to grant
+it; the dashboard can't give, change or remove the role.
 
     uv run python scripts/make_developer.py dev@geu.ac.in
 
