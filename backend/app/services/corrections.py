@@ -39,7 +39,7 @@ from app.models import (
 )
 from app.schemas import AdminOuting, CorrectionAsk, CorrectionIn, CorrectionOut, CorrectionQueue
 from app.services import outings, safe_return
-from app.services.admin import CORRECTABLE_FOR, _register_row, audit
+from app.services.admin import CORRECTABLE_FOR, _register_row, audit, student_name
 from app.services.rules import IST, clock
 from app.services.staff import Staff
 
@@ -106,6 +106,10 @@ async def _check_time(session: AsyncSession, outing: Outing, t: datetime, now: d
         raise Refused(422, f"The outing began at {_when(outing.left_at)}. Pick a later time.")
     if t > now:
         raise Refused(422, "That time hasn't come yet. Choose a time up to now.")
+    if outing.student_id is None:
+        # A deleted account's outing: its other outings can't be told apart from other deleted
+        # accounts' (comparing None would match them all), so there's no next one to check.
+        return
     following = await session.scalar(
         select(func.min(Outing.left_at)).where(
             Outing.student_id == outing.student_id, Outing.left_at > outing.left_at
@@ -150,7 +154,7 @@ async def _apply(
 @dataclass(frozen=True)
 class Corrected:
     outing: AdminOuting  # the register row as it is now
-    student_id: uuid.UUID
+    student_id: uuid.UUID | None  # None: a deleted account's outing (nobody to tell)
     back: safe_return.Back | None
 
 
@@ -199,10 +203,11 @@ async def by_staff(
             decided_at=now,
         )
     )
-    student = await session.get(User, outing.student_id)
-    assert student is not None  # outings are deleted with their student
-    audit(session, staff.user, f"outing:{kind.value}", student.email)
-    student_id = student.id
+    # A deleted account's outing stays with the hostel's record, so it can still be corrected.
+    student = await session.get(User, outing.student_id) if outing.student_id else None
+    who = student.email if student is not None else student_name(outing, None)
+    audit(session, staff.user, f"outing:{kind.value}", who)
+    student_id = student.id if student is not None else None
     await session.commit()
     rows = await _register(session, Outing.id == outing_id, staff)
     return Corrected(rows[0], student_id, back)
@@ -252,7 +257,7 @@ async def ask(
 @dataclass(frozen=True)
 class Decided:
     correction: CorrectionOut
-    student_id: uuid.UUID
+    student_id: uuid.UUID | None  # None: a deleted account's outing (nobody to tell)
     back: safe_return.Back | None
 
 
@@ -285,10 +290,11 @@ async def decide(
     correction.decided_by = staff.user.id
     correction.decided_at = now
     correction.note = note or None
-    student = await session.get(User, outing.student_id)
-    assert student is not None
-    audit(session, staff.user, f"correction:{'approve' if approve else 'decline'}", student.email)
-    decided = Decided(to_out(correction), student.id, back)
+    # A deleted account's asks are withdrawn with it, so this is defensive only.
+    student = await session.get(User, outing.student_id) if outing.student_id else None
+    who = student.email if student is not None else student_name(outing, None)
+    audit(session, staff.user, f"correction:{'approve' if approve else 'decline'}", who)
+    decided = Decided(to_out(correction), student.id if student is not None else None, back)
     await session.commit()
     return decided
 
@@ -299,7 +305,7 @@ async def _register(
     now = datetime.now(UTC)
     rows = await session.execute(
         select(Outing, User, Gate.name, Hostel.name)
-        .join(User, User.id == Outing.student_id)
+        .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
         .where(where, staff.covers(Outing.hostel_id))

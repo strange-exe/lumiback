@@ -214,6 +214,27 @@ def test_contacts_must_be_university_addresses(client):
     )
 
 
+def test_a_right_code_for_an_address_taken_meanwhile_fails_cleanly(client, db):
+    """The address went to an existing account while the sign-up waited for its code (an admin
+    changed someone's email, or an import). The code then fails like any other, never a 500."""
+    r = client.post(
+        "/auth/register", json={"name": "Riya", "email": "x@geu.ac.in", "password": PASSWORD}
+    )
+    assert r.status_code == 202
+    code = last_code(client, "x@geu.ac.in")
+    db.execute(
+        text(
+            "INSERT INTO users (name, email, password_hash, email_verified_at) "
+            "VALUES ('Someone', 'x@geu.ac.in', 'x', now())"
+        )
+    )
+    db.commit()
+    r = client.post("/auth/verify-email", json={"email": "x@geu.ac.in", "code": code})
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Invalid or expired code"
+    assert db.execute(text("SELECT name FROM users")).scalars().all() == ["Someone"]
+
+
 def test_verified_at_is_set_when_the_account_is_created(client, db):
     register(client, EMAIL)
     verified_at = db.execute(text("SELECT email_verified_at FROM users")).scalar_one()

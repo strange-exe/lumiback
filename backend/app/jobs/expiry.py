@@ -84,6 +84,7 @@ class SweepResult:
     deleted_views: int = 0
     deleted_requests: int = 0
     deleted_escalations: int = 0
+    deleted_detached_outings: int = 0  # deleted accounts' outings past the retention period
     deleted_audit: int = 0
     deleted_push_tokens: int = 0
     push_receipts: ReceiptCheck = ReceiptCheck()
@@ -211,6 +212,14 @@ async def sweep(
                 Escalation.resolved_at.is_not(None), Escalation.created_at < cutoff
             )
         )
+        # A deleted account's outings (with their escalations and corrections, and freeing
+        # the request each used) stay with the hostel's record for the same period, counted
+        # from the deletion rather than from the trip: the office keeps a full period to
+        # answer for any recent outing whenever the account was deleted, and a deletion never
+        # shortens what it already had. (A live account's outings aren't purged at all.)
+        detached = await session.execute(
+            delete(Outing).where(Outing.student_id.is_(None), Outing.detached_at < cutoff)
+        )
         audit = await session.execute(
             delete(AdminAudit).where(AdminAudit.at < now - KEEP_ADMIN_AUDIT)
         )
@@ -288,6 +297,7 @@ async def sweep(
         deleted_views=views.rowcount,
         deleted_requests=old_requests.rowcount,
         deleted_escalations=handled.rowcount,
+        deleted_detached_outings=detached.rowcount,
         deleted_password_resets=resets,
         deleted_audit=audit.rowcount,
         deleted_push_tokens=stale_devices.rowcount,

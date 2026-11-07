@@ -1,6 +1,7 @@
 """Authentication: register, verify email, login, refresh, logout, me, delete account."""
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
@@ -44,6 +45,7 @@ from app.security.rate_limit import Limit, RateLimited
 from app.security.tokens import ACCESS_TTL, InvalidToken, create_access_token
 from app.services import (
     account_links,
+    accounts,
     device_label,
     password_reset,
     refresh_tokens,
@@ -505,13 +507,28 @@ async def delete_account(
     limiter: LimiterDep,
     hub: HubDep,
 ) -> Response:
-    """Permanently delete the account and everything tied to it (every foreign key cascades):
-    outings, shares and their locations, viewers, contacts, codes, tokens, the access log."""
+    """Permanently delete the account and the person's data: shares and their locations,
+    viewers, contacts, devices, tokens and push tokens, codes, gate scans, the access log.
+
+    The hostel's record stays: the student's outings, with their escalations and corrections
+    and the requests they used, are detached from the account and keep the name and roll no.
+    (and the hostel) as they were, until the sweep purges them once the campus retention
+    period has passed since the deletion (app/services/accounts.py, app/jobs/expiry.py).
+
+    Refused (409) while the student is out or a late escalation is still open, and for the
+    last admin who can sign in, like turning an account off."""
     # Every try is counted before verifying, atomically, like login: a burst can't all pass
     # the check before any is recorded. A right password deletes the account, count and all.
-    await enforce(limiter, "delete:user", str(user.id), DELETE_FAILURES_PER_USER)
+    try:
+        hits = await limiter.hit_all([("delete:user", str(user.id), DELETE_FAILURES_PER_USER)])
+    except RateLimited as e:
+        raise too_many(e) from None
     if not await verify_password_async(user.password_hash, body.password):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="That password isn't right")
+    if refused := await accounts.deletion_refused(session, user):
+        await session.rollback()  # releases the account lock
+        await limiter.undo(hits)  # the password was right: not a guess
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=refused)
 
     # Live shares this account is part of: as the sharer, or watching someone else's.
     affected = list(
@@ -527,6 +544,7 @@ async def delete_account(
             )
         ).scalars()
     )
+    await accounts.detach_records(session, user, datetime.now(UTC))
     await session.delete(user)
     await session.commit()
     for session_id in affected:  # after commit: open streams re-check and end

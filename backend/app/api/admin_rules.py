@@ -1,6 +1,7 @@
 """Admin: outing rule sets, hostels, holidays, today's weekend/holiday requests, and
 escalations for late students who didn't answer the app's alert."""
 
+import dataclasses
 import uuid
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Literal
@@ -21,6 +22,7 @@ from app.api.deps import (
 from app.api.outings import safe_return_ended
 from app.email_templates import request_decision_email
 from app.models import (
+    CampusSettings,
     DayRule,
     DayType,
     Holiday,
@@ -71,37 +73,79 @@ def _hhmm(value: time | None) -> str | None:
 # ---------- weekend / holiday requests ----------
 
 
-# (rule set, day) -> that day's maximum, shared across one listing's rows.
-Limits = dict[tuple[uuid.UUID, date], int | None]
+@dataclasses.dataclass
+class _Listing:
+    """What a page of requests shares, read once for all its rows (a busy Sunday's queue must
+    not cost queries per row): hostel and decider names, used/again, and each day's limit."""
+
+    hostels: dict[uuid.UUID, tuple[str, uuid.UUID]]  # id -> (name, its rule set)
+    default_rule_set: uuid.UUID | None  # for students without a hostel
+    deciders: dict[uuid.UUID, str]
+    used: set[uuid.UUID]
+    again: set[uuid.UUID]
+    # (rule set, day) -> that day's maximum, read once per rule set and day.
+    limits: dict[tuple[uuid.UUID, date], int | None] = dataclasses.field(default_factory=dict)
 
 
-async def _limit(session, student: User, day: date, cache: Limits) -> int | None:
-    """The longest outing the student's rules allow on the request's own day."""
-    rule_set = await rules.rule_set_for(session, student)
-    if rule_set is None:
+async def _listing(session, rows: list[tuple[OutingRequest, User]]) -> _Listing:
+    hostel_ids = {u.hostel_id for _, u in rows if u.hostel_id}
+    hostels = (
+        {
+            hostel_id: (name, rule_set_id)
+            for hostel_id, name, rule_set_id in await session.execute(
+                select(Hostel.id, Hostel.name, Hostel.rule_set_id).where(Hostel.id.in_(hostel_ids))
+            )
+        }
+        if hostel_ids
+        else {}
+    )
+    decider_ids = {r.decided_by for r, _ in rows if r.decided_by}
+    deciders = (
+        {
+            user_id: name
+            for user_id, name in await session.execute(
+                select(User.id, User.name).where(User.id.in_(decider_ids))
+            )
+        }
+        if decider_ids
+        else {}
+    )
+    settings = await session.get(CampusSettings, 1) if rows else None
+    default = settings.default_rule_set_id if settings else None
+    used, again = await requests.used_and_again(session, [r for r, _ in rows])
+    return _Listing(hostels, default, deciders, used, again)
+
+
+async def _limit(session, student: User, day: date, listing: _Listing) -> int | None:
+    """The longest outing the student's rules allow on the request's own day: their hostel's
+    rule set, or the campus default (as rules.rule_set_for)."""
+    hostel = listing.hostels.get(student.hostel_id) if student.hostel_id else None
+    rule_set_id = hostel[1] if hostel else listing.default_rule_set
+    if rule_set_id is None:
         return None
-    key = (rule_set.id, day)
-    if key not in cache:
+    key = (rule_set_id, day)
+    if key not in listing.limits:
+        rule_set = await session.get(RuleSet, rule_set_id)
         try:
-            cache[key] = (await rules.window_in(session, rule_set, day)).max_minutes
+            listing.limits[key] = (
+                (await rules.window_in(session, rule_set, day)).max_minutes if rule_set else None
+            )
         except rules.Refused:
-            cache[key] = None
-    return cache[key]
+            listing.limits[key] = None
+    return listing.limits[key]
 
 
 async def _request_out(
-    session, r: OutingRequest, student: User, limits: Limits | None = None
+    session, r: OutingRequest, student: User, listing: _Listing
 ) -> AdminRequestOut:
-    hostel = await session.get(Hostel, student.hostel_id) if student.hostel_id else None
-    decider = await session.get(User, r.decided_by) if r.decided_by else None
-    limit = await _limit(session, student, r.day, {} if limits is None else limits)
+    hostel = listing.hostels.get(student.hostel_id) if student.hostel_id else None
     return AdminRequestOut(
         id=r.id,
         student_id=student.id,
         name=student.name,
         email=student.email,
         roll_no=student.roll_no,
-        hostel=hostel.name if hostel else None,
+        hostel=hostel[0] if hostel else None,
         day=r.day,
         purpose=r.purpose,
         phone=r.phone,
@@ -109,14 +153,14 @@ async def _request_out(
         emergency_relation=r.emergency_relation,
         emergency_phone=r.emergency_phone,
         requested_minutes=r.requested_minutes,
-        max_minutes=limit,
+        max_minutes=await _limit(session, student, r.day, listing),
         status=r.status.value,
         note=r.note,
-        decided_by=decider.name if decider else None,
+        decided_by=listing.deciders.get(r.decided_by) if r.decided_by else None,
         decided_at=r.decided_at,
         created_at=r.created_at,
-        used=await requests.is_used(session, r.id),
-        again=await requests.is_again(session, r),
+        used=r.id in listing.used,
+        again=r.id in listing.again,
     )
 
 
@@ -126,8 +170,8 @@ async def list_requests(
 ) -> list[AdminRequestOut]:
     """A day's requests (today by default): pending first, oldest first."""
     rows = await requests.queue(session, day or rules.ist_date(datetime.now(UTC)), staff)
-    limits: Limits = {}
-    return [await _request_out(session, r, u, limits) for r, u in rows]
+    listing = await _listing(session, rows)
+    return [await _request_out(session, r, u, listing) for r, u in rows]
 
 
 @router.post("/requests/{request_id}/decision")
@@ -183,7 +227,7 @@ async def decide_request(
             web_url=web_url,
         ),
     )
-    return await _request_out(session, r, student)
+    return await _request_out(session, r, student, await _listing(session, [(r, student)]))
 
 
 # ---------- rule sets ----------
@@ -527,15 +571,16 @@ async def correct_outing(
     except corrections.Refused as e:
         raise _correction_refused(e) from None
     await safe_return_ended(done.back, hub=hub, mailer=mailer, tasks=tasks)
-    push.to_user(
-        done.student_id,
-        PushMessage(
-            title="Your outing was updated",
-            body="The hostel office corrected one of your outings. See History.",
-            url="/history",
-            channel="share-status",
-        ),
-    )
+    if done.student_id is not None:  # None: a deleted account, nobody to tell
+        push.to_user(
+            done.student_id,
+            PushMessage(
+                title="Your outing was updated",
+                body="The hostel office corrected one of your outings. See History.",
+                url="/history",
+                channel="share-status",
+            ),
+        )
     return done.outing
 
 
@@ -563,19 +608,20 @@ async def decide_correction(
     except corrections.Refused as e:
         raise _correction_refused(e) from None
     await safe_return_ended(done.back, hub=hub, mailer=mailer, tasks=tasks)
-    push.to_user(
-        done.student_id,
-        PushMessage(
-            title="Correction approved" if body.approve else "Correction declined",
-            body=(
-                "The hostel office fixed your outing. See History."
-                if body.approve
-                else (body.note or "Ask the hostel office if you have questions.")
+    if done.student_id is not None:  # None: a deleted account, nobody to tell
+        push.to_user(
+            done.student_id,
+            PushMessage(
+                title="Correction approved" if body.approve else "Correction declined",
+                body=(
+                    "The hostel office fixed your outing. See History."
+                    if body.approve
+                    else (body.note or "Ask the hostel office if you have questions.")
+                ),
+                url="/history",
+                channel="share-status",
             ),
-            url="/history",
-            channel="share-status",
-        ),
-    )
+        )
     return done.correction
 
 

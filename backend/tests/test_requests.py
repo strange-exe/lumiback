@@ -417,6 +417,98 @@ def test_after_a_used_approval_the_student_can_ask_for_another_outing(
     assert client.get("/outings/request", headers=riya).json()["used"] is True
 
 
+def add_student_requests(db, email: str, name: str, *, used_first: bool) -> None:
+    """A student of a hostel of their own with today's pending request; `used_first`: after an
+    approval (by the warden) already used for an outing, so the pending one is asked "again"."""
+    db.execute(
+        text(
+            "INSERT INTO hostels (name, rule_set_id) "
+            "SELECT :h, default_rule_set_id FROM campus_settings"
+        ),
+        {"h": f"{name}'s hostel"},
+    )
+    db.execute(
+        text(
+            "INSERT INTO users (name, email, password_hash, email_verified_at, hostel_id) "
+            "SELECT :n, :e, 'x', now(), id FROM hostels WHERE name = :h"
+        ),
+        {"n": name, "e": email, "h": f"{name}'s hostel"},
+    )
+    values = "SELECT id, :d, 'Trip', '+919876543210', 'Sunita', 'Mother', '+919123456789'"
+    columns = (
+        "INSERT INTO outing_requests (student_id, day, purpose, phone, emergency_name, "
+        "emergency_relation, emergency_phone"
+    )
+    if used_first:
+        used = db.execute(
+            text(
+                f"{columns}, status, used_at, created_at, decided_by, decided_at) {values}, "  # noqa: S608
+                "'approved', now(), now() - interval '1 hour', "
+                "(SELECT id FROM users WHERE email = 'warden@geu.ac.in'), now() "
+                "FROM users WHERE email = :e RETURNING id"
+            ),
+            {"d": ist_today(), "e": email},
+        ).scalar_one()
+        db.execute(
+            text(
+                "INSERT INTO outings (student_id, left_at, expected_return_at, returned_at, "
+                "request_id) SELECT id, now() - interval '50 minutes', now() + interval '1 hour', "
+                "now() - interval '10 minutes', :r FROM users WHERE email = :e"
+            ),
+            {"r": used, "e": email},
+        )
+    db.execute(
+        text(f"{columns}) {values} FROM users WHERE email = :e"),  # noqa: S608
+        {"d": ist_today(), "e": email},
+    )
+    db.commit()
+
+
+def test_the_queue_reads_used_and_again_in_a_fixed_number_of_queries(client, db, warden):
+    from sqlalchemy import event
+
+    engine = client.app.state.sessionmaker.kw["bind"].sync_engine
+    statements: list[str] = []
+
+    def count(_conn, _cursor, statement, *_):
+        statements.append(statement)
+
+    def queue() -> tuple[list[dict], int]:
+        statements.clear()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            r = client.get("/admin/requests", headers=warden)
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert r.status_code == 200, r.text
+        return r.json(), len(statements)
+
+    add_student_requests(db, "asha@geu.ac.in", "Asha", used_first=True)
+    add_student_requests(db, "bela@geu.ac.in", "Bela", used_first=False)
+    _, few = queue()
+    add_student_requests(db, "cara@geu.ac.in", "Cara", used_first=True)
+    add_student_requests(db, "dev@geu.ac.in", "Dev", used_first=False)
+    rows, more = queue()
+
+    assert more == few  # twice the rows, no more queries
+    assert sorted((r["name"], r["status"], r["used"], r["again"]) for r in rows) == [
+        ("Asha", "approved", True, False),
+        ("Asha", "pending", False, True),
+        ("Bela", "pending", False, False),
+        ("Cara", "approved", True, False),
+        ("Cara", "pending", False, True),
+        ("Dev", "pending", False, False),
+    ]
+    assert {(r["name"], r["hostel"], r["decided_by"], r["max_minutes"]) for r in rows} == {
+        ("Asha", "Asha's hostel", "Warden", None),
+        ("Asha", "Asha's hostel", None, None),
+        ("Bela", "Bela's hostel", None, None),
+        ("Cara", "Cara's hostel", "Warden", None),
+        ("Cara", "Cara's hostel", None, None),
+        ("Dev", "Dev's hostel", None, None),
+    }
+
+
 def test_a_used_approval_stays_used_even_without_its_outing_row(client, db, riya, warden, form_day):
     first = send(client, riya).json()
     decide(client, warden, first["id"])

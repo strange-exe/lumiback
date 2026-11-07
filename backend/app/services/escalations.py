@@ -44,6 +44,7 @@ from app.models import (
     WardenHostel,
 )
 from app.schemas import EscalationOut, LastSeenOut
+from app.services.admin import student_name, student_roll_no
 from app.services.staff import EVERY_HOSTEL, Staff
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
@@ -249,7 +250,7 @@ async def _last_seen(
 class _Row:
     escalation: Escalation
     outing: Outing
-    student: User
+    student: User | None  # None: the student deleted their account (only a handled one stays)
 
 
 async def _out(session: AsyncSession, row: _Row, admin: User | None) -> EscalationOut:
@@ -263,18 +264,20 @@ async def _out(session: AsyncSession, row: _Row, admin: User | None) -> Escalati
     return EscalationOut(
         id=e.id,
         created_at=e.created_at,
-        name=s.name,
-        email=s.email,
-        roll_no=s.roll_no,
+        name=student_name(o, s),
+        email=s.email if s else None,
+        roll_no=student_roll_no(o, s),
         hostel=hostel.name if hostel else None,
         warden_name=hostel.warden_name if hostel else None,
         warden_phone=hostel.warden_phone if hostel else None,
         # The form's contacts were given for this outing; else the profile's.
-        phone=(request.phone if request else None) or s.phone,
-        emergency_name=(request.emergency_name if request else None) or s.emergency_name,
+        phone=(request.phone if request else None) or (s.phone if s else None),
+        emergency_name=(request.emergency_name if request else None)
+        or (s.emergency_name if s else None),
         emergency_relation=(request.emergency_relation if request else None)
-        or s.emergency_relation,
-        emergency_phone=(request.emergency_phone if request else None) or s.emergency_phone,
+        or (s.emergency_relation if s else None),
+        emergency_phone=(request.emergency_phone if request else None)
+        or (s.emergency_phone if s else None),
         destination=o.destination,
         purpose=o.purpose,
         left_at=o.left_at,
@@ -301,7 +304,7 @@ async def listing(session: AsyncSession, staff: Staff, *, open_only: bool) -> li
     query = (
         select(Escalation, Outing, User)
         .join(Outing, Outing.id == Escalation.outing_id)
-        .join(User, User.id == Outing.student_id)
+        .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .where(staff.covers(Outing.hostel_id))
         .order_by(Escalation.created_at.desc())
         .limit(100)

@@ -10,21 +10,29 @@ Who may do what:
 Turning an account off keeps everything it has done (outings, scans, requests). It signs the
 account out everywhere, forgets its devices' push tokens and ends its live shares; until it's
 turned back on it can't sign in, refresh a session, or be sent requests to decide.
+
+Someone deleting their own account (POST /auth/delete-account) is refused in the same cases,
+and the hostel's record of their outings stays, detached from the account (`detach_records`).
 """
 
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models import (
     AccountLink,
+    Escalation,
     Outing,
+    OutingCorrection,
+    OutingRequest,
     PasswordReset,
+    PendingRegistration,
+    RequestStatus,
     SessionStatus,
     ShareSession,
     User,
@@ -155,6 +163,11 @@ async def edit(
         # inbox could still use it: they die with it. The office sends a new link if needed.
         await session.execute(delete(AccountLink).where(AccountLink.user_id == target.id))
         await session.execute(delete(PasswordReset).where(PasswordReset.user_id == target.id))
+        # A half-finished self sign-up for the new address can never become an account now
+        # (as with imports): it goes, so its code fails cleanly instead of clashing later.
+        await session.execute(
+            delete(PendingRegistration).where(PendingRegistration.email == changes.email.lower())
+        )
     if changed:
         audit(session, staff.user, "account:edit", f"{target.email}: {', '.join(changed)}")
     try:
@@ -164,6 +177,82 @@ async def edit(
         raise Refused(409, "Someone else already has that email address") from None
     await session.refresh(target)
     return target
+
+
+# ---------- a student (or anyone) deleting their own account ----------
+
+OUT_NOW = "You're out right now. Tap in or mark yourself back first, then delete your account."
+ESCALATED = (
+    "The hostel office is still following up your late return. "
+    "Ask them to close it, then delete your account."
+)
+LAST_ADMIN = "Make someone else an admin first"
+
+
+async def deletion_refused(session: AsyncSession, user: User) -> str | None:
+    """Why this account can't delete itself now (None: it can), as `deactivate` refuses: while
+    out, while a late escalation is open (the office is following it up), or as the last admin
+    who can sign in. Locks the account row until the caller commits: a tap-out at the same
+    moment waits (its outing row references this one) and then finds the account gone."""
+    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+    out = await session.scalar(
+        select(Outing.id).where(Outing.student_id == user.id, Outing.returned_at.is_(None))
+    )
+    if out is not None:
+        return OUT_NOW
+    escalated = await session.scalar(
+        select(Escalation.id)
+        .join(Outing, Outing.id == Escalation.outing_id)
+        .where(Outing.student_id == user.id, Escalation.resolved_at.is_(None))
+        .limit(1)
+    )
+    if escalated is not None:
+        return ESCALATED
+    if user.role == UserRole.ADMIN and not await _another_admin_left(session, user):
+        return LAST_ADMIN
+    return None
+
+
+async def detach_records(session: AsyncSession, user: User, now: datetime) -> None:
+    """Before the account row is deleted: keep the hostel's record of this student's outings.
+
+    Their outings (with their escalations and corrections) stay, with the name and roll no.
+    as they are now, and the request each one used (the approval behind it); deleting the user
+    then sets student_id to NULL on those rows. Everything else tied to the account goes with
+    it through the cascades: shares and locations, contacts, devices, tokens, push tokens,
+    codes, gate scans (each accepted scan's gate and time are already on its outing), and the
+    requests no outing used (the student's forms, with their family's phone numbers)."""
+    used = select(Outing.request_id).where(
+        Outing.student_id == user.id, Outing.request_id.is_not(None)
+    )
+    await session.execute(
+        delete(OutingRequest).where(
+            OutingRequest.student_id == user.id, OutingRequest.id.not_in(used)
+        )
+    )
+    # Their open questions to the office: nobody is left to tell the answer to.
+    await session.execute(
+        update(OutingCorrection)
+        .where(
+            OutingCorrection.asked_by == user.id,
+            OutingCorrection.status == RequestStatus.PENDING,
+        )
+        .values(
+            status=RequestStatus.CANCELLED,
+            decided_at=now,
+            note="Withdrawn: the student deleted their account.",
+        )
+    )
+    await session.execute(
+        update(Outing)
+        .where(Outing.student_id == user.id)
+        .values(
+            student_name=user.name,
+            student_roll_no=user.roll_no,
+            detached_at=now,
+            safe_return_email=None,  # cleared on return already; never kept past the account
+        )
+    )
 
 
 async def cancel_invite(session: AsyncSession, staff: Staff, user_id: uuid.UUID) -> str:

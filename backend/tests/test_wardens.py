@@ -361,6 +361,39 @@ def test_escalations_go_to_admins_and_the_hostels_wardens(
     assert r.status_code == 204
 
 
+def test_the_overview_counts_escalations_where_the_list_shows_them(
+    client, db, push, admin, warden, anna, hostels
+):
+    """An escalation belongs to the hostel the outing happened in, even after the student
+    moves: the badge and the list (and resolving) must agree for both hostels' wardens."""
+    _, warden_b = signup(client, "warden.b@geu.ac.in", "Warden B")
+    made = set_role(client, admin, "warden.b@geu.ac.in", "warden", [hostels["B"]])
+    assert made.status_code == 200, made.text
+    set_rules(db, "open")
+    go_out(client, anna)
+    db.execute(
+        text(
+            "UPDATE outings SET left_at = now() - interval '3 hours', "
+            "expected_return_at = now() - interval '45 minutes', "
+            "overdue_notified_at = now() - interval '11 minutes'"
+        )
+    )
+    db.commit()
+    assert run_sweep(client, push).escalated == 1
+    client.post("/outings/current/return", headers=anna)  # back; the follow-up stays open
+    r = client.post(
+        f"/admin/students/{user_id(client, admin, 'anna@geu.ac.in')}/hostel",
+        json={"hostel_id": hostels["B"]},
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+
+    for headers, count in ((warden, 1), (warden_b, 0)):
+        listed = client.get("/admin/escalations", headers=headers).json()
+        assert len(listed) == count
+        assert client.get("/admin/overview", headers=headers).json()["open_escalations"] == count
+
+
 def test_a_warden_edits_only_their_hostels_contact(client, warden, hostels):
     r = client.patch(
         f"/admin/hostels/{hostels['A']}/contact",
@@ -447,6 +480,32 @@ def test_a_head_warden_cant_drop_wardens_by_deleting_their_hostel(
     # A hostel nobody looks after can go, and an admin can still delete either.
     assert client.delete(f"/admin/hostels/{hostels['B']}", headers=head).status_code == 200
     assert client.delete(f"/admin/hostels/{hostels['A']}", headers=admin).status_code == 200
+
+
+def test_making_a_rule_set_the_campus_default(client, db, admin, warden, head, anna):
+    """The default decides the hours of every student without a hostel: rules editors only."""
+    days = next(s for s in client.get("/admin/rule-sets", headers=admin).json())["days"]
+    made = client.post(
+        "/admin/rule-sets", json={"name": "Exam season", "days": days}, headers=admin
+    ).json()
+    exam = next(s["id"] for s in made if s["name"] == "Exam season")
+
+    for who in (anna, warden):
+        r = client.post(f"/admin/rule-sets/{exam}/default", headers=who)
+        assert r.status_code == 403, r.text
+    assert next(s for s in made if s["id"] == exam)["is_default"] is False
+
+    r = client.post(f"/admin/rule-sets/{exam}/default", headers=head)
+    assert r.status_code == 200, r.text
+    assert [s["name"] for s in r.json() if s["is_default"]] == ["Exam season"]
+    listed = client.get("/admin/rule-sets", headers=admin).json()
+    assert [s["id"] for s in listed if s["is_default"]] == [exam]
+    actions = db.execute(text("SELECT action, target FROM admin_audit")).all()
+    assert ("rules:default", "Exam season") in [tuple(a) for a in actions]
+    # The new default can't be deleted; an unknown set is a 404.
+    assert client.delete(f"/admin/rule-sets/{exam}", headers=admin).status_code == 409
+    unknown = "00000000-0000-4000-8000-000000000000"
+    assert client.post(f"/admin/rule-sets/{unknown}/default", headers=admin).status_code == 404
 
 
 def test_wardens_cant_edit_rules(client, warden):

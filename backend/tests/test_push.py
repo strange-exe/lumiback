@@ -63,6 +63,25 @@ def test_a_token_follows_whoever_signed_in_last(client, db):
     assert tokens(db) == [(TOKEN, "arjun@example.com")]
 
 
+def test_the_same_new_token_registered_at_once_never_fails(client, db):
+    """The app registers on start and again right after sign-in: both requests can find no
+    row and both insert. The second must update, not fail with a duplicate."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+
+    def register(token: str) -> int:
+        body = {"token": token, "platform": "android", "muted": []}
+        return client.post("/devices/push-token", json=body, headers=riya).status_code
+
+    for n in range(5):
+        token = f"ExponentPushToken[raceToken{n:05d}]"
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            codes = list(pool.map(register, [token] * 6))
+        assert codes == [204] * 6
+    assert len(tokens(db)) == 5
+
+
 def test_only_the_owner_can_remove_a_token(client, db):
     _, riya = signup(client, "riya@example.com", "Riya")
     _, arjun = signup(client, "arjun@example.com", "Arjun")
@@ -126,7 +145,8 @@ def test_follow_request_and_approval_are_pushed(client, push):
         PushMessage(
             title="Riya approved you",
             body="You can see their live location now.",
-            url="/live",
+            # The follower's own screen, not the sharer's Live tab.
+            url="/live?view=follow",
             channel="share-status",
         ),
     )

@@ -716,9 +716,10 @@ class AdminOverview(BaseModel):
 
 class AdminOuting(BaseModel):
     id: uuid.UUID
-    student_id: uuid.UUID
+    # None (both) for a deleted account's outing; `name` then ends "(deleted account)".
+    student_id: uuid.UUID | None
     name: str
-    email: str
+    email: str | None
     roll_no: str | None
     destination: str | None
     left_at: datetime
@@ -1054,8 +1055,8 @@ class LastSeenOut(BaseModel):
 class EscalationOut(BaseModel):
     id: uuid.UUID
     created_at: datetime
-    name: str
-    email: str
+    name: str  # ends "(deleted account)" once the student deleted it
+    email: str | None  # None for a deleted account
     roll_no: str | None
     hostel: str | None
     warden_name: str | None

@@ -257,6 +257,25 @@ def test_an_admin_corrects_a_typo_in_an_email(client, db, admin, anna):
     assert cleared.status_code == 200 and cleared.json()["roll_no"] is None
 
 
+def test_a_new_email_clears_a_half_finished_sign_up_for_it(client, db, admin, anna):
+    """Someone started signing up with the address the office now gives to Anna: that sign-up
+    can never become an account, so it goes (as an import does)."""
+    r = client.post(
+        "/auth/register",
+        json={"name": "Other", "email": "anna.rawat@geu.ac.in", "password": PASSWORD},
+    )
+    assert r.status_code == 202, r.text
+    other = client.post(
+        "/auth/register",
+        json={"name": "Keep", "email": "keep@geu.ac.in", "password": PASSWORD},
+    )
+    assert other.status_code == 202, other.text
+    r = edit(client, admin, user_id(client, admin, ANNA), email="anna.rawat@geu.ac.in")
+    assert r.status_code == 200, r.text
+    pending = db.execute(text("SELECT email FROM pending_registrations")).scalars().all()
+    assert pending == ["keep@geu.ac.in"]
+
+
 @pytest.mark.parametrize(
     ("body", "code"),
     [

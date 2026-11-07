@@ -129,12 +129,16 @@ async def verify(session: AsyncSession, email: str, code: str, pepper: str) -> U
         roll_no=pending.roll_no,
         email_verified_at=now,
     )
-    session.add(user)
-    await session.execute(delete(PendingRegistration).where(PendingRegistration.email == email))
     try:
+        # The delete goes first and everything is inside the try: an ORM statement autoflushes
+        # pending rows, so with the user added first a taken address would fail inside the
+        # DELETE and escape this handler as a 500.
+        await session.execute(delete(PendingRegistration).where(PendingRegistration.email == email))
+        session.add(user)
         await session.commit()
     except IntegrityError:
-        # Someone verified this address a moment ago; this sign-up is moot.
+        # The address is taken: someone verified it a moment ago, or the office gave it to an
+        # existing account. This sign-up is moot.
         await session.rollback()
         raise VerificationFailed from None
     await session.refresh(user)

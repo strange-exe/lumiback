@@ -64,6 +64,16 @@ def audit(session: AsyncSession, actor: User, action: str, target: str) -> None:
     session.add(AdminAudit(actor_id=actor.id, action=action, target=target[:160]))
 
 
+def student_name(o: Outing, u: User | None) -> str:
+    """Who an outing belongs to, for the office: the account's name, or the name kept when the
+    student deleted their account (queries outer-join User for those rows)."""
+    return u.name if u is not None else f"{o.student_name} (deleted account)"
+
+
+def student_roll_no(o: Outing, u: User | None) -> str | None:
+    return u.roll_no if u is not None else o.student_roll_no
+
+
 async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
     now = datetime.now(UTC)
     since = ist_midnight(now)
@@ -92,12 +102,13 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
             OutingRequest.day == ist_date(now),
         )
     )
+    # By the outing's hostel, like the escalations list and resolving: a student who moved
+    # since doesn't take the follow-up to the new hostel's badge.
     escalated = await session.scalar(
         select(func.count())
         .select_from(Escalation)
         .join(Outing, Outing.id == Escalation.outing_id)
-        .join(User, User.id == Outing.student_id)
-        .where(mine, Escalation.resolved_at.is_(None))
+        .where(mine_out, Escalation.resolved_at.is_(None))
     )
     # The corrections queue (app/services/corrections.py): students' asks and unrecorded returns.
     to_fix = await session.scalar(
@@ -135,7 +146,7 @@ async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[
     now = datetime.now(UTC)
     query = (
         select(Outing, User, Gate.name, Hostel.name)
-        .join(User, User.id == Outing.student_id)
+        .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
         .where(staff.covers(Outing.hostel_id))
@@ -156,15 +167,16 @@ async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[
 
 
 def _register_row(
-    o: Outing, u: User, gate_name: str | None, hostel: str | None, now: datetime
+    o: Outing, u: User | None, gate_name: str | None, hostel: str | None, now: datetime
 ) -> AdminOuting:
+    """`u` is None for a deleted account's outing: no id or email, the name and roll no. kept."""
     end = o.returned_at or now
     return AdminOuting(
         id=o.id,
-        student_id=u.id,
-        name=u.name,
-        email=u.email,
-        roll_no=u.roll_no,
+        student_id=u.id if u is not None else None,
+        name=student_name(o, u),
+        email=u.email if u is not None else None,
+        roll_no=student_roll_no(o, u),
         destination=o.destination,
         left_at=o.left_at,
         expected_return_at=o.expected_return_at,
@@ -186,7 +198,7 @@ async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
     now = datetime.now(UTC)
     rows = await session.execute(
         select(Outing, User, Gate.name, Hostel.name)
-        .join(User, User.id == Outing.student_id)
+        .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
         .where(
@@ -256,7 +268,7 @@ async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: dat
     out_gate, in_gate = aliased(Gate), aliased(Gate)
     rows = await session.execute(
         select(Outing, User, out_gate.name, in_gate.name)
-        .join(User, User.id == Outing.student_id)
+        .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(out_gate, out_gate.id == Outing.out_gate_id)
         .outerjoin(in_gate, in_gate.id == Outing.in_gate_id)
         .where(staff.covers(Outing.hostel_id), Outing.left_at >= since, Outing.left_at < until)
@@ -288,9 +300,9 @@ async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: dat
         # destination, gate names) is neutralised.
         writer.writerow(
             [
-                _safe(u.name),
-                _safe(u.email),
-                _safe(u.roll_no or ""),
+                _safe(student_name(o, u)),
+                _safe(u.email if u is not None else ""),
+                _safe(student_roll_no(o, u) or ""),
                 _safe(o.destination or ""),
                 _ist(o.left_at),
                 o.out_via.value,

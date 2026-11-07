@@ -37,6 +37,10 @@ EARTH_RADIUS_M = 6_371_000
 MAX_ACCURACY_M = 150  # worse than this, GPS cannot say which side of a gate you're on
 ACCURACY_ALLOWANCE_CAP_M = 50  # count up to this much GPS error in the student's favour
 REPLAY_WINDOW = timedelta(seconds=60)  # a second accepted scan this soon is a double scan
+# When an outing left open from an earlier day stops counting as a late return (see
+# outing_is_stale).
+STALE_PAST_DUE = timedelta(hours=6)
+STALE_AFTER_LEAVING = timedelta(hours=18)
 
 
 class ScanRejected(Exception):
@@ -92,6 +96,19 @@ def gps_problem(gate: Gate, body: GateScanIn) -> tuple[ScanResult, str] | None:
             f"You're about {round(away)} m from {gate.name}. Scan at the gate.",
         )
     return None
+
+
+def outing_is_stale(left_at: datetime, due: datetime, now: datetime) -> bool:
+    """An open outing from an earlier day that the student probably came back from long ago
+    (they forgot to tap in), so a scan now is more likely them going out again.
+
+    A new IST date alone isn't enough: someone due at 9:30 PM who taps in at 00:20 is simply
+    late, and that gate-verified return must count. So it's stale only once it's also well past
+    the due time (STALE_PAST_DUE: a night's lateness is hours, the next morning's exit is
+    more), or long after leaving (STALE_AFTER_LEAVING: the rules cap an outing at 12 h)."""
+    if rules.ist_date(left_at) >= rules.ist_date(now):
+        return False
+    return now - due >= STALE_PAST_DUE or now - left_at >= STALE_AFTER_LEAVING
 
 
 async def campus_settings(session: AsyncSession) -> CampusSettings:
@@ -169,7 +186,9 @@ async def scan(
         raise AlreadyScanned  # nothing recorded: the earlier scan already did the work
 
     back = None
-    if open_outing is not None and rules.ist_date(open_outing.left_at) < rules.ist_date(now):
+    if open_outing is not None and outing_is_stale(
+        open_outing.left_at, open_outing.expected_return_at, now
+    ):
         # Left on an earlier day and never tapped in: probably back long ago. Counting this
         # scan as the return would mark them in while they walk out. Ask (nothing recorded).
         if body.intent is None:

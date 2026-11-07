@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy import text
 
 from app.push import MemoryPushSender
+from app.services.gates import outing_is_stale
+from app.services.rules import IST
 from tests.helpers import GATE, create_gate, kiosk_qr, make_admin, set_rules, signup
 from tests.test_wardens import student
 
@@ -350,6 +352,23 @@ def test_coming_back_in_closes_yesterdays_outing_normally(client, db, riya, gate
     assert r.status_code == 200, r.text
     assert r.json()["direction"] == "in" and r.json()["outing"]["id"] == old["id"]
     assert outing_row(db, old["id"]).in_via == "gate"
+
+
+def at_ist(day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 11, day, hour, minute, tzinfo=IST)
+
+
+def test_a_late_return_after_midnight_is_not_a_stale_outing():
+    """Out at 7 PM, due 9:30 PM, at the gate at 00:20 IST: a late return, not yesterday's
+    forgotten outing. The next morning, the same open outing is stale."""
+    left, due = at_ist(7, 19), at_ist(7, 21, 30)
+    assert not outing_is_stale(left, due, at_ist(8, 0, 20))
+    assert not outing_is_stale(left, due, at_ist(8, 3, 15))
+    assert outing_is_stale(left, due, at_ist(8, 8, 0))  # going out again in the morning
+    # On the same day it's never stale, however late.
+    assert not outing_is_stale(at_ist(7, 8), at_ist(7, 10), at_ist(7, 23, 50))
+    # A long day trip still open the next morning is.
+    assert outing_is_stale(at_ist(7, 10), at_ist(7, 23, 59), at_ist(8, 6, 0))
 
 
 def test_todays_outing_is_closed_by_a_scan_without_asking(client, db, riya, gate):

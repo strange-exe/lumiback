@@ -212,7 +212,8 @@ async def approve_viewer(
             PushMessage(
                 title=f"{sharer.name if sharer else 'They'} approved you",
                 body="You can see their live location now.",
-                url="/live",
+                # The follower's screen (the app's Live tab opens the sharer view by default).
+                url="/live?view=follow",
                 channel="share-status",
             ),
         )

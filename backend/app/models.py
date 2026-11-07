@@ -218,6 +218,11 @@ class Outing(Base):
         CheckConstraint(
             "returned_at IS NULL OR returned_at >= left_at", name="returned_after_leaving"
         ),
+        # Every outing names its student: the account, or (once it's deleted) the snapshot.
+        CheckConstraint(
+            "student_id IS NOT NULL OR (detached_at IS NOT NULL AND student_name IS NOT NULL)",
+            name="owned_or_detached",
+        ),
         # At most one open outing per student, enforced by the database (no double check-out,
         # even with two simultaneous requests).
         Index(
@@ -236,10 +241,20 @@ class Outing(Base):
         # Which gates are in use (a used gate can't be removed), and SET NULL when one is.
         Index("ix_outings_out_gate_id", "out_gate_id"),
         Index("ix_outings_in_gate_id", "in_gate_id"),
+        # The sweep's purge of deleted accounts' outings.
+        Index(
+            "ix_outings_detached_at",
+            "detached_at",
+            postgresql_where=text("detached_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # None once the student deleted their account: the outing stays with the hostel's record
+    # (see detached_at) instead of disappearing from the office's register and escalations.
+    student_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     destination: Mapped[str | None] = mapped_column(String(100))
     purpose: Mapped[str | None] = mapped_column(String(200))
     left_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -275,6 +290,11 @@ class Outing(Base):
         ForeignKey("share_sessions.id", ondelete="SET NULL")
     )
     safe_return_email: Mapped[str | None] = mapped_column(String(254))
+    # Set when the student deleted their account: who it was (name and roll no. then), and when.
+    # The sweep purges the outing once the campus retention period has passed since then.
+    student_name: Mapped[str | None] = mapped_column(String(100))
+    student_roll_no: Mapped[str | None] = mapped_column(String(32))
+    detached_at: Mapped[datetime | None]
 
 
 class DayType(enum.StrEnum):
@@ -419,7 +439,11 @@ class OutingRequest(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # None once the student deleted their account: only a request an outing used is kept then
+    # (the approval behind the hostel's record of that outing); the rest go with the account.
+    student_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     day: Mapped[date] = mapped_column(Date)  # the IST date it is for (always the day it's sent)
     purpose: Mapped[str] = mapped_column(String(200))
     phone: Mapped[str] = mapped_column(String(16))

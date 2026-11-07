@@ -10,7 +10,7 @@ saved on their profile (they're the student's own, and the latest).
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +101,41 @@ async def is_again(session: AsyncSession, r: OutingRequest) -> bool:
     ) or False
 
 
+async def used_and_again(
+    session: AsyncSession, rows: list[OutingRequest]
+) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """`is_used` and `is_again` for many requests at once (the office's queue): the ids an
+    outing used, and the ids asked after an earlier approval that day was used. Two queries,
+    however many rows."""
+    if not rows:
+        return set(), set()
+    used = set(
+        await session.scalars(
+            select(Outing.request_id).where(Outing.request_id.in_([r.id for r in rows]))
+        )
+    )
+    # A request is "again" when some used request of that student and day was asked before it,
+    # i.e. when the earliest one was.
+    first_used = {
+        (student_id, day): created
+        for student_id, day, created in await session.execute(
+            select(OutingRequest.student_id, OutingRequest.day, func.min(OutingRequest.created_at))
+            .where(
+                OutingRequest.student_id.in_({r.student_id for r in rows}),
+                OutingRequest.day.in_({r.day for r in rows}),
+                OutingRequest.used_at.is_not(None),
+            )
+            .group_by(OutingRequest.student_id, OutingRequest.day)
+        )
+    }
+    again = {
+        r.id
+        for r in rows
+        if (first := first_used.get((r.student_id, r.day))) is not None and first < r.created_at
+    }
+    return used, again
+
+
 async def create(session: AsyncSession, student: User, body: OutingRequestIn) -> OutingRequest:
     now = datetime.now(UTC)
     student_id = student.id  # still readable after a rollback expires `student`
@@ -166,7 +201,7 @@ async def decide(
     session: AsyncSession, staff: Staff, request_id: uuid.UUID, *, approve: bool, note: str | None
 ) -> OutingRequest:
     request = await session.get(OutingRequest, request_id, with_for_update=True)
-    if request is None:
+    if request is None or request.student_id is None:  # None: kept after the account went
         raise NotFound
     owner = await session.get(User, request.student_id)
     if owner is None or not staff.covers_student(owner):
