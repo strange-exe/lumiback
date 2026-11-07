@@ -348,6 +348,30 @@ test.describe("as an admin", () => {
     }
   });
 
+  test("People lists every hostel's students before any search, like the app", async ({ page }) => {
+    // A student of its own in Hostel 3 (the plain e2e seed has none with a hostel).
+    const id = `28${String(Date.now()).slice(-8)}`;
+    const name = `Kavya ${id.slice(-4)}`;
+    await page.goto("/admin/people");
+    await page.getByRole("button", { name: "Add a person" }).click();
+    const add = page.getByRole("dialog", { name: "Add a person" });
+    await add.getByLabel("Name", { exact: true }).fill(name);
+    await add.getByLabel("Student ID", { exact: true }).fill(id);
+    await add.getByLabel("Hostel (optional)").selectOption({ label: "Hostel 3" });
+    await add.getByRole("button", { name: "Add and email link" }).click();
+    await expect(add).toBeHidden();
+
+    // No search typed: they're listed, with their role controls.
+    await page.goto("/admin/people");
+    const row = page.getByRole("listitem").filter({ hasText: name });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Hostel 3");
+    await expect(row.getByText("Warden", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Show" }).getByRole("link", { name: "All students" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
   test("make someone a hostel's warden, then a student again", async ({ page }) => {
     const asked: string[] = [];
     page.on("dialog", (dialog) => {

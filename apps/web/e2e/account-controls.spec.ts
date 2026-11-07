@@ -212,8 +212,10 @@ test.describe("as an admin", () => {
     await add.getByLabel("Phone (optional)").fill("98765 43210");
     await add.getByRole("button", { name: "Add and email link" }).click();
     await expect(add).toBeHidden();
-    await expect(page.getByText(`A link to set up their account was emailed to`)).toBeVisible();
-    await expect(page.getByText(`${id}@geu.ac.in`)).toBeVisible();
+    // The confirmation names the address (the list below it now shows them too).
+    await expect(page.getByText(`A link to set up their account was emailed to`)).toContainText(
+      `${id}@geu.ac.in`,
+    );
 
     await page.getByRole("link", { name: "Show them" }).click();
     await expect(page).toHaveURL(new RegExp(`q=${id}`));

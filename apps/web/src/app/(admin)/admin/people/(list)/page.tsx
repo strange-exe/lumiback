@@ -32,9 +32,9 @@ interface PageProps {
 }
 
 /**
- * One row. `full`: it came from the admin search, so a warden's hostels are known and the role
- * can be changed here; the filtered lists (GET /admin/students) don't say which hostels a
- * warden looks after.
+ * One row. `full`: the role can be changed here. Always so for the admin search; from the
+ * lists (GET /admin/students) only for students, since those don't say which hostels a warden
+ * looks after (and a student looks after none).
  */
 interface Row {
   person: AdminUser & { phone?: string | null };
@@ -56,22 +56,24 @@ function fromStudent(s: OfficeStudent): Row {
       account: s.account,
       phone: s.phone,
     },
-    full: false,
+    full: s.role === "student",
   };
 }
 
-/** Who's listed: an admin's search (or a filter), or a warden's own hostels' students. */
+/**
+ * Who's listed: everyone in the hostels the viewer looks after (every hostel for an admin, as
+ * in the app), a filter, or an admin's search, which also finds staff.
+ */
 async function load(
   token: string,
   isAdmin: boolean,
   q: string,
   account: "invited" | "off" | undefined,
-): Promise<Row[] | null> {
+): Promise<Row[]> {
   const search = q.length >= 2 ? q : undefined;
-  if (!isAdmin || account) {
+  if (!isAdmin || account || !search) {
     return (await adminApi.students(token, { q: search, account })).map(fromStudent);
   }
-  if (!search) return null; // an admin starts from a search
   // The search knows roles and a warden's hostels; the students list knows phone numbers.
   const [users, students] = await Promise.all([
     adminApi.users(token, search),
@@ -164,7 +166,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         <Filters q={q} account={account} isAdmin={isAdmin} />
       </div>
 
-      {rows === null ? null : rows.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
           {emptyMessage(q, account, isAdmin)}
         </p>
@@ -192,7 +194,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                   key={person.id}
                   className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] sm:items-start sm:gap-6"
                 >
-                  <Who person={person} isMe={isMe} showHostel={!isAdmin || !full} />
+                  <Who person={person} isMe={isMe} />
                   <div className="flex min-w-0 flex-col gap-4">
                     {isAdmin && person.role === "student" && person.account !== "off" && (
                       <MoveForm person={person} hostels={hostels} />
@@ -223,22 +225,14 @@ function emptyMessage(q: string, account: "invited" | "off" | undefined, isAdmin
   const matching = q.length >= 2 ? ` matching "${q}"` : "";
   if (account === "invited") return `Everyone${matching} has set up their account.`;
   if (account === "off") return `No accounts${matching} are turned off.`;
-  if (isAdmin) {
+  if (isAdmin && q.length >= 2) {
     return `Nobody matches "${q}". Add them with Add a person, or ask them to sign up and verify their email.`;
   }
   return q.length >= 2 ? `No students match "${q}".` : "No students live here yet.";
 }
 
 /** Name, role and the account's state in words, then email, roll no., phone and hostel. */
-function Who({
-  person,
-  isMe,
-  showHostel,
-}: {
-  person: Row["person"];
-  isMe: boolean;
-  showHostel: boolean;
-}): ReactNode {
+function Who({ person, isMe }: { person: Row["person"]; isMe: boolean }): ReactNode {
   const state = person.account && person.account !== "active" ? person.account : null;
   return (
     <div className="min-w-0">
@@ -268,7 +262,7 @@ function Who({
       {person.role === "warden" && person.hostels.length > 0 && (
         <p className="text-sm text-muted">Warden of {person.hostels.join(", ")}</p>
       )}
-      {showHostel && person.role === "student" && (
+      {person.role === "student" && (
         <p className="text-sm text-muted">{person.home_hostel ?? "No hostel chosen"}</p>
       )}
     </div>
@@ -286,7 +280,7 @@ function Filters({
   isAdmin: boolean;
 }): ReactNode {
   const options = [
-    { value: undefined, label: isAdmin ? "Search results" : "All students" },
+    { value: undefined, label: isAdmin && q.length >= 2 ? "Search results" : "All students" },
     { value: "invited", label: "Hasn't set up" },
     { value: "off", label: "Turned off" },
   ] as const;
