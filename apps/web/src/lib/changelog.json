@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.14.0",
+    "date": "2026-11-07",
+    "title": "A guided tour on the website too",
+    "points": [
+      "The website has the same guided tour as the app: it points out each part the first time you sign in there, and after updates that change something. Take it again any time from Account.",
+      "On the app, the hostel office's bar at the bottom is now compact, with both of its names showing."
+    ]
+  },
+  {
     "version": "1.13.0",
     "date": "2026-11-07",
     "title": "A new look, and a guided tour",
