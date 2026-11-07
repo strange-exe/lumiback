@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import User, UserRole, WardenHostel
 
 # Roles that look after every hostel's students.
-EVERY_HOSTEL = (UserRole.ADMIN, UserRole.HEAD_WARDEN)
+EVERY_HOSTEL = (UserRole.ADMIN, UserRole.DEVELOPER, UserRole.HEAD_WARDEN)
 
 
 @dataclass(frozen=True)

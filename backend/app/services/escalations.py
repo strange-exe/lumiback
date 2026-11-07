@@ -190,26 +190,31 @@ async def _log_admin_view(
 
 
 async def _last_seen(
-    session: AsyncSession, outing: Outing, admin: User | None
+    session: AsyncSession, outing: Outing, admin: User | None, *, live_ok: bool = True
 ) -> LastSeenOut | None:
     """The student's live share position (logged on that share), else their last gate scan on
     this outing. A share whose only fix is a mock location shows no position, but still shows
-    that the share exists (and since when the location is mocked)."""
+    that the share exists (and since when the location is mocked). `live_ok` False (a developer
+    viewing as an admin): the gate scan only, so no live position is read or logged."""
     now = datetime.now(UTC)
     live = (
-        await session.execute(
-            select(ShareSession.id, Location)
-            .join(Location, Location.session_id == ShareSession.id)
-            .where(
-                ShareSession.sharer_id == outing.student_id,
-                ShareSession.status == SessionStatus.ACTIVE,
-                ShareSession.ends_at > now,
+        (
+            await session.execute(
+                select(ShareSession.id, Location)
+                .join(Location, Location.session_id == ShareSession.id)
+                .where(
+                    ShareSession.sharer_id == outing.student_id,
+                    ShareSession.status == SessionStatus.ACTIVE,
+                    ShareSession.ends_at > now,
+                )
+                # Real fixes first (latest first); a mock fix only when no share has a real one.
+                .order_by(Location.mocked, Location.recorded_at.desc())
+                .limit(1)
             )
-            # Real fixes first (latest first); a mock fix only when no share has a real one.
-            .order_by(Location.mocked, Location.recorded_at.desc())
-            .limit(1)
-        )
-    ).first()
+        ).first()
+        if live_ok
+        else None
+    )
     if live is not None:
         share_id, loc = live
         if admin is not None:
@@ -253,7 +258,9 @@ class _Row:
     student: User | None  # None: the student deleted their account (only a handled one stays)
 
 
-async def _out(session: AsyncSession, row: _Row, admin: User | None) -> EscalationOut:
+async def _out(
+    session: AsyncSession, row: _Row, admin: User | None, *, live_ok: bool = True
+) -> EscalationOut:
     e, o, s = row.escalation, row.outing, row.student
     # The hostel (and warden) responsible for this outing: the one the student was in then.
     hostel = await session.get(Hostel, o.hostel_id) if o.hostel_id else None
@@ -289,7 +296,7 @@ async def _out(session: AsyncSession, row: _Row, admin: User | None) -> Escalati
         late_replied_at=o.late_replied_at,
         # Only while it matters: an open escalation for a student who's still out.
         last_seen=(
-            await _last_seen(session, o, admin)
+            await _last_seen(session, o, admin, live_ok=live_ok)
             if e.resolved_at is None and o.returned_at is None
             else None
         ),
@@ -299,8 +306,11 @@ async def _out(session: AsyncSession, row: _Row, admin: User | None) -> Escalati
     )
 
 
-async def listing(session: AsyncSession, staff: Staff, *, open_only: bool) -> list[EscalationOut]:
-    """Newest first; a warden sees their hostels' students only."""
+async def listing(
+    session: AsyncSession, staff: Staff, *, open_only: bool, live_ok: bool = True
+) -> list[EscalationOut]:
+    """Newest first; a warden sees their hostels' students only. `live_ok` False: no live
+    positions (a developer viewing as this office; see _last_seen)."""
     query = (
         select(Escalation, Outing, User)
         .join(Outing, Outing.id == Escalation.outing_id)
@@ -312,7 +322,7 @@ async def listing(session: AsyncSession, staff: Staff, *, open_only: bool) -> li
     if open_only:
         query = query.where(Escalation.resolved_at.is_(None))
     rows = [_Row(*r) for r in (await session.execute(query)).all()]
-    out = [await _out(session, r, staff.user) for r in rows]
+    out = [await _out(session, r, staff.user, live_ok=live_ok) for r in rows]
     await session.commit()  # the access-log entries for live positions read just now
     return out
 

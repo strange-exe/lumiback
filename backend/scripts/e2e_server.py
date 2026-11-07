@@ -9,8 +9,9 @@ tests can sign in without reading an email. It also adds an admin (e2e-admin@geu
 gate, "North Gate", whose kiosk token is fixed so the kiosk page can be opened directly, and
 "Hostel 3" with its warden (e2e-warden@geu.ac.in). --demo fills Hostel 3 with sample students
 who are out, late, escalated or waiting on a request (for screenshots and demos), and adds one
-account per role (ROLE_ACCOUNTS: admin@, headwarden@, warden@, warden2@, student@geu.ac.in, all
-with E2E_PASSWORD). Everything here goes into the local *_test database only.
+account per role (ROLE_ACCOUNTS: admin@, headwarden@, warden@, warden2@, student@ and
+developer@geu.ac.in, all with E2E_PASSWORD). Everything here goes into the local *_test
+database only.
 """
 
 import argparse
@@ -33,6 +34,7 @@ DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase 
 # Test-only, local *_test database; apps/web/e2e/helpers.ts signs in with the same value.
 E2E_PASSWORD = "lantern@123"  # noqa: S105
 ADMIN_EMAIL = "e2e-admin@geu.ac.in"
+DEVELOPER_EMAIL = "e2e-dev@geu.ac.in"  # view-as tests (developer role)
 WARDEN_EMAIL = "e2e-warden@geu.ac.in"  # warden of Hostel 3
 HEAD_WARDEN_EMAIL = "e2e-head@geu.ac.in"
 KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000"  # noqa: S105 - test-only
@@ -84,6 +86,13 @@ def reset_and_seed(url: str, seed: bool, demo: bool = False) -> None:
             )
             conn.execute(
                 text(
+                    "INSERT INTO users (name, email, password_hash, role, email_verified_at) "
+                    "VALUES ('Tarun Bisht', :email, :hash, 'developer', now())"
+                ),
+                {"email": DEVELOPER_EMAIL, "hash": hash_password(E2E_PASSWORD)},
+            )
+            conn.execute(
+                text(
                     "INSERT INTO gates (name, lat, lng, radius_m, kiosk_token_hash) "
                     "VALUES ('North Gate', 30.2687, 77.9947, 75, :hash)"
                 ),
@@ -131,6 +140,7 @@ ROLE_ACCOUNTS = [
     ("warden@geu.ac.in", "Demo Warden", "warden", "3"),
     ("warden2@geu.ac.in", "Demo Warden Two", "warden", "5"),
     ("student@geu.ac.in", "Demo Student", "student", "3"),
+    ("developer@geu.ac.in", "Demo Developer", "developer", None),
 ]
 
 

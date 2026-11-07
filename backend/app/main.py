@@ -104,8 +104,9 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        # X-Kiosk-Token: gate kiosks call /kiosk/qr straight from the browser.
-        allow_headers=["Authorization", "Content-Type", "X-Kiosk-Token"],
+        # X-Kiosk-Token: gate kiosks call /kiosk/qr straight from the browser. X-View-As-Role:
+        # a developer's read-only view of another role's screens (api/deps.py).
+        allow_headers=["Authorization", "Content-Type", "X-Kiosk-Token", "X-View-As-Role"],
     )
 
     @app.exception_handler(RequestValidationError)

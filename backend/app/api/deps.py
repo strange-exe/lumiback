@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -166,10 +167,92 @@ async def get_optional_user(
     request.state.session_id = claims.session_id
     if not user.email_verified:  # login already refuses these; defense in depth
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Email not verified")
+    if role := request.headers.get(VIEW_AS_HEADER, "").strip():
+        await _view_as(request, session, user, role)
     return user
 
 
+# ---------- a developer viewing the app as a role (read-only) ----------
+
+VIEW_AS_HEADER = "X-View-As-Role"
+# The roles a developer can view the screens of. Their own role ("developer") is not one: not
+# viewing is the developer view.
+VIEWABLE_ROLES = frozenset(
+    {UserRole.ADMIN, UserRole.HEAD_WARDEN, UserRole.WARDEN, UserRole.STUDENT}
+)
+READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+UNKNOWN_ROLE = "Unknown role to view as"
+DEVELOPERS_ONLY = "View as is for developers only"
+READ_ONLY = "Read-only while viewing as another role"
+
+
+def read_only() -> HTTPException:
+    return HTTPException(status.HTTP_403_FORBIDDEN, detail=READ_ONLY)
+
+
+def viewing_as_of(request: Request) -> UserRole | None:
+    """The role a developer is viewing the screens of in this request, else None."""
+    return getattr(request.state, "viewing_as", None)
+
+
+async def _view_as(request: Request, session: AsyncSession, user: User, raw: str) -> None:
+    """X-View-As-Role: the request still runs as the developer (same account, same access and
+    data scope); only GET /auth/me reports the viewed role. WebSockets authenticate on their
+    own (api/ws.py) and never see this header.
+
+    Read-only is enforced twice. Any method but GET/HEAD/OPTIONS is refused here. And this
+    request's database session can no longer write: ORM writes are refused with the same 403,
+    and every later transaction is READ ONLY in Postgres, so a GET with a side effect nobody
+    noticed fails instead of writing."""
+    try:
+        role = UserRole(raw)
+    except ValueError:
+        role = None
+    if role not in VIEWABLE_ROLES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=UNKNOWN_ROLE)
+    if user.role != UserRole.DEVELOPER:  # `user` was just read from the database
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=DEVELOPERS_ONLY)
+    if request.method not in READ_METHODS:
+        raise read_only()
+    request.state.viewing_as = role
+    await session.commit()  # nothing pending: ends the transaction so the next one is READ ONLY
+    _refuse_writes(session)
+
+
+def _refuse_writes(session: AsyncSession) -> None:
+    sync = session.sync_session
+
+    @event.listens_for(sync, "after_begin")
+    def _read_only_transaction(_session, _transaction, connection) -> None:
+        connection.exec_driver_sql("SET TRANSACTION READ ONLY")
+
+    @event.listens_for(sync, "before_flush")
+    def _no_flush(s, _context, _instances) -> None:
+        if s.new or s.deleted or any(s.is_modified(o) for o in s.dirty):
+            raise read_only()
+
+    @event.listens_for(sync, "do_orm_execute")
+    def _no_dml(state) -> None:
+        if state.is_insert or state.is_update or state.is_delete:
+            raise read_only()
+
+
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+
+
+async def get_viewing_as(request: Request, _: OptionalUser) -> UserRole | None:
+    """The role a developer is viewing as, else None (after authentication ran)."""
+    return viewing_as_of(request)
+
+
+ViewingAsDep = Annotated[UserRole | None, Depends(get_viewing_as)]
+
+
+async def not_viewing_as(viewing_as: ViewingAsDep) -> None:
+    """For reads kept out of a view as session: the personal data export (a file to save, not
+    a screen), a live location (a read that is logged on someone's share)."""
+    if viewing_as is not None:
+        raise read_only()
 
 
 async def get_current_user(user: OptionalUser) -> User:
@@ -182,9 +265,9 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 async def get_admin_user(user: CurrentUser) -> User:
-    """Campus-wide setup. Students and wardens get 403 (the endpoint exists; they just may not
-    use it)."""
-    if user.role != UserRole.ADMIN:
+    """Campus-wide setup (admins and developers). Students and wardens get 403 (the endpoint
+    exists; they just may not use it)."""
+    if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins only")
     return user
 
@@ -204,8 +287,9 @@ StaffUser = Annotated[Staff, Depends(get_staff)]
 
 
 async def get_rules_editor(user: CurrentUser) -> User:
-    """Outing rules, holidays and which rules each hostel follows: admins and head wardens."""
-    if user.role not in (UserRole.ADMIN, UserRole.HEAD_WARDEN):
+    """Outing rules, holidays and which rules each hostel follows: admins (and developers) and
+    head wardens."""
+    if not (user.is_admin or user.role == UserRole.HEAD_WARDEN):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Admins and head wardens only")
     return user
 

@@ -15,6 +15,7 @@ from app.api.deps import (
     MailerDep,
     SessionDep,
     SettingsDep,
+    ViewingAsDep,
     client_ip,
     enforce,
     too_many,
@@ -450,8 +451,14 @@ async def sign_out_other_devices(
 
 
 @router.get("/me")
-async def me(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+async def me(user: CurrentUser, viewing_as: ViewingAsDep) -> UserOut:
+    """The signed-in account. While a developer views as a role (X-View-As-Role), `role` is
+    that role and `viewing_as` names it, so the clients show that role's screens; everything
+    else stays the developer's own."""
+    out = UserOut.model_validate(user)
+    if viewing_as is not None:
+        out.role = out.viewing_as = viewing_as.value
+    return out
 
 
 @router.post("/change-password")

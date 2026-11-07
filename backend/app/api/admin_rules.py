@@ -18,6 +18,7 @@ from app.api.deps import (
     SessionDep,
     SettingsDep,
     StaffUser,
+    ViewingAsDep,
 )
 from app.api.outings import safe_return_ended
 from app.email_templates import request_decision_email
@@ -30,7 +31,6 @@ from app.models import (
     OutingRequest,
     RuleSet,
     User,
-    UserRole,
     WardenHostel,
 )
 from app.push import PushMessage
@@ -448,7 +448,7 @@ async def delete_hostel(
         raise NOT_FOUND
     # Deleting a hostel also drops its wardens' assignments (the rows cascade), and assigning
     # wardens is an admin's job: a head warden must ask an admin to move the wardens first.
-    if me.role != UserRole.ADMIN:
+    if not me.is_admin:
         wardens = await session.scalar(
             select(func.count())
             .select_from(WardenHostel)
@@ -520,10 +520,16 @@ async def delete_holiday(day: date, me: RulesUser, session: SessionDep) -> None:
 
 @router.get("/escalations")
 async def list_escalations(
-    staff: StaffUser, session: SessionDep, state: Literal["open", "all"] = "open"
+    staff: StaffUser,
+    session: SessionDep,
+    viewing_as: ViewingAsDep,
+    state: Literal["open", "all"] = "open",
 ) -> list[EscalationOut]:
-    """Reading a student's live position here is logged on their share's access log."""
-    return await escalations.listing(session, staff, open_only=state == "open")
+    """Reading a student's live position here is logged on their share's access log. A
+    developer viewing as a role sees no live positions (nothing to log, nothing shown)."""
+    return await escalations.listing(
+        session, staff, open_only=state == "open", live_ok=viewing_as is None
+    )
 
 
 @router.post("/escalations/{escalation_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)

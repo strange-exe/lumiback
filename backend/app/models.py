@@ -118,6 +118,15 @@ class UserRole(enum.StrEnum):
     # which rules each hostel follows). Not gates, roles or settings.
     HEAD_WARDEN = "head_warden"
     ADMIN = "admin"  # everything, campus-wide: rules, gates, people, settings
+    # Every admin power, plus a read-only view of any other role's screens (X-View-As-Role,
+    # with the developer's own data). Granted
+    # only by scripts/make_developer.py; the dashboard can't give, change or remove it.
+    DEVELOPER = "developer"
+
+
+# Roles that pass every admin check. "Last admin" guards count UserRole.ADMIN only: a
+# developer isn't campus staff, so an admin is always left to run the campus.
+ADMIN_ROLES = frozenset({UserRole.ADMIN, UserRole.DEVELOPER})
 
 
 class Via(enum.StrEnum):
@@ -206,6 +215,11 @@ class User(Base):
     @property
     def active(self) -> bool:
         return self.deactivated_at is None
+
+    @property
+    def is_admin(self) -> bool:
+        """Admin powers: admins and developers."""
+        return self.role in ADMIN_ROLES
 
 
 class Outing(Base):

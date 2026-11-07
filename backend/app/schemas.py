@@ -338,6 +338,15 @@ class RedeemOut(BaseModel):
     guest_token: str | None = None  # guests only, shown once; send as X-Guest-Token
 
 
+# Every role, for output. Inputs from the dashboard (RoleIn, PersonIn, the CSV import) never
+# take "developer": only scripts/make_developer.py grants it.
+AnyRole = Literal["student", "warden", "head_warden", "admin", "developer"]
+
+
+# The roles a developer can view the screens of (X-View-As-Role, api/deps.py).
+ViewableRole = Literal["student", "warden", "head_warden", "admin"]
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -348,7 +357,10 @@ class UserOut(BaseModel):
     hostel: str | None
     email_verified: bool
     created_at: datetime
-    role: Literal["student", "warden", "head_warden", "admin"] = "student"
+    role: AnyRole = "student"
+    # GET /auth/me while a developer views as a role (X-View-As-Role): that role, which is
+    # also `role` then. The real role is "developer" whenever this is set.
+    viewing_as: ViewableRole | None = None
 
 
 # ---------- outings ----------
@@ -778,7 +790,7 @@ class AdminUser(BaseModel):
     name: str
     email: str
     roll_no: str | None
-    role: Literal["student", "warden", "head_warden", "admin"]
+    role: AnyRole
     hostel_ids: list[uuid.UUID] = []  # a warden's hostels
     hostels: list[str] = []
     home_hostel_id: uuid.UUID | None = None  # the hostel they live in (students), to move them
@@ -795,7 +807,7 @@ class StudentOut(BaseModel):
     name: str
     email: str
     roll_no: str | None
-    role: Literal["student", "warden", "head_warden", "admin"]
+    role: AnyRole
     hostel_id: uuid.UUID | None
     hostel: str | None
     phone: str | None
@@ -813,7 +825,7 @@ class StudentHostelIn(Input):
 
 
 class RoleIn(Input):
-    role: Literal["student", "warden", "head_warden", "admin"]
+    role: Literal["student", "warden", "head_warden", "admin"]  # never "developer"
     # Required (at least one) for a warden; ignored for other roles.
     hostel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 
@@ -856,7 +868,7 @@ class PersonIn(Input):
     (the service validates the values). They're emailed a link to choose a password."""
 
     name: str = Field(max_length=200)
-    role: Literal["student", "warden", "head_warden", "admin"] = "student"
+    role: Literal["student", "warden", "head_warden", "admin"] = "student"  # never "developer"
     student_id: str | None = Field(default=None, max_length=64)  # required for students
     email: str | None = Field(default=None, max_length=254)  # defaults from the student ID
     hostel_id: uuid.UUID | None = None  # a student's hostel; the one a warden looks after
@@ -873,7 +885,7 @@ class StudentImportRow(BaseModel):
     hostel: str | None
     status: Literal["new", "exists", "error", "added"]
     error: str | None
-    role: Literal["student", "warden", "head_warden", "admin"]
+    role: AnyRole
 
 
 class StudentImportOut(BaseModel):

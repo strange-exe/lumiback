@@ -20,6 +20,7 @@ from app.api.deps import (
     SessionDep,
     SettingsDep,
     enforce,
+    not_viewing_as,
 )
 from app.models import (
     AccessChannel,
@@ -242,11 +243,12 @@ async def put_location(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{session_id}/location")
+@router.get("/{session_id}/location", dependencies=[Depends(not_viewing_as)])
 async def get_location(
     session_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
 ) -> SessionLocationOut:
-    """Viewers read the latest position through can_view; every read is logged for the sharer."""
+    """Viewers read the latest position through can_view; every read is logged for the sharer.
+    A developer viewing as someone never sees a live position: nobody shared it with them."""
     access = await resolve_access(session, session_id, principal)
     match access.role:
         case Role.SHARER:

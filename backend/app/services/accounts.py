@@ -2,7 +2,8 @@
 was set up with, and cancel an invite nobody has used.
 
 Who may do what:
-- An admin: anyone (staff too), except themselves.
+- An admin (or developer): anyone (staff too), except themselves. A developer's email and
+  on/off state, and deleting one, are never changed here (scripts/make_developer.py).
 - A warden or head warden: the students in hostels they look after, and never their email
   address (changing it would let them take the account over with "Forgot password").
 - Cancelling an invite deletes the account, so it's admins only, like adding people.
@@ -39,7 +40,7 @@ from app.models import (
     UserRole,
 )
 from app.services import sessions as shares
-from app.services.admin import account_state, audit
+from app.services.admin import DEVELOPER_LOCKED, account_state, audit
 from app.services.refresh_tokens import sign_out_everywhere
 from app.services.staff import Staff
 from app.services.verification import email_allowed
@@ -57,7 +58,7 @@ NOT_FOUND = "No such person"
 
 
 def _manages(staff: Staff, target: User) -> bool:
-    if staff.user.role == UserRole.ADMIN:
+    if staff.user.is_admin:
         return True
     return target.role == UserRole.STUDENT and staff.covers_student(target)
 
@@ -69,6 +70,11 @@ async def _target(session: AsyncSession, staff: Staff, user_id: uuid.UUID) -> Us
     if target.id == staff.user.id:
         raise Refused(403, "You can't change your own account here")
     return target
+
+
+def _not_developer(target: User) -> None:
+    if target.role == UserRole.DEVELOPER:
+        raise Refused(403, DEVELOPER_LOCKED)
 
 
 async def _another_admin_left(session: AsyncSession, target: User) -> bool:
@@ -84,6 +90,7 @@ async def deactivate(session: AsyncSession, staff: Staff, user_id: uuid.UUID) ->
     """Turns the account off. Returns the live shares it ended (to tell open streams).
     Commits."""
     target = await _target(session, staff, user_id)
+    _not_developer(target)
     if target.deactivated_at is not None:
         await session.commit()
         return []
@@ -116,6 +123,7 @@ async def deactivate(session: AsyncSession, staff: Staff, user_id: uuid.UUID) ->
 
 async def reactivate(session: AsyncSession, staff: Staff, user_id: uuid.UUID) -> None:
     target = await _target(session, staff, user_id)
+    _not_developer(target)
     if target.deactivated_at is not None:
         target.deactivated_at = None
         audit(session, staff.user, "account:on", target.email)
@@ -149,8 +157,9 @@ async def edit(
         target.phone = changes.phone
         changed.append("phone")
     if changes.email is not None and changes.email != target.email:
-        if staff.user.role != UserRole.ADMIN:
+        if not staff.user.is_admin:
             raise Refused(403, "Only an admin can change an email address")
+        _not_developer(target)
         if not email_allowed(changes.email, settings):
             domains = ", ".join(f"@{d}" for d in settings.allowed_email_domains)
             raise Refused(422, f"Use a university email address ({domains})")
@@ -257,9 +266,10 @@ async def detach_records(session: AsyncSession, user: User, now: datetime) -> No
 
 async def cancel_invite(session: AsyncSession, staff: Staff, user_id: uuid.UUID) -> str:
     """Deletes an imported account nobody has set up yet. Returns its email. Commits."""
-    if staff.user.role != UserRole.ADMIN:
+    if not staff.user.is_admin:
         raise Refused(403, "Admins only")
     target = await _target(session, staff, user_id)
+    _not_developer(target)
     if target.email_verified_at is not None:
         raise Refused(409, "They've already set up their account. Turn it off instead.")
     email = target.email

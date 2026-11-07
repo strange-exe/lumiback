@@ -418,6 +418,8 @@ async def send_password_link(
             status.HTTP_403_FORBIDDEN,
             detail="To change your own password, use Forgot password on the sign-in page",
         )
+    if target.role == UserRole.DEVELOPER:  # a reset would sign them out everywhere
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=svc.DEVELOPER_LOCKED)
     if not target.active:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="This account is turned off. Turn it on first."
@@ -458,6 +460,8 @@ async def set_role(
         raise NOT_FOUND
     try:
         await svc.set_role(session, me, target, UserRole(body.role), body.hostel_ids)
+    except svc.DeveloperLocked:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=svc.DEVELOPER_LOCKED) from None
     except svc.LastAdmin:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="Make someone else an admin first"

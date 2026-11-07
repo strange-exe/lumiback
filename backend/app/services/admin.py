@@ -55,6 +55,15 @@ class LastAdmin(Exception):
     """Refused: the campus would be left without an admin."""
 
 
+# The developer role comes from scripts/make_developer.py; the dashboard never changes a
+# developer's role, email or on/off state, and never deletes one.
+DEVELOPER_LOCKED = "A developer's account is changed on the server, not here"
+
+
+class DeveloperLocked(Exception):
+    """Refused: the target is a developer (see DEVELOPER_LOCKED)."""
+
+
 def ist_midnight(now: datetime) -> datetime:
     local = now.astimezone(UTC) + IST
     return (datetime.combine(local.date(), time()) - IST).replace(tzinfo=UTC)
@@ -389,7 +398,7 @@ async def students(
         .order_by(User.name)
         .limit(300)
     )
-    if staff.user.role != UserRole.ADMIN:  # wardens and head wardens: students, not staff
+    if not staff.user.is_admin:  # wardens and head wardens: students, not staff
         query = query.where(User.role == UserRole.STUDENT)
     if hostel_id is not None:
         query = query.where(User.hostel_id == hostel_id)
@@ -508,7 +517,10 @@ async def set_role(
     role: UserRole,
     hostel_ids: list[uuid.UUID] | None = None,
 ) -> User:
-    """A warden gets exactly `hostel_ids`; any other role has no hostels of its own."""
+    """A warden gets exactly `hostel_ids`; any other role has no hostels of its own. Never
+    gives or takes the developer role (scripts/make_developer.py does)."""
+    if UserRole.DEVELOPER in (target.role, role):
+        raise DeveloperLocked
     wanted = set(hostel_ids or []) if role == UserRole.WARDEN else set()
     if role == UserRole.WARDEN:
         found = set(await session.scalars(select(Hostel.id).where(Hostel.id.in_(wanted))))

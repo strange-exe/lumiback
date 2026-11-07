@@ -2,12 +2,20 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, HubDep, LimiterDep, SessionDep, SettingsDep, enforce
+from app.api.deps import (
+    CurrentUser,
+    HubDep,
+    LimiterDep,
+    SessionDep,
+    SettingsDep,
+    enforce,
+    not_viewing_as,
+)
 from app.models import Hostel, RuleSet, User, UserRole
 from app.realtime import AccessChanged
 from app.schemas import HostelChoiceOut, ProfileIn, ProfileOut
@@ -58,9 +66,10 @@ async def get_profile(me: CurrentUser, session: SessionDep) -> ProfileOut:
     return await _out(session, me)
 
 
-@router.get("/profile/export")
+@router.get("/profile/export", dependencies=[Depends(not_viewing_as)])
 async def export_my_data(me: CurrentUser, session: SessionDep, limiter: LimiterDep) -> JSONResponse:
-    """Everything kept about the signed-in person, as a JSON file to save (any role)."""
+    """Everything kept about the signed-in person, as a JSON file to save (any role). Never
+    for a developer viewing as them."""
     await enforce(limiter, "export:user", str(me.id), EXPORT_PER_USER)
     data = await export_user(session, me)
     day = datetime.now(UTC).date().isoformat()
