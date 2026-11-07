@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.15.0",
+    "date": "2026-11-08",
+    "title": "Act on several people at once, and lists that remember",
+    "points": [
+      "On the website's People list, the hostel office can tick several people and move them to another hostel, send the set-up link again, or turn their accounts off in one go. It then says what happened for each person.",
+      "The register, People, scans and escalations open on the filter you chose last time, on the website and in the app. Signing out forgets them.",
+      "Developers have a Status page showing which version of the website, app and server is running, and whether the database is up to date."
+    ]
+  },
+  {
     "version": "1.14.0",
     "date": "2026-11-07",
     "title": "A guided tour on the website too",

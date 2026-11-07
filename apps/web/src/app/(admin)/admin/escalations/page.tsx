@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { EscalationCard } from "@/features/admin/components/EscalationCard";
-import { requireStaff } from "@/lib/session";
+import { filterHref, resolveFilters } from "@/lib/filters";
+import { rememberedFilters, requireStaff } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Escalations" };
 
@@ -15,7 +15,9 @@ interface PageProps {
 
 export default async function EscalationsPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
-  const all = (await searchParams).state === "all";
+  // The address's filter, or on a bare visit the one chosen last time (lib/filters.ts).
+  const { values } = resolveFilters("escalations", await searchParams, await rememberedFilters());
+  const all = values.state === "all";
   const escalations = await adminApi.escalations(token, all ? "all" : "open");
 
   return (
@@ -35,10 +37,11 @@ export default async function EscalationsPage({ searchParams }: PageProps): Prom
         </div>
         <nav aria-label="Filter" className="flex gap-1 rounded-control bg-accent-soft p-1">
           {[
-            { href: "/admin/escalations", label: "Open", current: !all },
-            { href: "/admin/escalations?state=all", label: "All", current: all },
+            { href: filterHref("escalations", {}), label: "Open", current: !all },
+            { href: filterHref("escalations", { state: "all" }), label: "All", current: all },
           ].map((tab) => (
-            <Link
+            // A plain link (no prefetch): following it remembers the choice.
+            <a
               key={tab.href}
               href={tab.href}
               aria-current={tab.current ? "page" : undefined}
@@ -47,7 +50,7 @@ export default async function EscalationsPage({ searchParams }: PageProps): Prom
               }`}
             >
               {tab.label}
-            </Link>
+            </a>
           ))}
         </nav>
       </div>

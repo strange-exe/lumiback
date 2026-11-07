@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { formatWhen } from "@/features/admin/format";
-import { requireStaff } from "@/lib/session";
+import { filterHref, resolveFilters } from "@/lib/filters";
+import { rememberedFilters, requireStaff } from "@/lib/session";
 import type { AdminScan, ScanResult } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Scans" };
@@ -25,11 +26,14 @@ interface PageProps {
 export default async function ScansPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
   const params = await searchParams;
+  // The address's filters, or on a bare visit the ones chosen last time (lib/filters.ts).
+  const { values } = resolveFilters("scans", params, await rememberedFilters());
   const result =
-    params.result && params.result in RESULTS ? (params.result as ScanResult) : undefined;
+    values.result && values.result in RESULTS ? (values.result as ScanResult) : undefined;
   const before = params.before && /^\d+$/.test(params.before) ? params.before : undefined;
   const gates = await adminApi.gates(token);
-  const gate = gates.some((g) => g.id === params.gate) ? params.gate : undefined;
+  // A remembered gate that's since been removed is simply not applied.
+  const gate = gates.some((g) => g.id === values.gate) ? values.gate : undefined;
   const page = await adminApi.scans(token, { before, gate, result });
 
   const older = new URLSearchParams();
@@ -51,7 +55,9 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
         </p>
       </div>
 
-      <form method="get" className="flex flex-wrap items-end gap-3">
+      {/* Sent to /admin/filter, which remembers the choice and opens this page with it. */}
+      <form method="get" action="/admin/filter" className="flex flex-wrap items-end gap-3">
+        <input type="hidden" name="view" value="scans" />
         <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
           Gate
           <select name="gate" defaultValue={gate ?? ""} className={select}>
@@ -81,12 +87,12 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
           Filter
         </button>
         {(gate || result) && (
-          <Link
-            href="/admin/scans"
+          <a
+            href={filterHref("scans", {})}
             className="flex min-h-11 items-center px-2 text-sm font-bold text-accent"
           >
             Clear
-          </Link>
+          </a>
         )}
       </form>
 

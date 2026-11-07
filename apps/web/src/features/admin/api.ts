@@ -58,13 +58,14 @@ export const adminApi = {
   /**
    * People the office looks after, with their phone numbers: a warden's own hostels' students,
    * or (for an admin) anyone matching `q`. `account`: only those who haven't set up, or only
-   * accounts turned off (for an admin, staff too).
+   * accounts turned off (for an admin, staff too). `hostel`: one hostel's people only.
    */
   students(
     token: string,
-    filters: { q?: string; account?: "invited" | "off" },
+    filters: { q?: string; account?: "invited" | "off"; hostel?: string },
   ): Promise<OfficeStudent[]> {
     const query = new URLSearchParams();
+    if (filters.hostel) query.set("hostel_id", filters.hostel);
     if (filters.q) query.set("q", filters.q);
     if (filters.account) query.set("account", filters.account);
     const search = query.toString();

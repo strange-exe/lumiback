@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 
 /**
@@ -95,6 +96,51 @@ export async function startSharing(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Start sharing" }).click();
   await expect(page.getByRole("heading", { name: "You're sharing your location" })).toBeVisible();
   await expect(page.getByText(/^Live · updated/)).toBeVisible();
+}
+
+/** WCAG 2.2 A/AA problems on the page as it is now (open dialogs and bars included). */
+export async function axeProblems(page: Page): Promise<string[]> {
+  const axe = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+    .analyze();
+  return axe.violations.map(
+    (v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(" ")).join(", ")})`,
+  );
+}
+
+/**
+ * DESIGN.md §6 for one state of a page: at 1440 and 390 wide, light and dark (each scheme
+ * proven active first), no axe problems and no sideways scrolling. FEAT_SHOTS=<dir> also saves
+ * a screenshot of each for review.
+ */
+export async function designMatrix(page: Page, name: string): Promise<void> {
+  const size = page.viewportSize();
+  for (const [label, width, height] of [
+    ["desktop", 1440, 900],
+    ["mobile", 390, 844],
+  ] as const) {
+    for (const scheme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: scheme });
+      expect(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(
+        scheme === "dark",
+      );
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      );
+      expect(overflow, `no sideways scrolling (${name} ${label})`).toBe(false);
+      expect(await axeProblems(page), `${name} ${label} ${scheme}`).toEqual([]);
+      const dir = process.env.FEAT_SHOTS;
+      if (dir) {
+        await page.screenshot({
+          path: `${dir}/${name}-${label}-${scheme}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+  }
+  if (size) await page.setViewportSize(size);
+  await page.emulateMedia({ colorScheme: null });
 }
 
 /** Create a join code on the share screen and return it as shown. */

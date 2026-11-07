@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
-import { ADMIN_STATE } from "../playwright.config";
-import { DEVELOPER, signIn, watchForErrors } from "./helpers";
+import { ADMIN_STATE, DEVELOPER_STATE } from "../playwright.config";
+import { watchForErrors } from "./helpers";
 
 /**
  * A developer's read-only "View as" a ROLE (contract: .claude/tasks/view-as-contract.md): a
@@ -10,16 +10,14 @@ import { DEVELOPER, signIn, watchForErrors } from "./helpers";
  * this runs without --demo (as CI does).
  */
 
-const SIGNED_OUT = { cookies: [], origins: [] };
 const banner = (page: Page) => page.getByRole("region", { name: "Viewing as" });
 const officeNav = (page: Page) => page.getByRole("navigation", { name: "Hostel office" });
 const viewAsButton = (scope: Locator | Page) => scope.getByRole("button", { name: "View as" });
 
+/** The developer's own session (signed in once, in auth.setup.ts), in a fresh context. */
 async function asDeveloper(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ storageState: SIGNED_OUT });
-  const page = await context.newPage();
-  await signIn(page, DEVELOPER);
-  return page;
+  const context = await browser.newContext({ storageState: DEVELOPER_STATE });
+  return context.newPage();
 }
 
 /** From the office nav (the developer as themselves): open the menu and choose `role`. */

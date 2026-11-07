@@ -4,13 +4,23 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { accountFilter, editBody, personBody } from "@/features/admin/accounts";
+import {
+  bulkIds,
+  bulkOp,
+  bulkSummary,
+  runEach,
+  type BulkOp,
+  type BulkOutcome,
+} from "@/features/admin/bulk";
 import { attempt, number, pathId, text, tokenOrSignIn } from "@/features/admin/form";
 import { correctionBody } from "@/features/outings/corrections";
-import { callBackend } from "@/lib/backend";
+import { ApiError, callBackend } from "@/lib/backend";
+import { isUuid } from "@/lib/ids";
 import type {
   AdminUser,
   FormState,
   GateCreated,
+  OfficeStudent,
   PasswordLinkSent,
   StudentImportResult,
   StudentImportRow,
@@ -362,6 +372,81 @@ export async function setAccountOn(_: FormState, form: FormData): Promise<FormSt
   revalidatePath("/admin/people");
   revalidatePath("/admin");
   return { error: null, notice: on ? "Turned on." : "Turned off." };
+}
+
+// ---------- acting on several people at once (People list) ----------
+
+/** What a bulk submit hands back: a summary, then what happened for each person. */
+export interface BulkState {
+  error: string | null;
+  op?: BulkOp;
+  summary?: string;
+  outcomes?: BulkOutcome[];
+}
+
+/**
+ * Moves, sends set-up links to, or turns off the ticked people: one per-person API call each,
+ * in turn (features/admin/bulk.ts), so the backend's rules for each person apply exactly as
+ * for their own row's button. Turning off must name the count the person confirmed.
+ */
+export async function actOnPeople(_: BulkState, form: FormData): Promise<BulkState> {
+  const token = await tokenOrSignIn();
+  const op = bulkOp(text(form, "op"));
+  if (op === null) return { error: "Choose what to do with the people you ticked." };
+  const checked = bulkIds(form.getAll("ids"));
+  if ("error" in checked) return { error: checked.error };
+  const { ids } = checked;
+
+  let act: (id: string) => Promise<{ name: string | null; message: string }>;
+  if (op === "move") {
+    const hostelId = text(form, "hostel_id");
+    if (!isUuid(hostelId)) return { error: "Choose the hostel to move them to." };
+    act = async (id) => {
+      const moved = await callBackend<OfficeStudent>(`/admin/students/${id}/hostel`, {
+        method: "POST",
+        token,
+        body: { hostel_id: hostelId },
+      });
+      return { name: moved.name, message: `Moved to ${moved.hostel ?? "the new hostel"}.` };
+    };
+  } else if (op === "link") {
+    // A link to someone who has set up would reset their password and sign them out, so each
+    // call asks for a first link only: the API refuses (409) anyone who has set up, deciding
+    // per person at send time (the row's own button asks separately before a reset).
+    act = async (id) => {
+      const sent = await callBackend<PasswordLinkSent>(
+        `/admin/users/${id}/password-link?first_only=true`,
+        { method: "POST", token },
+      );
+      return { name: null, message: `Set-up link sent to ${sent.email}.` };
+    };
+  } else {
+    if (text(form, "confirm_count") !== String(ids.length)) {
+      return {
+        error:
+          "The ticked people changed. Check who's ticked, then confirm again. Nothing was changed.",
+      };
+    }
+    act = async (id) => {
+      const person = await callBackend<AdminUser>(`/admin/users/${id}/active`, {
+        method: "POST",
+        token,
+        body: { on: false },
+      });
+      return { name: person.name, message: "Turned off." };
+    };
+  }
+
+  let outcomes: BulkOutcome[];
+  try {
+    outcomes = await runEach(ids, act);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) redirect("/sign-in");
+    throw error;
+  }
+  revalidatePath("/admin/people");
+  if (op === "off") revalidatePath("/admin");
+  return { error: null, op, summary: bulkSummary(op, outcomes), outcomes };
 }
 
 /**

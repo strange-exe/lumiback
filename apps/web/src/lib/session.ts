@@ -12,6 +12,7 @@ import {
   REFRESH_COOKIE,
   REFRESH_MAX_AGE,
 } from "@/lib/cookies";
+import { FILTERS_COOKIE, parseFilters, type Remembered } from "@/lib/filters";
 import { isAdminRole, type TokenPair, type User, type ViewRole } from "@/lib/types";
 import {
   canViewAs,
@@ -28,8 +29,10 @@ export async function storeTokens(tokens: TokenPair): Promise<void> {
   jar.set(ACCESS_COOKIE, tokens.access_token, { ...COOKIE_BASE, maxAge: ACCESS_MAX_AGE });
   jar.set(REFRESH_COOKIE, tokens.refresh_token, { ...COOKIE_BASE, maxAge: REFRESH_MAX_AGE });
   // A fresh sign-in (only sign-in and password reset call this; refresh is in proxy.ts) starts
-  // as that person: a view left by a developer on this browser never carries over.
+  // as that person: a view left by a developer on this browser never carries over. Nor do the
+  // office's remembered filters: they belong to whoever chose them.
   jar.delete(VIEW_AS_COOKIE);
+  jar.delete(FILTERS_COOKIE);
 }
 
 /**
@@ -41,6 +44,7 @@ export async function clearTokens(): Promise<void> {
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
   jar.delete(VIEW_AS_COOKIE);
+  jar.delete(FILTERS_COOKIE);
   for (const { name } of jar.getAll()) if (isGuestCookie(name)) jar.delete(name);
 }
 
@@ -50,6 +54,11 @@ export async function accessToken(): Promise<string | null> {
 
 export async function refreshToken(): Promise<string | null> {
   return (await cookies()).get(REFRESH_COOKIE)?.value ?? null;
+}
+
+/** The office's remembered list filters (lib/filters.ts); anything malformed is ignored. */
+export async function rememberedFilters(): Promise<Remembered> {
+  return parseFilters((await cookies()).get(FILTERS_COOKIE)?.value);
 }
 
 /** The role this browser views the site as (a well-formed cookie), or null. */
@@ -125,6 +134,14 @@ export async function requireStaff(): Promise<Session> {
 export async function requireRulesEditor(): Promise<Session> {
   const session = await requireUser("/admin");
   if (!isAdminRole(session.user.role) && session.user.role !== "head_warden") notFound();
+  return session;
+}
+
+/** For the developer's own pages (Status): a developer as themselves. Everyone else, and a
+ * developer viewing as a role (`role` is then that role), gets a plain 404. */
+export async function requireDeveloper(): Promise<Session> {
+  const session = await requireUser("/admin");
+  if (session.user.role !== "developer" || session.viewingAs !== null) notFound();
   return session;
 }
 

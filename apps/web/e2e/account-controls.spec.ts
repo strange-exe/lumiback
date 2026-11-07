@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
 import { E2E_PASSWORD, signIn, watchForErrors } from "./helpers";
@@ -76,6 +76,17 @@ function row(page: Page, name: string) {
   return page.getByRole("listitem").filter({ hasText: name });
 }
 
+/**
+ * Clicks a button that opens a dialog by script until the dialog shows: a click that lands
+ * before the page's scripts run (People hydrates a lot) does nothing.
+ */
+async function openDialog(button: Locator, dialog: Locator): Promise<void> {
+  await expect(async () => {
+    if (!(await dialog.isVisible())) await button.click();
+    await expect(dialog).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+}
+
 /** Leaves Kabir's account on, whatever a failed test left behind. */
 async function turnKabirOn(page: Page): Promise<void> {
   await page.goto("/admin/people?q=kabir");
@@ -104,9 +115,8 @@ test.describe("as an admin", () => {
       await page.goto("/admin/people?q=kabir");
       const kabir = row(page, KABIR.name);
       await expect(kabir.getByRole("button", { name: "Send password link" })).toBeVisible();
-      await kabir.getByRole("button", { name: `Turn off: ${KABIR.name}` }).click();
       const dialog = page.getByRole("dialog", { name: `Turn off ${KABIR.name}'s account?` });
-      await expect(dialog).toBeVisible();
+      await openDialog(kabir.getByRole("button", { name: `Turn off: ${KABIR.name}` }), dialog);
       await expect(dialog).toContainText("signed out on every phone and browser");
       await expect(dialog).toContainText("Their outings and history are kept.");
       expect(await axeProblems(page), "accessibility of the open dialog").toEqual([]);
@@ -164,9 +174,8 @@ test.describe("as an admin", () => {
     const name = `${XSS} Tara ${id.slice(-4)}`;
 
     await page.goto("/admin/people");
-    await page.getByRole("button", { name: "Add a person" }).click();
     const add = page.getByRole("dialog", { name: "Add a person" });
-    await expect(add).toBeVisible();
+    await openDialog(page.getByRole("button", { name: "Add a person" }), add);
     // A student: the student ID is needed, the email is optional, parents are offered.
     await expect(add.getByLabel("Student ID", { exact: true })).toHaveAttribute("required", "");
     await expect(add.getByText(/use their student ID address/)).toBeVisible();

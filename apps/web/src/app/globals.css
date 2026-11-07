@@ -668,6 +668,27 @@ h1[tabindex="-1"]:focus {
   }
 }
 
+/* People: the bar for the ticked people (features/admin/components/BulkActions.tsx). It shows
+   only while someone is ticked, by CSS alone, so it works before (and without) JavaScript, and
+   sits fixed at the bottom so it stays in reach down a long list. */
+.people-bulk-bar {
+  display: none;
+}
+body:has(input[data-bulk]:checked) .people-bulk-bar {
+  display: block;
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 -12px 32px -16px rgba(var(--tint), 0.35);
+}
+/* Room under the list, so the bar never covers its last rows. */
+body:has(input[data-bulk]:checked) main {
+  padding-bottom: 10rem;
+}
+
 @keyframes reveal-up {
   from {
     transform: translateY(28px);

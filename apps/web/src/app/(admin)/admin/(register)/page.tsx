@@ -13,7 +13,8 @@ import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
 import { inViaLabel } from "@/features/outings/corrections";
 import { formatMinutes } from "@/features/outings/time";
-import { requireStaff } from "@/lib/session";
+import { filterHref, resolveFilters } from "@/lib/filters";
+import { rememberedFilters, requireStaff } from "@/lib/session";
 import type { AdminOuting } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Register" };
@@ -32,8 +33,9 @@ interface PageProps {
 export default async function RegisterPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
   const params = await searchParams;
-  const requested = params.state;
-  const state: State = STATES.find((s) => s.value === requested)?.value ?? "all";
+  // The address's filter, or on a bare visit the one chosen last time (lib/filters.ts).
+  const { values } = resolveFilters("register", params, await rememberedFilters());
+  const state: State = STATES.find((s) => s.value === values.state)?.value ?? "all";
   const [overview, outings, late] = await Promise.all([
     adminApi.overview(token),
     adminApi.outings(token, state),
@@ -99,16 +101,17 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           </h2>
           <nav aria-label="Filter" className="flex gap-1 rounded-control bg-accent-soft p-1">
             {STATES.map((s) => (
-              <Link
+              // A plain link (no prefetch): following it remembers the choice.
+              <a
                 key={s.value}
-                href={s.value === "all" ? "/admin" : `/admin?state=${s.value}`}
+                href={filterHref("register", { state: s.value })}
                 aria-current={state === s.value ? "page" : undefined}
                 className={`flex min-h-10 items-center rounded-[10px] px-3 text-sm font-bold ${
                   state === s.value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
               >
                 {s.label}
-              </Link>
+              </a>
             ))}
           </nav>
         </div>

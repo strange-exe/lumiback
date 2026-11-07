@@ -383,7 +383,14 @@ test.describe("as an admin", () => {
     // Nothing changed yet: nothing to save.
     await expect(riya.getByRole("button", { name: "Save role" })).toHaveCount(0);
 
-    await riya.getByText("Warden", { exact: true }).click();
+    // A click before the page has hydrated is undone by React (the radios are controlled), and
+    // a cold dev server hydrates late: click again until the choice holds.
+    await expect(async () => {
+      await riya.getByText("Warden", { exact: true }).click();
+      await expect(riya.getByRole("radio", { name: "Warden", exact: true })).toBeChecked({
+        timeout: 1_000,
+      });
+    }).toPass();
     await riya.getByRole("checkbox", { name: "Hostel 3" }).check();
     await riya.getByRole("button", { name: "Save role" }).click();
     await expect(riya).toContainText("Now a warden.");
