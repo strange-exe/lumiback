@@ -10,6 +10,8 @@ export const ADMIN = { email: "e2e-admin@geu.ac.in", password: E2E_PASSWORD };
 /** Warden of the seeded "Hostel 3". */
 export const WARDEN = { email: "e2e-warden@geu.ac.in", password: E2E_PASSWORD };
 export const HEAD_WARDEN = { email: "e2e-head@geu.ac.in", password: E2E_PASSWORD };
+/** Seeded with the developer role (only a server script grants it): can view as others. */
+export const DEVELOPER = { email: "e2e-dev@geu.ac.in", password: E2E_PASSWORD };
 /** The seeded "North Gate" kiosk's device token (see e2e_server.py). */
 export const KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000";
 export const API = "http://127.0.0.1:8100";

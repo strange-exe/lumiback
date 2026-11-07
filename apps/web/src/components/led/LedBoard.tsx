@@ -47,12 +47,15 @@ export function BoardFact({ term, value }: { term: string; value: ReactNode }): 
 export function LedStage({
   children,
   className = "",
+  tour,
 }: {
   children: ReactNode;
   className?: string;
+  /** The guided tour's name for this board (data-tour), on the student's Today. */
+  tour?: string;
 }): ReactNode {
   return (
-    <div className={`led-stage ${className}`}>
+    <div className={`led-stage ${className}`} data-tour={tour}>
       <div className="led-stage-fx" aria-hidden="true" />
       {children}
     </div>

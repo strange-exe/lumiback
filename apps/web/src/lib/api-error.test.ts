@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ApiError, reachBackend, UNREACHABLE } from "./api-error.ts";
+import {
+  ApiError,
+  reachBackend,
+  readableDetail,
+  UNREACHABLE,
+  VIEW_AS_READ_ONLY,
+} from "./api-error.ts";
+import { READ_ONLY } from "./view-as.ts";
 
 test("a network failure becomes a 503 ApiError that forms can show", async () => {
   const failing = () => Promise.reject(new TypeError("fetch failed"));
@@ -34,4 +41,24 @@ test("an ApiError raised before the request passes through unchanged", async () 
 test("an answer, even an error status, is returned as it came", async () => {
   const response = new Response(JSON.stringify({ detail: "Nope" }), { status: 409 });
   assert.equal(await reachBackend(() => Promise.resolve(response)), response);
+});
+
+test("a change refused while viewing as a role says what happened and how to get out", () => {
+  assert.equal(READ_ONLY, "Read-only while viewing as another role"); // the API's exact words
+  const copy = readableDetail(403, READ_ONLY);
+  assert.equal(copy, VIEW_AS_READ_ONLY);
+  assert.match(copy, /viewing as another role/);
+  assert.match(copy, /read-only/);
+  assert.match(copy, /Stop/);
+  assert.doesNotMatch(copy, /!/);
+  assert.deepEqual(
+    [...copy].filter((c) => c.codePointAt(0)! > 0x7e),
+    [],
+  );
+});
+
+test("other refusals keep the API's own words", () => {
+  assert.equal(readableDetail(403, "Not allowed"), "Not allowed");
+  assert.equal(readableDetail(400, READ_ONLY), READ_ONLY); // only the 403 is the view-as refusal
+  assert.equal(readableDetail(409, "That gate is in use"), "That gate is in use");
 });

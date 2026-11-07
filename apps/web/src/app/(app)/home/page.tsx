@@ -131,7 +131,7 @@ export default async function HomePage({ searchParams }: PageProps): Promise<Rea
           Heading out?
         </h1>
       </div>
-      <LedStage>
+      <LedStage tour="status">
         <LedBoard>
           <p className="text-sm text-board-muted">Your status</p>
           <LedFigure

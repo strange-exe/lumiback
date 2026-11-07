@@ -1,11 +1,12 @@
 import "server-only";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 
-import { ApiError, reachBackend } from "@/lib/api-error";
+import { ApiError, reachBackend, readableDetail } from "@/lib/api-error";
 import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
 import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
 import { FAULT_HEADER, faultsEnabled, shouldFail } from "@/lib/test-faults";
+import { VIEW_AS_COOKIE, viewAsHeaders } from "@/lib/view-as";
 
 export { ApiError };
 
@@ -17,13 +18,18 @@ interface CallOptions {
   guestToken?: string | null;
   /** Real client IP, so the backend's per-IP limits apply per student, not per web server. */
   clientIp?: string | null;
+  /**
+   * Act as the signed-in developer even while they view as another role (no X-View-As-Role
+   * header): for asking who they really are once the API refused their view.
+   */
+  asSelf?: boolean;
 }
 
 /** Human-readable message from a FastAPI error body (string detail or validation list). */
 function detailOf(payload: unknown, status: number): string {
   if (payload && typeof payload === "object" && "detail" in payload) {
     const detail = (payload as { detail: unknown }).detail;
-    if (typeof detail === "string") return detail;
+    if (typeof detail === "string") return readableDetail(status, detail);
     if (Array.isArray(detail) && detail.length > 0) {
       const first = detail[0] as { msg?: unknown };
       if (typeof first.msg === "string") return first.msg.replace(/^Value error, /, "");
@@ -42,6 +48,15 @@ async function injectedFault(path: string): Promise<boolean> {
   }
 }
 
+/** The view-as role cookie of the request being served (none outside a request). */
+async function viewAsCookie(): Promise<string | undefined> {
+  try {
+    return (await cookies()).get(VIEW_AS_COOKIE)?.value;
+  } catch {
+    return undefined;
+  }
+}
+
 async function send(path: string, options: CallOptions): Promise<Response> {
   const faults = faultsEnabled({
     NODE_ENV: process.env.NODE_ENV,
@@ -54,6 +69,16 @@ async function send(path: string, options: CallOptions): Promise<Response> {
   if (options.body !== undefined) requestHeaders["Content-Type"] = "application/json";
   if (options.token) requestHeaders.Authorization = `Bearer ${options.token}`;
   if (options.guestToken) requestHeaders["X-Guest-Token"] = options.guestToken;
+  if (options.token) {
+    Object.assign(
+      requestHeaders,
+      viewAsHeaders({
+        token: options.token,
+        cookie: await viewAsCookie(),
+        asSelf: options.asSelf,
+      }),
+    );
+  }
   Object.assign(requestHeaders, visitorHeaders(options.clientIp ?? null, INTERNAL_API_SECRET));
 
   // No timeout of our own: on the free host a cold start can hold a request for up to a minute.

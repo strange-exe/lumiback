@@ -30,7 +30,7 @@ export function CheckOutForm({ profile }: { profile: Profile | null }): ReactNod
   );
   const contact = profile?.emergency_name?.split(" ")[0] || "your emergency contact";
   return (
-    <form action={action} className="flex flex-col gap-5">
+    <form action={action} data-tour="checkout" className="flex flex-col gap-5">
       <p className="text-sm text-muted">
         Your return time is set by your hostel&apos;s rules, and it can&apos;t be changed once
         you&apos;re out.

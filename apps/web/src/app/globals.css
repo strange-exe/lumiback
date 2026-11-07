@@ -25,6 +25,7 @@
   --danger-soft: #fbe5e2;
   --focus: var(--accent-text);
   --dot: #d2d2d7;
+  --scrim: rgb(13 14 16 / 0.62); /* the guided tour's dim layer */
 
   /* The LED board: dark in both modes, so its figures read the same day and night. */
   --board: #0d0e10;
@@ -70,6 +71,7 @@
     --danger: #ff8a80;
     --danger-soft: #2e1614;
     --dot: #1d1e22;
+    --scrim: rgb(0 0 0 / 0.72);
     --board: #121316;
     --clay-shadow: #050506;
     --tint: 0, 0, 0;
@@ -401,6 +403,128 @@ h1[tabindex="-1"]:focus {
   animation-name: kiosk-countdown;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
+}
+
+/* ---------- guided tour (features/tour/Tour.tsx) ---------- */
+
+/* The dialog covers the viewport; what it shows is drawn by its children. */
+.tour-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--ink);
+}
+
+.tour-dialog::backdrop {
+  background: transparent;
+}
+
+/* The lit hole: its giant shadow is the dim layer, its rounded inside stays clear. It moves
+   to the next control with a spring that overshoots slightly. */
+.tour-hole {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--led);
+  box-shadow:
+    0 0 0 200vmax var(--scrim),
+    0 0 18px rgb(255 106 43 / 0.55);
+  transition-property: left, top, width, height, border-radius;
+  transition-duration: 460ms;
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* No control to point at: the whole page dims. */
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: var(--scrim);
+}
+
+.tour-card {
+  position: fixed;
+  transition: top 460ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: tour-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Each step's words ease in as it arrives. */
+.tour-step-text {
+  animation: tour-text-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Closing: the whole tour eases out (ease-in), then the dialog closes. */
+.tour-dialog[data-state="closing"] {
+  animation: tour-out 160ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tour-text-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tour-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- View as menu ---------- */
+
+/* Opening eases out from just under the button; closing eases in (a quick fade). */
+.view-as-menu {
+  transform-origin: top right;
+  animation: view-as-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.view-as-menu[data-state="closing"] {
+  animation: view-as-out 120ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes view-as-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes view-as-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

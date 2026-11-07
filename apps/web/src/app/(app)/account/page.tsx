@@ -9,13 +9,14 @@ import { OutingDetails } from "@/features/account/OutingDetails";
 import { SignedInDevices, SignedInDevicesLoading } from "@/features/account/SignedInDevices";
 import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
+import { TourReplayButton } from "@/features/tour/TourReplayButton";
 import { requireUser } from "@/lib/session";
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
 
 export const metadata: Metadata = { title: "Account" };
 
 export default async function AccountPage(): Promise<ReactNode> {
-  const { user, token } = await requireUser();
+  const { user, token, viewingAs } = await requireUser();
   const [profile, hostels] = await Promise.all([
     outingsApi.profile(token),
     outingsApi.hostels(token),
@@ -53,6 +54,15 @@ export default async function AccountPage(): Promise<ReactNode> {
         <SignedInDevices token={token} />
       </Suspense>
       <DownloadMyData />
+      {viewingAs ? null : (
+        <TourReplayButton
+          to={user.role === "student" ? "/home" : "/admin"}
+          className="flex min-h-14 items-center justify-between gap-3 rounded-sheet border border-line bg-surface px-5 text-left font-bold text-accent hover:bg-accent-soft"
+        >
+          Take the tour again
+          <CaretRight size={18} weight="bold" aria-hidden="true" className="text-muted" />
+        </TourReplayButton>
+      )}
       <div className="flex flex-col gap-2 text-muted">
         <p>
           Need help?{" "}

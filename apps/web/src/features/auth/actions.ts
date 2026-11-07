@@ -9,7 +9,7 @@ import { changePasswordProblem, passwordChangedNotice } from "@/features/account
 import { isLinkToken } from "@/features/auth/link-token";
 import { shareApi } from "@/features/share/api";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
-import { accessToken, clearTokens, refreshToken, storeTokens } from "@/lib/session";
+import { accessToken, clearTokens, refreshToken, storeTokens, viewingAs } from "@/lib/session";
 import type { FormState, PasswordLinkInfo, TokenPair } from "@/lib/types";
 
 function text(form: FormData, key: string): string {
@@ -110,7 +110,8 @@ export async function resendCode(_: FormState, form: FormData): Promise<FormStat
 
 export async function signOut(): Promise<void> {
   const access = await accessToken();
-  if (access) {
+  // While viewing as another role the API refuses every change, so this would only fail.
+  if (access && !(await viewingAs())) {
     // Signing out of the device you're sharing from ends the share: nobody is left to stop it.
     // Not a safe-return share: it belongs to the outing (the app may be sending it) and ends
     // when the student is back.

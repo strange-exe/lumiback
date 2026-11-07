@@ -10,7 +10,13 @@ import { MoveForm } from "@/features/admin/components/MoveForm";
 import { PasswordLinkForm } from "@/features/admin/components/PasswordLinkForm";
 import { RoleForm } from "@/features/admin/components/RoleForm";
 import { requireStaff } from "@/lib/session";
-import { ROLE_LABEL, type AdminUser, type Hostel, type OfficeStudent } from "@/lib/types";
+import {
+  isAdminRole,
+  ROLE_LABEL,
+  type AdminUser,
+  type Hostel,
+  type OfficeStudent,
+} from "@/lib/types";
 
 export const metadata: Metadata = { title: "People" };
 
@@ -84,7 +90,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   // ?q=a&q=b arrives as an array: treat anything but one string as no search.
   const q = (typeof params.q === "string" ? params.q : "").trim().slice(0, 100);
   const account = accountFilter(typeof params.account === "string" ? params.account : undefined);
-  const isAdmin = user.role === "admin";
+  const isAdmin = isAdminRole(user.role);
   const [rows, hostels] = await Promise.all([
     load(token, isAdmin, q, account),
     isAdmin ? adminApi.hostels(token) : Promise.resolve<Hostel[]>([]),
@@ -171,9 +177,12 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
           )}
           <ul className="divide-y divide-line border-y border-line">
             {rows.map(({ person, full }) => {
+              // A developer's account is changed only by a server script: no controls (the
+              // backend refuses them too), as for your own account.
               const isMe = person.id === user.id;
+              const locked = person.role === "developer";
               // A warden or head warden may change students only (the backend says the same).
-              const canControl = !isMe && (isAdmin || person.role === "student");
+              const canControl = !isMe && !locked && (isAdmin || person.role === "student");
               const controlled: AccountPerson = {
                 ...person,
                 account: person.account ?? "active",
@@ -190,10 +199,12 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
                     )}
                     {/* Your own password: Account or Forgot password (the API refuses it here).
                         An account that's off gets turned on first. */}
-                    {isAdmin && !isMe && person.account !== "off" && (
+                    {isAdmin && !isMe && !locked && person.account !== "off" && (
                       <PasswordLinkForm person={person} />
                     )}
-                    {isAdmin && full && <RoleForm person={person} hostels={hostels} isMe={isMe} />}
+                    {isAdmin && full && !locked && (
+                      <RoleForm person={person} hostels={hostels} isMe={isMe} />
+                    )}
                     {canControl && (
                       <AccountControls person={controlled} isAdmin={isAdmin} back={back} />
                     )}

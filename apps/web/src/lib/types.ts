@@ -9,18 +9,33 @@ export interface User {
   email_verified: boolean;
   created_at: string;
   role: Role;
+  /**
+   * GET /auth/me while a developer views as a role (read-only): that role, which `role` then
+   * equals too (the real role is "developer"). Null or missing otherwise.
+   */
+  viewing_as?: ViewRole | null;
 }
 
 /** A warden is the hostel office for the hostels an admin assigned; a head warden, for every
- * hostel, and also sets the outing rules; an admin, for everything. */
-export type Role = "student" | "warden" | "head_warden" | "admin";
+ * hostel, and also sets the outing rules; an admin, for everything. A developer is an admin
+ * who can also view the site as another role, read-only (granted only by a server script). */
+export type Role = "student" | "warden" | "head_warden" | "admin" | "developer";
 
 export const ROLE_LABEL: Record<Role, string> = {
   student: "Student",
   warden: "Warden",
   head_warden: "Head warden",
   admin: "Admin",
+  developer: "Developer",
 };
+
+/** Every admin power: admins and developers. */
+export function isAdminRole(role: Role): boolean {
+  return role === "admin" || role === "developer";
+}
+
+/** A role a developer can view the site as (read-only, with their own data). */
+export type ViewRole = Exclude<Role, "developer">;
 
 export interface TokenPair {
   access_token: string;

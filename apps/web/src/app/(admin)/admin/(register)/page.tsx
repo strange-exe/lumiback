@@ -72,7 +72,10 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           requests={overview.pending_requests ?? 0}
           corrections={overview.corrections ?? 0}
         />
-        <dl className="led-board grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-4 sm:p-6">
+        <dl
+          data-tour="register-board"
+          className="led-board grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-4 sm:p-6"
+        >
           {stats.map((stat) => (
             <div key={stat.label} className="flex min-w-0 flex-col-reverse gap-2">
               <dt className="text-sm text-board-muted">{stat.label}</dt>

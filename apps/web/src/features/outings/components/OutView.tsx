@@ -31,7 +31,7 @@ export function OutView({
         </h1>
       </div>
 
-      <LedStage>
+      <LedStage tour="status">
         <OutBoard
           dueAt={outing.expected_return_at}
           serverNow={serverNow}
