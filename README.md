@@ -47,6 +47,7 @@ A summary by area. The running API's OpenAPI docs (FastAPI's `/docs`) are the fu
 | Admin: people | `GET /admin/users` `/admin/students`, `POST /admin/people` `/admin/students/import` `/admin/students/{id}/hostel` `/admin/users/{id}/role` `/admin/users/{id}/active` `/admin/users/{id}/password-link`, `PATCH /admin/users/{id}`, `DELETE /admin/users/{id}/invite` |
 | Admin: rules | `/admin/rule-sets` (list, create, edit, delete, `POST .../{id}/default`), `/admin/hostels` (list, create, edit, delete, `GET /admin/my-hostels`, `PATCH .../{id}/contact`), `/admin/holidays` (`GET`, `PUT`/`DELETE .../{day}`) |
 | Admin: decisions | `GET /admin/requests` `/admin/corrections`, `POST /admin/requests/{id}/decision` `/admin/corrections/{id}/decision` `/admin/outings/{id}/correction` |
+| Developers | `GET /meta/status` (API version, deployed commit, database migration vs. head; developers only) |
 
 Access tokens last 15 minutes; refresh tokens rotate on every use. Guests send their token in the
 `X-Guest-Token` header. Outing times are returned in IST (`+05:30`); outing status (out, overdue,
