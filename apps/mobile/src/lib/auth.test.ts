@@ -8,8 +8,8 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 const mockCalls: string[] = [];
 const mockStopSending = jest.fn(async () => void mockCalls.push("stopSending"));
 
-// The share this phone is sending (read before the service stops), or null.
-const mockSendingShareId = jest.fn(async (): Promise<string | null> => null);
+// The shares this phone is sending (read before the service stops).
+const mockSendingShareIds = jest.fn(async (): Promise<string[]> => []);
 // What GET /sessions/{id} says started the share: "app" (Share screen) or "outing" (safe return).
 let mockShareSource = "app";
 async function mockRecord(path: string): Promise<unknown> {
@@ -22,7 +22,7 @@ let mockSignedOutListener: (() => void) | null = null;
 
 jest.mock("@/location/task", () => ({
   stopSending: () => mockStopSending(),
-  sendingShareId: () => mockSendingShareId(),
+  sendingShareIds: () => mockSendingShareIds(),
 }));
 jest.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {
@@ -85,8 +85,8 @@ beforeEach(() => {
   mockCalls.length = 0;
   mockStopSending.mockClear();
   mockStopSending.mockImplementation(async () => void mockCalls.push("stopSending"));
-  mockSendingShareId.mockReset();
-  mockSendingShareId.mockResolvedValue(null);
+  mockSendingShareIds.mockReset();
+  mockSendingShareIds.mockResolvedValue([]);
   mockApi.mockReset();
   mockApi.mockImplementation(mockRecord);
   mockShareSource = "app";
@@ -103,14 +103,57 @@ describe("the launch check", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps the session through a server error, as refresh does", async () => {
+  it("keeps the session through a server error, as refresh does, and says it couldn't connect", async () => {
     const { ApiError } = jest.requireMock("@/lib/api");
     mockStoredToken = "r1";
     mockApi.mockRejectedValue(new ApiError(503));
     const { auth, tree } = await mount();
     expect(mockCalls).not.toContain("clearTokens");
-    expect(auth.status).toBe("signedOut");
+    expect(mockCalls).not.toContain("stopSending");
+    expect(auth.status).toBe("offline");
     act(() => tree.unmount());
+  });
+
+  it("offline at launch keeps the student signed in, and a retry once back online opens the app", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    mockStoredToken = "r1";
+    mockApi.mockRejectedValueOnce(new ApiError(0));
+    let auth: Auth | undefined;
+    function Probe(): ReactNode {
+      auth = useAuth();
+      return null;
+    }
+    let tree: ReactTestRenderer | undefined;
+    await act(async () => {
+      tree = create(createElement(AuthProvider, null, createElement(Probe)));
+    });
+    expect(auth!.status).toBe("offline");
+    expect(mockCalls).not.toContain("clearTokens");
+    expect(mockCalls).not.toContain("stopSending"); // a running safe-return share keeps going
+    await act(async () => auth!.retry());
+    expect(auth!.status).toBe("signedIn");
+    act(() => tree!.unmount());
+  });
+
+  it("a retry that is still offline stays on the offline screen", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    mockStoredToken = "r1";
+    mockApi.mockRejectedValue(new ApiError(0));
+    let auth: Auth | undefined;
+    function Probe(): ReactNode {
+      auth = useAuth();
+      return null;
+    }
+    let tree: ReactTestRenderer | undefined;
+    await act(async () => {
+      tree = create(createElement(AuthProvider, null, createElement(Probe)));
+    });
+    await act(async () => auth!.retry());
+    expect(auth!.status).toBe("offline");
+    act(() => auth!.switchAccount());
+    expect(auth!.status).toBe("signedOut");
+    expect(mockCalls).not.toContain("clearTokens"); // signIn forgets the kept session itself
+    act(() => tree!.unmount());
   });
 
   it("signing in over a session kept through a server error forgets that student first", async () => {
@@ -119,6 +162,7 @@ describe("the launch check", () => {
     mockApi.mockRejectedValueOnce(new ApiError(503)); // the launch check's /auth/me
     const id = armSafeReturn(); // the kept student's, armed before the app was closed
     const { auth, tree } = await mount();
+    act(() => auth.switchAccount());
     mockCalls.length = 0;
     await act(async () => auth.signIn("next@geu.ac.in", "pw"));
     expect(safeReturnFor({ intent: id })).toBe(false);
@@ -151,7 +195,7 @@ describe("the launch check", () => {
 
 describe("signing out ends the share on the server", () => {
   it("stops the share this phone is sending, after the service and before logout", async () => {
-    mockSendingShareId.mockResolvedValue("s1");
+    mockSendingShareIds.mockResolvedValue(["s1"]);
     const { auth, tree } = await mountQuietly();
     await auth.signOut();
     expect(mockCalls).toEqual([
@@ -167,7 +211,7 @@ describe("signing out ends the share on the server", () => {
   });
 
   it("leaves a safe-return share running, so the contact's overdue email still comes", async () => {
-    mockSendingShareId.mockResolvedValue("s1");
+    mockSendingShareIds.mockResolvedValue(["s1"]);
     mockShareSource = "outing";
     const { auth, tree } = await mountQuietly();
     await auth.signOut();
@@ -178,7 +222,7 @@ describe("signing out ends the share on the server", () => {
   });
 
   it("leaves the share alone when it can't tell what started it", async () => {
-    mockSendingShareId.mockResolvedValue("s1");
+    mockSendingShareIds.mockResolvedValue(["s1"]);
     mockApi.mockImplementation(async (path: string) => {
       mockCalls.push(`api ${path}`);
       if (path === "/sessions/s1") throw new Error("offline");
@@ -198,7 +242,7 @@ describe("signing out ends the share on the server", () => {
   });
 
   it("still signs out when the server stop fails", async () => {
-    mockSendingShareId.mockResolvedValue("s1");
+    mockSendingShareIds.mockResolvedValue(["s1"]);
     mockApi.mockImplementation(async (path: string) => {
       if (path.endsWith("/stop")) {
         mockCalls.push(`api ${path}`);
@@ -214,7 +258,7 @@ describe("signing out ends the share on the server", () => {
   });
 
   it("still signs out when reading the stored share fails", async () => {
-    mockSendingShareId.mockRejectedValue(new Error("keystore locked"));
+    mockSendingShareIds.mockRejectedValue(new Error("keystore locked"));
     const { auth, tree } = await mountQuietly();
     await expect(auth.signOut()).resolves.toBeUndefined();
     expect(mockCalls).toContain("stopSending");
@@ -280,6 +324,28 @@ describe("signing out stops location sharing", () => {
     expect(mockCalls[0]).toBe("api /auth/delete-account");
     expect(mockStopSending).toHaveBeenCalledTimes(1);
     expect(mockCalls.indexOf("stopSending")).toBeLessThan(mockCalls.indexOf("clearTokens"));
+    act(() => tree.unmount());
+  });
+
+  it("a refused deletion (out right now) stops nothing and passes on the server's reason", async () => {
+    const { ApiError } = jest.requireMock("@/lib/api");
+    const { auth, tree } = await mountQuietly();
+    const refused = Object.assign(new ApiError(409), {
+      detail: "You're out right now. Tap back in first",
+    });
+    mockApi.mockImplementation(async (path: string) => {
+      mockCalls.push(`api ${path}`);
+      if (path === "/auth/delete-account") throw refused;
+    });
+    await expect(auth.deleteAccount("pw")).rejects.toBe(refused);
+    expect(mockCalls).toEqual(["api /auth/delete-account"]);
+    act(() => tree.unmount());
+  });
+
+  it("deleteAccount clears the return reminders once the account is gone", async () => {
+    const { auth, tree } = await mountQuietly();
+    await auth.deleteAccount("pw");
+    expect(mockCalls).toContain("syncReturnReminders");
     act(() => tree.unmount());
   });
 

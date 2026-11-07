@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { setPrefs } from "@/lib/prefs";
 import { allowNotifications } from "@/notify/notify";
+import { DotBackground } from "@/ui/backdrop";
 import { haptic } from "@/ui/haptics";
 import { Illustration, type IllustrationName } from "@/ui/illustration";
 import { Button, T } from "@/ui/kit";
@@ -63,6 +64,7 @@ export default function Onboarding(): ReactNode {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.page }}>
+      <DotBackground />
       <View style={{ flexDirection: "row", justifyContent: "flex-end", padding: layout.gutter }}>
         {!last ? (
           <Button label="Skip" variant="quiet" onPress={() => void finish(false)} />
@@ -112,7 +114,7 @@ export default function Onboarding(): ReactNode {
               )}
             </View>
             <View style={{ gap: space(2) }}>
-              <T style={[type.eyebrow, { color: c.accent }]}>{step.eyebrow}</T>
+              <T style={[type.eyebrow, { color: c.muted }]}>{step.eyebrow}</T>
               <T tone="title" accessibilityRole="header">
                 {step.title}
               </T>

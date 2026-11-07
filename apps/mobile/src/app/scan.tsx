@@ -27,7 +27,8 @@ import { useAuth } from "@/lib/auth";
 import { safeReturnNotice } from "@/lib/safe-return";
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { GateScanned, Outing } from "@/lib/types";
-import { stopOutingShare } from "@/location/task";
+import { openLocationSettings, settingsLabel } from "@/location/settings";
+import { locationOn, stopOutingShare } from "@/location/task";
 import { allowNotifications } from "@/notify/notify";
 import { sendForOuting } from "@/screens/safe-return";
 import { haptic } from "@/ui/haptics";
@@ -44,17 +45,35 @@ type Phase =
   | { kind: "done"; result: GateScanned; notice: string | null }
   /** An outing from an earlier day was never closed: coming back in, or going out now? */
   | { kind: "stale"; qr: string; fix: Fix; readAt: number; message: string }
-  | { kind: "refused"; message: string; retry: boolean; fallback: boolean; settings?: boolean };
+  | {
+      kind: "refused";
+      message: string;
+      retry: boolean;
+      fallback: boolean;
+      /** The settings that fix it: location permission, or the phone's location switch. */
+      settings?: SettingsFix;
+    };
+
+type SettingsFix = "denied" | "servicesOff";
 
 const LOCATION_TIMEOUT_MS = 20_000;
 
 class NoFix extends Error {
   constructor(
     message: string,
-    readonly settings = false,
+    readonly settings: SettingsFix | null = null,
   ) {
     super(message);
   }
+}
+
+/**
+ * Out of the scanner. Opened from a link while the app wasn't running, it is the only screen
+ * in the stack, so going back would do nothing: open Today instead.
+ */
+function leaveScanner(): void {
+  if (router.canGoBack()) router.back();
+  else router.replace("/today");
 }
 
 /** A fresh, precise fix: the server checks it against the gate. Never a cached position. */
@@ -63,11 +82,16 @@ async function freshFix(): Promise<Fix> {
   if (!permission.granted) {
     throw new NoFix(
       "Lumiback needs your location for a moment to check you're at the gate.",
-      !permission.canAskAgain,
+      permission.canAskAgain ? null : "denied",
     );
   }
-  if (!(await Location.hasServicesEnabledAsync())) {
-    throw new NoFix("Your phone's location is switched off. Turn it on, then scan again.");
+  // Location switched off: Android's own "turn on location" prompt first; if the student
+  // declines, the refusal offers the location settings.
+  if (!(await locationOn())) {
+    throw new NoFix(
+      "Your phone's location is switched off. Turn it on, then scan again.",
+      "servicesOff",
+    );
   }
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(
@@ -207,7 +231,7 @@ export default function Scan(): ReactNode {
           message: e instanceof NoFix ? e.message : "Couldn't get your location. Scan again.",
           retry: true,
           fallback: true, // a phone/GPS problem, not the rules
-          settings: e instanceof NoFix && e.settings,
+          settings: (e instanceof NoFix && e.settings) || undefined,
         });
       }
     },
@@ -262,10 +286,7 @@ export default function Scan(): ReactNode {
     });
   };
 
-  const leave = (): void => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/today");
-  };
+  const leave = leaveScanner;
 
   const scanAgain = (): void => {
     busy.current = false;
@@ -308,7 +329,7 @@ export default function Scan(): ReactNode {
               : "Scan the gate screen"}
           </Text>
           <Press
-            onPress={() => router.back()}
+            onPress={leaveScanner}
             accessibilityLabel="Close"
             style={{
               width: 44,
@@ -430,15 +451,15 @@ function Body({
           <Detail>{phase.message}</Detail>
           {phase.settings ? (
             <Button
-              label="Open settings"
+              label={settingsLabel(phase.settings)}
               variant="onHero"
-              onPress={() => void Linking.openSettings()}
+              onPress={() => void openLocationSettings(phase.settings ?? "denied")}
             />
           ) : null}
           {phase.retry ? (
             <Button label="Scan again" variant="onHero" onPress={onScanAgain} />
           ) : (
-            <Button label="Done" variant="onHero" onPress={() => router.back()} />
+            <Button label="Done" variant="onHero" onPress={leaveScanner} />
           )}
           {/* Tapping in has no rules to get round, so "I'm back" is always a fair way out. */}
           {phase.retry && (phase.fallback || out) ? <CantScan out={out} /> : null}
@@ -547,14 +568,7 @@ function Done({ result, notice }: { result: GateScanned; notice: string | null }
           {notice}
         </Text>
       ) : null}
-      <Button
-        label="Done"
-        variant="onHero"
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          else router.replace("/today");
-        }}
-      />
+      <Button label="Done" variant="onHero" onPress={leaveScanner} />
     </Panel>
   );
 }

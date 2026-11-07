@@ -178,7 +178,7 @@ function Lead({ icon, children }: { icon: "sparkles" | "download"; children: str
           justifyContent: "center",
         }}
       >
-        <Ionicons name={icon} size={20} color={c.accent} />
+        <Ionicons name={icon} size={20} color={c.accentText} />
       </View>
       <T tone="muted" style={{ flex: 1 }}>
         {children}

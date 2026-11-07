@@ -254,7 +254,11 @@ export interface OfficeOverview {
 
 export interface OfficeOuting {
   id: string;
+  /** Null (with `email`) for an outing kept after the student deleted their account; `name`
+   * then ends " (deleted account)". */
+  student_id: string | null;
   name: string;
+  email: string | null;
   roll_no: string | null;
   hostel?: string | null;
   destination: string | null;
@@ -310,7 +314,9 @@ export interface LastSeen {
 
 export interface Escalation {
   id: string;
+  /** Ends " (deleted account)" once the student deleted their account (email is then null). */
   name: string;
+  email: string | null;
   roll_no: string | null;
   hostel: string | null;
   warden_name: string | null;

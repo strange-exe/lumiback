@@ -8,18 +8,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import { clearSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { deviceLabel } from "@/lib/devices";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, ShareSession, TokenPair, User } from "@/lib/types";
-import { sendingShareId, stopSending } from "@/location/task";
+import { sendingShareIds, stopSending } from "@/location/task";
 import { syncPush, syncReturnReminders } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
 
-type Status = "loading" | "signedOut" | "signedIn";
+/** "offline": a session is stored but the launch check couldn't reach the server (no signal,
+ * a 5xx or 429). The session is kept, nothing is stopped, and the app retries. */
+type Status = "loading" | "signedOut" | "signedIn" | "offline";
+
+/** While offline at launch, how often to try again on its own (also on returning to the app). */
+const OFFLINE_RETRY_MS = 15_000;
 
 // Android's Platform.Version is the API level (34); Release is the "14" people know.
 const release: unknown = (Platform.constants as { Release?: unknown } | undefined)?.Release;
@@ -48,6 +53,10 @@ interface AuthValue {
   signOut(): Promise<void>;
   deleteAccount(password: string): Promise<void>;
   refreshUser(): Promise<void>;
+  /** Offline at launch: try the stored session again. Resolves either way. */
+  retry(): Promise<void>;
+  /** Offline at launch: leave the kept session for the sign-in form (signIn forgets it). */
+  switchAccount(): void;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -86,6 +95,37 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     void syncPush();
   }, []);
 
+  // The latest status for callbacks that outlive a render (a retry still in flight).
+  const statusRef = useRef<Status>("loading");
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  /** The launch check of a stored session, and its retries while offline. */
+  const checkStored = useCallback(async () => {
+    // Only while launching or offline: a sign-in or "use another account" since then wins.
+    const stillChecking = (): boolean =>
+      statusRef.current === "loading" || statusRef.current === "offline";
+    try {
+      const me = await api<User>("/auth/me");
+      if (!stillChecking()) return;
+      setUser(me);
+      setStatus("signedIn");
+      void syncPush();
+    } catch (error) {
+      if (!stillChecking()) return;
+      // A refusal ends the session. Offline, rate-limited or a server error keeps it, as
+      // refresh() does: the student stays signed in (a safe-return share keeps sending) and
+      // the app shows "Can't reach Lumiback" and tries again.
+      if (refusedSession(error)) {
+        await clearTokens();
+        setStatus("signedOut");
+      } else {
+        setStatus("offline");
+      }
+    }
+  }, []);
+
   useEffect(() => (status === "signedIn" ? watchPushToken() : undefined), [status]);
 
   useEffect(() => {
@@ -103,17 +143,33 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
         await forgetStudentOnPhone();
         return setStatus("signedOut");
       }
-      try {
-        await loadUser();
-      } catch (error) {
-        // Offline, rate-limited or a server error at launch: stay signed out on screen and
-        // keep the token for the next try, as refresh() does. A refusal ends the session.
-        if (refusedSession(error)) await clearTokens();
-        setStatus("signedOut");
-      }
+      await checkStored();
     })();
     return off;
-  }, [loadUser]);
+  }, [checkStored]);
+
+  const retry = useCallback(async () => {
+    if (statusRef.current === "offline") await checkStored();
+  }, [checkStored]);
+
+  const switchAccount = useCallback(() => {
+    if (statusRef.current !== "offline") return;
+    statusRef.current = "signedOut"; // a retry still in flight no longer applies
+    setStatus("signedOut");
+  }, []);
+
+  // Offline at launch: try again every so often and whenever the student comes back to the app.
+  useEffect(() => {
+    if (status !== "offline") return;
+    const timer = setInterval(() => void retry(), OFFLINE_RETRY_MS);
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void retry();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [status, retry]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
@@ -186,17 +242,18 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     clearSafeReturn();
     // A share must not keep sending this phone's location (or keep its stored session) after
     // the student signs out. Best effort: a failure here never keeps them signed in.
-    const sending = await sendingShareId().catch(() => null); // read before stopSending clears it
+    // Read before stopSending clears them.
+    const sending = await sendingShareIds().catch((): string[] => []);
     await stopSending().catch(() => undefined);
     await syncReturnReminders(null).catch(() => undefined); // no "you're due back" for them
     // End a share started from this app on the server too (while still signed in), or viewers
     // keep seeing the last position. After the service stops, so the loop never reports it as
     // "ended elsewhere". A safe-return share stays: ending it would also cancel the contact's
     // overdue email while the student is still out (the website leaves it running as well).
-    if (sending) {
-      const share = await api<ShareSession>(`/sessions/${sending}`).catch(() => null);
+    for (const id of sending) {
+      const share = await api<ShareSession>(`/sessions/${id}`).catch(() => null);
       if (share?.source === "app") {
-        await api(`/sessions/${sending}/stop`, { method: "POST", body: {} }).catch(() => undefined);
+        await api(`/sessions/${id}/stop`, { method: "POST", body: {} }).catch(() => undefined);
       }
     }
     await unregisterPush(); // while still signed in: the server checks who owns the token
@@ -213,10 +270,13 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const deleteAccount = useCallback(async (password: string) => {
+    // The server refuses (409) while the student is out or has an open escalation: then nothing
+    // here may stop, so the safe-return share and the "due back" reminders keep going.
     await api("/auth/delete-account", { method: "POST", body: { password } });
     clearSafeReturn();
     // Deleted: stop sending location and drop the stored share (best effort, as on sign-out).
     await stopSending().catch(() => undefined);
+    await syncReturnReminders(null).catch(() => undefined);
     await forgetPushToken();
     await clearTokens();
   }, []);
@@ -232,8 +292,22 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       signOut,
       deleteAccount,
       refreshUser: loadUser,
+      retry,
+      switchAccount,
     }),
-    [status, user, signIn, register, verify, resend, signOut, deleteAccount, loadUser],
+    [
+      status,
+      user,
+      signIn,
+      register,
+      verify,
+      resend,
+      signOut,
+      deleteAccount,
+      loadUser,
+      retry,
+      switchAccount,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

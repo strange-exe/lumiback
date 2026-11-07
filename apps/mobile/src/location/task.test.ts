@@ -1,4 +1,10 @@
-import { sendingShareId, startSending, stopSending } from "@/location/task";
+import {
+  isSendingFor,
+  sendingShareIds,
+  sendProblem,
+  startSending,
+  stopSending,
+} from "@/location/task";
 
 // jest.mock calls are hoisted above the import; the factories read these only when called.
 const mockHasStarted = jest.fn();
@@ -28,6 +34,7 @@ jest.mock("@/lib/api", () => ({ ApiError: class ApiError extends Error {}, api: 
 jest.mock("@/notify/notify", () => ({
   notifyFollowRequest: jest.fn(),
   notifyShareEnded: jest.fn(),
+  notifySendProblem: jest.fn(),
 }));
 jest.mock("@/notify/push", () => ({ hasPushToken: jest.fn() }));
 
@@ -110,17 +117,113 @@ describe("starting to send with the phone's location switched off", () => {
   });
 });
 
-describe("sendingShareId", () => {
+describe("sendingShareIds", () => {
   it("names the share this phone is sending, and nothing once stopped", async () => {
+    // Stored by the app before two shares: one share object, read as a list of one.
     mockStore.set("lumiback.share", JSON.stringify({ sessionId: "s1", endsAt: "2026-11-05" }));
-    expect(await sendingShareId()).toBe("s1");
+    expect(await sendingShareIds()).toEqual(["s1"]);
     mockHasStarted.mockResolvedValue(false);
     await stopSending();
-    expect(await sendingShareId()).toBeNull();
+    expect(await sendingShareIds()).toEqual([]);
   });
 
-  it("is null with no stored share", async () => {
-    expect(await sendingShareId()).toBeNull();
+  it("is empty with no stored share", async () => {
+    expect(await sendingShareIds()).toEqual([]);
+  });
+});
+
+describe("an app share and a safe-return share at once", () => {
+  const later = () => new Date(Date.now() + 3_600_000).toISOString();
+  beforeEach(() => {
+    mockServicesOn.mockReset().mockResolvedValue(true);
+    mockAsk.mockReset().mockResolvedValue({ granted: true, canAskAgain: true });
+    mockStart.mockClear();
+  });
+
+  it("checking out while sharing keeps sending for both", async () => {
+    await startSending("app1", later());
+    await startSending("out1", later());
+    expect(await sendingShareIds()).toEqual(["app1", "out1"]);
+  });
+
+  it("every fix goes to both shares", async () => {
+    const { defineTask } = jest.requireMock("expo-task-manager");
+    const tick = defineTask.mock.calls[0][1];
+    const { api } = jest.requireMock("@/lib/api");
+    api.mockReset().mockResolvedValue(undefined);
+    await startSending("app1", later());
+    await startSending("out1", later());
+    const fix = { coords: { latitude: 30.27, longitude: 77.99, accuracy: 10 }, timestamp: 0 };
+    await tick({ data: { locations: [fix] }, error: null });
+    const puts = api.mock.calls
+      .filter(([, options]: [string, { method?: string }?]) => options?.method === "PUT")
+      .map(([path]: [string]) => path);
+    expect(puts).toEqual(["/sessions/app1/location", "/sessions/out1/location"]);
+  });
+
+  it("stopping the app share leaves the safe-return share sending", async () => {
+    mockHasStarted.mockResolvedValue(true);
+    await startSending("app1", later());
+    await startSending("out1", later());
+    await stopSending("app1");
+    expect(await sendingShareIds()).toEqual(["out1"]);
+    expect(mockStop).not.toHaveBeenCalled();
+    expect(await isSendingFor("out1")).toBe(true);
+    expect(await isSendingFor("app1")).toBe(false);
+  });
+
+  it("stopping the last share stops the location service", async () => {
+    mockHasStarted.mockResolvedValue(true);
+    await startSending("out1", later());
+    await stopSending("out1");
+    expect(mockStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("isSendingFor is false for a share when the service isn't running", async () => {
+    await startSending("out1", later());
+    mockHasStarted.mockResolvedValue(false);
+    expect(await isSendingFor("out1")).toBe(false);
+  });
+});
+
+describe("the server refusing a fix (phone clock ahead)", () => {
+  it("records the problem, tells the student once, and clears it when a fix goes through", async () => {
+    const { defineTask } = jest.requireMock("expo-task-manager");
+    const tick = defineTask.mock.calls[0][1];
+    const { api, ApiError } = jest.requireMock("@/lib/api");
+    const { notifySendProblem } = jest.requireMock("@/notify/notify");
+    notifySendProblem.mockClear();
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    mockStore.set(
+      "lumiback.share",
+      JSON.stringify({ shares: [{ sessionId: "s1", endsAt: later }] }),
+    );
+    const refused = Object.assign(new ApiError(), {
+      status: 422,
+      detail: "recorded_at is in the future",
+    });
+    api.mockReset().mockImplementation(async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "PUT") throw refused;
+      return { status: "active", viewers: [] };
+    });
+    const fix = { coords: { latitude: 30.27, longitude: 77.99, accuracy: 10 }, timestamp: 0 };
+    const nowSpy = jest.spyOn(Date, "now");
+    let clock = 1_000_000_000_000;
+    nowSpy.mockImplementation(() => clock);
+    try {
+      await tick({ data: { locations: [fix] }, error: null });
+      expect(await sendProblem("s1")).toBe("clock");
+      clock += 6_000;
+      await tick({ data: { locations: [fix] }, error: null });
+      expect(notifySendProblem).toHaveBeenCalledTimes(1);
+      expect(notifySendProblem).toHaveBeenCalledWith("clock");
+      api.mockImplementation(async () => ({ status: "active", viewers: [] }));
+      clock += 6_000;
+      await tick({ data: { locations: [fix] }, error: null });
+      expect(await sendProblem("s1")).toBeNull();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 

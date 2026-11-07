@@ -10,10 +10,11 @@ import type { Outing, OutingPage, OutingSummary } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { CorrectionSheet } from "@/screens/correction-sheet";
+import { DotBackground } from "@/ui/backdrop";
 import { Illustration } from "@/ui/illustration";
-import { Button, FormError, Heading, T } from "@/ui/kit";
+import { Button, FormError, Heading, LoadFailed, T } from "@/ui/kit";
 import { OutingRow } from "@/ui/OutingRow";
-import { layout, radius, space, useColors, useDockClearance } from "@/ui/theme";
+import { layout, space, useColors, useDockClearance } from "@/ui/theme";
 
 interface FirstPage {
   summary: OutingSummary;
@@ -81,10 +82,12 @@ export default function History(): ReactNode {
   };
 
   const summary = data?.summary;
-  const onTime = summary?.on_time_rate == null ? "–" : `${Math.round(summary.on_time_rate * 100)}%`;
+  const onTime =
+    summary?.on_time_rate == null ? null : `${Math.round(summary.on_time_rate * 100)}%`;
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: c.page }}>
+      <DotBackground />
       <SectionList
         sections={sections}
         keyExtractor={(o) => o.id}
@@ -104,37 +107,17 @@ export default function History(): ReactNode {
         ListHeaderComponent={
           <View style={{ gap: space(5), paddingBottom: space(2) }}>
             <Heading eyebrow="History" title="Your outings" />
+            {/* The totals as one line (a departures board has no stat tiles). */}
             {summary && summary.total > 0 ? (
-              <View style={{ flexDirection: "row", gap: space(3) }}>
-                {[
-                  { label: "Outings", value: String(summary.total), tone: c.ink },
-                  { label: "On time", value: onTime, tone: c.good },
-                  { label: "Late", value: String(summary.returned_late), tone: c.danger },
-                ].map((stat) => (
-                  <View
-                    key={stat.label}
-                    accessible
-                    accessibilityLabel={`${stat.label}: ${stat.value}`}
-                    style={{
-                      flex: 1,
-                      backgroundColor: c.surface,
-                      borderWidth: 1,
-                      borderColor: c.line,
-                      borderRadius: radius.sheet,
-                      borderCurve: "continuous",
-                      padding: space(4),
-                      gap: space(1),
-                    }}
-                  >
-                    <T tone="title" style={{ color: stat.tone, fontVariant: ["tabular-nums"] }}>
-                      {stat.value}
-                    </T>
-                    <T tone="caption">{stat.label}</T>
-                  </View>
-                ))}
-              </View>
+              <T tone="muted" style={{ fontVariant: ["tabular-nums"], marginTop: -space(3) }}>
+                {summary.total} {summary.total === 1 ? "outing" : "outings"},{" "}
+                <T tone="muted" style={{ color: summary.returned_late > 0 ? c.danger : c.muted }}>
+                  {summary.returned_late} late
+                </T>
+                {onTime ? `, ${onTime} back on time` : ""}
+              </T>
             ) : null}
-            <FormError message={error} />
+            {data ? <FormError message={error} /> : null}
           </View>
         }
         renderSectionHeader={({ section }) => (
@@ -151,7 +134,16 @@ export default function History(): ReactNode {
           />
         )}
         ListEmptyComponent={
-          loading ? null : (
+          loading ? null : !data ? (
+            // A failed first load is not "no outings": say so and offer a retry.
+            <LoadFailed
+              title="Couldn't load your outings"
+              message={error}
+              after="Your trips appear here once it loads."
+              busy={refreshing}
+              onRetry={reload}
+            />
+          ) : (
             <View style={{ alignItems: "center", gap: space(3), paddingTop: space(6) }}>
               <Illustration name="lantern-unlit" size={180} />
               <T tone="headline">No outings yet</T>

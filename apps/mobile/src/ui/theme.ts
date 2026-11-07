@@ -2,99 +2,130 @@ import { useColorScheme, type TextStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
- * White, black and deep cobalt (chosen 2026-10-07; see .claude/DESIGN-mobile-v2.md).
- * Cool monochrome neutrals with exactly one accent. Red and green are semantic only
- * (overdue / done), never decoration.
+ * "LED night" (owner's pick, 2026-11-07; frozen spec in .claude/design.md). Graphite neutrals,
+ * one signal orange, and a dark LED board as every status screen's focal surface. The orange
+ * accent is a fill (with ink text on it); as text or links it is `accentText`, which passes AA.
+ * Red and green are semantic only (late / back), never decoration.
  */
 const light = {
-  page: "#fafafb",
+  page: "#f1f1f2",
   surface: "#ffffff",
   raised: "#ffffff",
-  ink: "#0b0c10",
-  muted: "#5b606b",
-  line: "#e7e8ec",
-  /** The one accent: primary action, active nav, live state, progress. */
-  accent: "#1f3fd1",
-  onAccent: "#ffffff",
-  accentSoft: "#e9edfc",
-  // Same as the web: AA (4.5:1) as text on their soft backgrounds, not just on white.
-  good: "#187349",
-  goodSoft: "#e3f3eb",
-  danger: "#b8322a",
-  dangerSoft: "#fbe6e4",
-  /** The status card: near-black in light mode, a lifted panel in dark mode. */
-  hero: "#0b0c10",
-  onHero: "#f5f6f8",
-  heroMuted: "#9aa0ad",
-  heroLine: "#262932",
-  heroAccent: "#6d86ff",
-  heroDanger: "#ff8a7a",
-  shadow: "0 1px 2px rgba(11, 12, 16, 0.05), 0 8px 24px rgba(11, 12, 16, 0.08)",
-  dock: "#0b0c10",
-  onDock: "#f5f6f8",
-  dockMuted: "#8a909c",
+  ink: "#111113",
+  muted: "#56565d",
+  line: "#dcdce0",
+  /** Input borders: 3:1 against the field, unlike the decorative `line`. */
+  field: "#7d7d86",
+  /** The one accent, as a fill: primary action, active state, progress. Never body text. */
+  accent: "#e8501a",
+  onAccent: "#111113",
+  /** The accent as text, icons beside text, and links (AA on page and surface). */
+  accentText: "#b33a0c",
+  accentSoft: "#fde6db",
+  // AA (4.5:1) as text on their soft backgrounds, not just on white.
+  good: "#17703f",
+  goodSoft: "#e0f1e6",
+  warn: "#8a4b00",
+  warnSoft: "#fdecd0",
+  danger: "#b42318",
+  dangerSoft: "#fbe5e2",
+  /** The dark LED panel (the status board). Same in both modes, a touch lifted in dark. */
+  board: "#0d0e10",
+  onBoard: "#f2f2f3",
+  boardMuted: "#9a9aa3",
+  boardLine: "#24252a",
+  /** Lit LED cells by state: out, back (in), late. */
+  led: "#ff6a2b",
+  ledGood: "#5ed38c",
+  ledDanger: "#ff5a4e",
+  /** Unlit LED cells: the led colour at 12% alpha. */
+  ledGhost: "#ff6a2b1f",
+  /** The background dot grid. */
+  dot: "#d2d2d7",
+  // Older names for the board, kept so every screen reads the board tokens through them.
+  hero: "#0d0e10",
+  onHero: "#f2f2f3",
+  heroMuted: "#9a9aa3",
+  heroLine: "#24252a",
+  heroAccent: "#ff6a2b",
+  heroDanger: "#ff5a4e",
+  shadow: "0 1px 2px rgba(17, 17, 19, 0.05), 0 8px 24px rgba(17, 17, 19, 0.08)",
+  dock: "#111113",
+  onDock: "#f2f2f3",
+  dockMuted: "#9a9aa3",
+  dockActive: "#2b2c31",
+  scrim: "rgba(8, 9, 10, 0.72)",
 };
 
 const dark: typeof light = {
-  page: "#08090c",
-  surface: "#121318",
-  raised: "#181a20",
-  ink: "#f2f3f5",
-  muted: "#9ca1ac",
-  line: "#23262e",
-  accent: "#5b78ff",
-  // White on this lighter cobalt is only 3.8:1; near-black is 5.3:1 (AA), as on the web.
-  onAccent: "#08090c",
-  accentSoft: "#161d3d",
-  good: "#5fd39b",
-  goodSoft: "#12261d",
-  danger: "#ff7a6b",
+  page: "#08090a",
+  surface: "#141518",
+  raised: "#1b1c20",
+  ink: "#f2f2f3",
+  muted: "#9a9aa3",
+  line: "#26272c",
+  field: "#6b6b74",
+  accent: "#ff6a2b",
+  onAccent: "#111113",
+  accentText: "#ff7f45",
+  accentSoft: "#2a140b",
+  good: "#5ed38c",
+  goodSoft: "#11281b",
+  warn: "#ffc061",
+  warnSoft: "#2d2110",
+  danger: "#ff8a80",
   dangerSoft: "#2e1614",
-  hero: "#14161c",
-  onHero: "#f2f3f5",
-  heroMuted: "#9ca1ac",
-  heroLine: "#2a2e38",
-  heroAccent: "#6d86ff",
-  heroDanger: "#ff8a7a",
+  board: "#121316",
+  onBoard: "#f2f2f3",
+  boardMuted: "#9a9aa3",
+  boardLine: "#24252a",
+  led: "#ff6a2b",
+  ledGood: "#5ed38c",
+  ledDanger: "#ff5a4e",
+  ledGhost: "#ff6a2b1f",
+  dot: "#1d1e22",
+  hero: "#121316",
+  onHero: "#f2f2f3",
+  heroMuted: "#9a9aa3",
+  heroLine: "#24252a",
+  heroAccent: "#ff6a2b",
+  heroDanger: "#ff5a4e",
   shadow: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35)",
-  dock: "#181a20",
-  onDock: "#f2f3f5",
-  dockMuted: "#8a909c",
+  dock: "#1b1c20",
+  onDock: "#f2f2f3",
+  dockMuted: "#9a9aa3",
+  dockActive: "#303137",
+  scrim: "rgba(0, 0, 0, 0.78)",
 };
 
 export type Colors = typeof light;
 
+/** Instrument Sans for every word in the app. LED figures are dots (ui/led.tsx), not a font. */
 export const fonts = {
-  regular: "Geist_400Regular",
-  medium: "Geist_500Medium",
-  semibold: "Geist_600SemiBold",
-  bold: "Geist_700Bold",
+  regular: "InstrumentSans_400Regular",
+  medium: "InstrumentSans_500Medium",
+  semibold: "InstrumentSans_600SemiBold",
 } as const;
 
-/** One type scale for the whole app (see .claude/design.md). */
+/** One type scale for the whole app (see .claude/design.md). No weight above 600. */
 export const type = {
-  display: { fontFamily: fonts.semibold, fontSize: 40, lineHeight: 44, letterSpacing: -1.2 },
-  title: { fontFamily: fonts.semibold, fontSize: 28, lineHeight: 34, letterSpacing: -0.6 },
-  headline: { fontFamily: fonts.semibold, fontSize: 20, lineHeight: 26, letterSpacing: -0.3 },
+  display: { fontFamily: fonts.semibold, fontSize: 40, lineHeight: 44, letterSpacing: -0.8 },
+  title: { fontFamily: fonts.semibold, fontSize: 28, lineHeight: 34, letterSpacing: -0.4 },
+  headline: { fontFamily: fonts.semibold, fontSize: 20, lineHeight: 26, letterSpacing: -0.2 },
   body: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 24 },
   label: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 20 },
   caption: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18 },
-  eyebrow: {
-    fontFamily: fonts.semibold,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
+  /** A small sentence-case line above a title (callers colour it muted). */
+  eyebrow: { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 16 },
 } satisfies Record<string, TextStyle>;
 
-export const radius = { control: 14, sheet: 24, pill: 999 } as const;
+export const radius = { control: 14, card: 20, board: 22, sheet: 24, pill: 999 } as const;
 export const space = (n: number): number => n * 4;
 /** Screen edge padding and the gap between sections. */
 export const layout = { gutter: 20, section: 28 } as const;
 
 /** The floating dock: its height, and how far it floats above the system navigation. */
-export const dock = { height: 68, lift: 10 } as const;
+export const dock = { height: 64, lift: 10 } as const;
 
 /**
  * Room a scrolling page keeps clear at the bottom so its end can scroll above the dock. Depends

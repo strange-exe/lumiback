@@ -12,6 +12,7 @@ import {
   RETURN_DUE,
   RETURN_SOON,
   returnReminders,
+  sendProblemNotice,
   type NotificationRoute,
 } from "@/notify/plan";
 import { registerPush } from "@/notify/push";
@@ -117,6 +118,17 @@ export async function notifyShareEnded(reason: string | null): Promise<void> {
   return show(CHANNELS.status, {
     title: "Live location sharing ended",
     body: endedMessage(reason),
+    data: { url: "/live" } satisfies NotificationData,
+  });
+}
+
+/**
+ * The server is refusing this phone's location for a share, so the people following see no
+ * position. Sent once per problem, whatever the switches say: the share isn't working.
+ */
+export async function notifySendProblem(problem: "clock" | "refused"): Promise<void> {
+  return show(CHANNELS.status, {
+    ...sendProblemNotice(problem),
     data: { url: "/live" } satisfies NotificationData,
   });
 }

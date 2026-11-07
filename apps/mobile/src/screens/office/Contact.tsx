@@ -45,7 +45,7 @@ export function Contact({
             backgroundColor: c.accentSoft,
           }}
         >
-          <Ionicons name="call" size={20} color={c.accent} />
+          <Ionicons name="call" size={20} color={c.accentText} />
         </Press>
       ) : null}
     </View>

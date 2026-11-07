@@ -121,7 +121,7 @@ function OutRow({
         accessibilityLabel={`Record ${o.name}'s return`}
         style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
       >
-        <T tone="label" style={{ color: c.accent }}>
+        <T tone="label" style={{ color: c.accentText }}>
           Record return
         </T>
       </Press>

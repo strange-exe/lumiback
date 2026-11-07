@@ -185,7 +185,7 @@ export default function Devices(): ReactNode {
               busy={busy === "others"}
               busyLabel="Signing out…"
               onPress={() => (busy ? undefined : signOutOthers(others))}
-              icon={<Ionicons name="log-out-outline" size={20} color={c.accent} />}
+              icon={<Ionicons name="log-out-outline" size={20} color={c.accentText} />}
             />
           ) : null}
         </>
@@ -196,7 +196,7 @@ export default function Devices(): ReactNode {
         footer="Changing your password signs out every other device. This phone stays signed in."
       >
         <Row
-          leading={<Ionicons name="key-outline" size={22} color={c.accent} />}
+          leading={<Ionicons name="key-outline" size={22} color={c.accentText} />}
           title="Change password"
           detail="Enter your current password, then a new one"
           trailing={<Ionicons name="chevron-forward" size={18} color={c.muted} />}
@@ -231,7 +231,7 @@ function DeviceRow({
         gap: space(3),
       }}
     >
-      <Ionicons name={ICON[deviceKind(device)]} size={22} color={c.accent} />
+      <Ionicons name={ICON[deviceKind(device)]} size={22} color={c.accentText} />
       <View style={{ flex: 1, gap: space(1) }}>
         <T tone="body" style={{ fontFamily: fonts.medium }}>
           {name}

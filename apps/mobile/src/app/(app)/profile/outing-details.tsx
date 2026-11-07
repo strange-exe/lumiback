@@ -121,7 +121,7 @@ export default function OutingDetails(): ReactNode {
                 title={h.name}
                 trailing={
                   chosen?.id === h.id ? (
-                    <Ionicons name="checkmark-circle" size={22} color={c.accent} />
+                    <Ionicons name="checkmark-circle" size={22} color={c.accentText} />
                   ) : null
                 }
                 onPress={() => void pickHostel(h.id)}

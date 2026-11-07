@@ -48,7 +48,7 @@ export default function Profile(): ReactNode {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-  const icon = (name: React.ComponentProps<typeof Ionicons>["name"], color = c.accent) => (
+  const icon = (name: React.ComponentProps<typeof Ionicons>["name"], color = c.accentText) => (
     <Ionicons name={name} size={22} color={color} />
   );
   const chevron = <Ionicons name="chevron-forward" size={18} color={c.muted} />;
@@ -233,7 +233,7 @@ export default function Profile(): ReactNode {
 
 function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): ReactNode {
   const c = useColors();
-  const color = tone === "accent" ? c.accent : c.good;
+  const color = tone === "accent" ? c.accentText : c.good;
   return (
     <View
       style={{
@@ -251,7 +251,7 @@ function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): React
         size={16}
         color={color}
       />
-      <T tone="small" style={{ color, fontWeight: "700" }}>
+      <T tone="small" style={{ color, fontFamily: fonts.semibold }}>
         {text}
       </T>
     </View>

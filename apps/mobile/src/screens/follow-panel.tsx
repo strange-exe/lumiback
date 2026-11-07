@@ -10,7 +10,7 @@ import type { Redeemed, Watching } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Card, Field, FormError, Screen, T } from "@/ui/kit";
+import { Button, Card, Field, FormError, LoadFailed, Screen, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
 
 /** The Follow half of the Live tab: join with a code, and the shares you can see. */
@@ -42,7 +42,16 @@ export function FollowPanel({ header }: { header: ReactNode }): ReactNode {
       <Join />
       <View style={{ gap: space(3) }}>
         <T tone="label">Sharing with you</T>
-        {loading ? null : watching && watching.length > 0 ? (
+        {loading ? null : !watching ? (
+          // A failed first load is not "nobody is sharing": say so and offer a retry.
+          <LoadFailed
+            title="Couldn't load who's sharing with you"
+            message={error}
+            after="Live shares you can see appear here."
+            busy={refreshing}
+            onRetry={reload}
+          />
+        ) : watching.length > 0 ? (
           watching.map((w) => <SharerRow key={w.id} share={w} />)
         ) : (
           <View style={{ alignItems: "center", gap: space(2), paddingVertical: space(4) }}>
@@ -52,7 +61,7 @@ export function FollowPanel({ header }: { header: ReactNode }): ReactNode {
             </T>
           </View>
         )}
-        <FormError message={error} />
+        {watching ? <FormError message={error} /> : null}
       </View>
     </Screen>
   );
@@ -135,7 +144,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
           justifyContent: "center",
         }}
       >
-        <T tone="heading" style={{ color: c.accent }}>
+        <T tone="heading" style={{ color: c.accentText }}>
           {initial}
         </T>
       </View>

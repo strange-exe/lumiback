@@ -74,17 +74,32 @@ export function OutingRow({
           .join(", ")}
         style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
       >
+        {/* A departures-board strip: when on the left, what happened in the middle, status right. */}
+        <View style={{ width: 76, gap: space(0.5) }}>
+          <T
+            tone="label"
+            numberOfLines={1}
+            style={{ fontSize: 15, lineHeight: 22, fontVariant: ["tabular-nums"] }}
+          >
+            {formatTime(outing.left_at)}
+          </T>
+          <T tone="caption" numberOfLines={1} style={{ fontVariant: ["tabular-nums"] }}>
+            {back
+              ? formatTime(back)
+              : !cancelled && (outing.status === "out" || outing.status === "overdue")
+                ? "out now"
+                : ""}
+          </T>
+        </View>
         <View style={{ flex: 1, gap: space(1) }}>
           <T tone="label" numberOfLines={1} style={{ fontSize: 16, lineHeight: 22 }}>
             {outing.destination ?? "Outing"}
           </T>
-          <T tone="caption" style={{ fontVariant: ["tabular-nums"] }}>
-            {formatTime(outing.left_at)}
-            {back ? ` – ${formatTime(back)}` : ""}
-            {back && outing.duration_minutes != null
-              ? `  ·  ${formatMinutes(outing.duration_minutes)}`
-              : ""}
-          </T>
+          {back && outing.duration_minutes != null ? (
+            <T tone="caption" style={{ fontVariant: ["tabular-nums"] }}>
+              {formatMinutes(outing.duration_minutes)} out
+            </T>
+          ) : null}
           <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
             {verified ? <Ionicons name="shield-checkmark" size={13} color={c.good} /> : null}
             <T tone="caption" style={{ color: verified ? c.good : c.muted }}>
@@ -107,7 +122,7 @@ export function OutingRow({
           accessibilityLabel={`Something wrong with ${outing.destination ?? "this outing"}? Ask the hostel office to fix it`}
           style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
         >
-          <T tone="label" style={{ color: c.accent }}>
+          <T tone="label" style={{ color: c.accentText }}>
             Something wrong?
           </T>
         </Press>

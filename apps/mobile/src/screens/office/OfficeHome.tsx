@@ -6,6 +6,7 @@ import { View } from "react-native";
 import { canEditRules, everyHostel } from "@/lib/office";
 import type { OfficeOverview, Role } from "@/lib/types";
 import { FormError, LoadFailed, Row, Section, StatusChip, T } from "@/ui/kit";
+import { LedBoard, LedFigure } from "@/ui/led";
 import { space, useColors } from "@/ui/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -32,7 +33,7 @@ export function OfficeHome({
   const all = everyHostel(role);
   const rulesEditor = canEditRules(role);
 
-  const icon = (name: IconName, tone: string = c.accent): ReactNode => (
+  const icon = (name: IconName, tone: string = c.accentText): ReactNode => (
     <View
       style={{
         width: 36,
@@ -65,11 +66,33 @@ export function OfficeHome({
     const requests = data.pending_requests ?? 0;
     const corrections = data.corrections ?? 0;
     const late = data.overdue;
+    const out = data.out_now + late;
     today = (
       <>
+        {/* The office's headline numbers on the LED board; the rows below say the same. */}
+        <LedBoard
+          glow
+          label="Out now"
+          reading={{
+            text: String(out),
+            state: "out",
+            unit: "out",
+            label: `${out} ${out === 1 ? "student" : "students"} out`,
+          }}
+        >
+          <LedFigure
+            size={40}
+            reading={{
+              text: String(late),
+              state: late > 0 ? "late" : "in",
+              unit: "late",
+              label: `${late} late`,
+            }}
+          />
+        </LedBoard>
         <Section title="Today">
           <Row
-            leading={icon("alert-circle-outline", escalations > 0 ? c.danger : c.accent)}
+            leading={icon("alert-circle-outline", escalations > 0 ? c.danger : c.accentText)}
             title="Escalations"
             detail={
               escalations > 0

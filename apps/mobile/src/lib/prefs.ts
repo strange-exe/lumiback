@@ -49,8 +49,11 @@ export function parsePrefs(raw: string | null): Prefs {
   }
 }
 
-/** Reads once per process (app or background task) and applies the appearance. */
-export function loadPrefs(): Promise<Prefs> {
+/**
+ * Reads storage once per process (app or background task) and applies the appearance. Later
+ * calls return the prefs as they are now, so a switch changed with setPrefs takes effect at once.
+ */
+export async function loadPrefs(): Promise<Prefs> {
   loaded ??= SecureStore.getItemAsync(KEY)
     .then(parsePrefs)
     .catch(() => DEFAULT_PREFS)
@@ -60,7 +63,8 @@ export function loadPrefs(): Promise<Prefs> {
       listeners.forEach((l) => l());
       return p;
     });
-  return loaded;
+  await loaded;
+  return current;
 }
 
 export async function setPrefs(patch: Partial<Prefs>): Promise<void> {

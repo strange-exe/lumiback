@@ -1,10 +1,8 @@
-import {
-  Geist_400Regular,
-  Geist_500Medium,
-  Geist_600SemiBold,
-  Geist_700Bold,
-  useFonts,
-} from "@expo-google-fonts/geist";
+// One weight per import path, so only the three font files used end up in the update.
+import { InstrumentSans_400Regular } from "@expo-google-fonts/instrument-sans/400Regular";
+import { InstrumentSans_500Medium } from "@expo-google-fonts/instrument-sans/500Medium";
+import { InstrumentSans_600SemiBold } from "@expo-google-fonts/instrument-sans/600SemiBold";
+import { useFonts } from "expo-font";
 import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -16,6 +14,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { loadPrefs } from "@/lib/prefs";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
+import { OfflineStart } from "@/screens/offline-start";
 import { useColors } from "@/ui/theme";
 import { UpdatePrompt } from "@/updates/UpdatePrompt";
 
@@ -27,10 +26,9 @@ function Navigator(): ReactNode {
   const colors = useColors();
   const scheme = useColorScheme();
   const [fontsLoaded] = useFonts({
-    Geist_400Regular,
-    Geist_500Medium,
-    Geist_600SemiBold,
-    Geist_700Bold,
+    InstrumentSans_400Regular,
+    InstrumentSans_500Medium,
+    InstrumentSans_600SemiBold,
   });
   // Appearance and "seen onboarding" are read before the first frame: no flash of the wrong
   // theme or of the onboarding screen.
@@ -45,6 +43,14 @@ function Navigator(): ReactNode {
   }, [ready]);
 
   if (!ready) return null;
+  if (status === "offline") {
+    return (
+      <>
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+        <OfflineStart />
+      </>
+    );
+  }
   return (
     <>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />

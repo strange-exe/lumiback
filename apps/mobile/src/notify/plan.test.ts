@@ -81,6 +81,11 @@ describe("notificationRoute", () => {
     expect(notificationRoute({ url: "/office/escalations" })).toBe("/office/escalations");
   });
 
+  it("opens the Follow view for an 'approved you' push, not the Share view", () => {
+    expect(notificationRoute({ url: "/live?view=follow" })).toBe("/live?view=follow");
+    expect(notificationRoute({ url: "/live?view=other" })).toBe("/today");
+  });
+
   it("opens the corrections queue for staff and History for the student", () => {
     expect(notificationRoute({ url: "/office/corrections" })).toBe("/office/corrections");
     expect(notificationRoute({ url: "/history" })).toBe("/history");

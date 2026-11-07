@@ -17,10 +17,14 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DotBackground } from "@/ui/backdrop";
 import { useReducedMotion } from "@/ui/motion";
 import { fonts, layout, radius, space, type, useColors, useDockClearance } from "@/ui/theme";
 
-/** Scale-down on press: a physical "push" (native driver; off with reduced motion). */
+/**
+ * Scale-down on press: a physical "push" that springs back with a slight overshoot (native
+ * driver; off with reduced motion).
+ */
 export function Press({
   onPress,
   disabled,
@@ -52,14 +56,14 @@ export function Press({
     Animated.spring(scale, {
       toValue: value,
       useNativeDriver: true,
-      speed: 40,
-      bounciness: 0,
+      speed: 36,
+      bounciness: 7,
     }).start();
   };
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
-      onPressIn={() => to(0.97)}
+      onPressIn={() => to(0.96)}
       onPressOut={() => to(1)}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
@@ -71,15 +75,18 @@ export function Press({
   );
 }
 
-/** A scrolling page with the app's background and safe-area padding. */
+/** A scrolling page with the app's background (dot grid) and safe-area padding. */
 export function Screen({
   children,
   edges = ["top", "bottom"],
   refreshControl,
+  scan = false,
 }: {
   children: ReactNode;
   edges?: ("top" | "bottom")[];
   refreshControl?: React.ComponentProps<typeof ScrollView>["refreshControl"];
+  /** Status screens: the scan band passes over the dot grid. */
+  scan?: boolean;
 }): ReactNode {
   const c = useColors();
   const clearance = useDockClearance();
@@ -88,6 +95,7 @@ export function Screen({
   const bottom = edges.includes("bottom") ? clearance - insets.bottom : clearance;
   return (
     <SafeAreaView edges={edges} style={{ flex: 1, backgroundColor: c.page }}>
+      <DotBackground scan={scan} />
       {/* Apps draw edge to edge, so Android no longer shrinks the window for the keyboard:
           shrink the page ourselves, and the scroll view keeps the focused field in sight. */}
       <KeyboardAvoidingView
@@ -164,22 +172,24 @@ export function T({
   );
 }
 
-/** Every top-level screen opens the same way: a small coloured eyebrow, the title, a lede. */
+/** Every top-level screen opens the same way: a small sentence-case line, the title, a lede. */
 export function Heading({
   eyebrow,
   title,
   lede,
-  tone = "accent",
+  tone = "muted",
 }: {
   eyebrow?: string;
   title: string;
   lede?: string;
+  /** The small line's colour: muted, or a state (live, faked, a warning). */
   tone?: "accent" | "good" | "danger" | "muted";
 }): ReactNode {
   const c = useColors();
+  const color = tone === "accent" ? c.accentText : c[tone];
   return (
     <View style={{ gap: space(2) }}>
-      {eyebrow ? <Text style={[type.eyebrow, { color: c[tone] }]}>{eyebrow}</Text> : null}
+      {eyebrow ? <Text style={[type.eyebrow, { color }]}>{eyebrow}</Text> : null}
       <T tone="title" accessibilityRole="header">
         {title}
       </T>
@@ -243,9 +253,9 @@ export function Button({
   const c = useColors();
   const look: Record<Variant, { bg: string; fg: string; border?: string }> = {
     primary: { bg: c.accent, fg: c.onAccent },
-    secondary: { bg: c.surface, fg: c.accent, border: c.line },
+    secondary: { bg: c.surface, fg: c.accentText, border: c.line },
     danger: { bg: c.danger, fg: c.surface },
-    quiet: { bg: "transparent", fg: c.accent },
+    quiet: { bg: "transparent", fg: c.accentText },
     onHero: { bg: c.onHero, fg: c.hero },
     onHeroOutline: { bg: "transparent", fg: c.onHero, border: c.heroLine },
   };
@@ -314,7 +324,7 @@ export const Field = forwardRef<TextInput, FieldProps>(function Field(
           // Keep the text from shifting when the border thickens on focus.
           paddingHorizontal: focused ? space(4) - 1 : space(4),
           backgroundColor: c.raised,
-          borderColor: focused ? c.accent : c.line,
+          borderColor: focused ? c.accent : c.field,
         }}
       >
         <TextInput
@@ -423,7 +433,7 @@ export function LoadFailed({
         backgroundColor: c.surface,
         borderColor: c.line,
         borderWidth: 1,
-        borderRadius: radius.sheet,
+        borderRadius: radius.card,
         borderCurve: "continuous",
         padding: space(5),
       }}
@@ -455,7 +465,7 @@ export function Notice({
   return (
     <View
       style={{
-        backgroundColor: tone === "good" ? c.goodSoft : c.accentSoft,
+        backgroundColor: tone === "good" ? c.goodSoft : c.warnSoft,
         borderRadius: radius.control,
         borderCurve: "continuous",
         padding: space(4),
@@ -484,7 +494,7 @@ export function Card({
           backgroundColor: c.surface,
           borderColor: c.line,
           borderWidth: 1,
-          borderRadius: radius.sheet,
+          borderRadius: radius.card,
           borderCurve: "continuous",
           padding: space(5),
           gap: space(4),
@@ -635,7 +645,7 @@ export function StatusChip({
   const map = {
     good: [c.goodSoft, c.good],
     danger: [c.dangerSoft, c.danger],
-    accent: [c.accentSoft, c.accent],
+    accent: [c.accentSoft, c.accentText],
     muted: [c.line, c.muted],
   } as const;
   const [bg, fg] = map[tone];
@@ -676,7 +686,7 @@ export function Section({
       <View
         style={{
           backgroundColor: c.surface,
-          borderRadius: radius.sheet,
+          borderRadius: radius.card,
           borderCurve: "continuous",
           borderWidth: 1,
           borderColor: c.line,

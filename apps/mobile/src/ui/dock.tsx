@@ -5,6 +5,8 @@ import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/lib/auth";
+import type { TargetId } from "@/tour/steps";
+import { tourTarget } from "@/tour/store";
 import { isStaff } from "@/lib/office";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
@@ -21,13 +23,14 @@ const TABS: Record<string, { label: string; icon: IconName; active: IconName }> 
   history: { label: "History", icon: "time-outline", active: "time" },
   profile: { label: "Profile", icon: "person-outline", active: "person" },
 };
-const LEFT = ["today", "live"];
-const RIGHT = ["history", "profile"];
+const STUDENT_TABS = ["today", "live", "history", "profile"];
 const STAFF_TABS = ["today", "profile"];
+const ITEM = dock.height - 12;
 
 /**
- * Floating dock: four destinations and the raised Scan action in the middle (tap in/out at the
- * gate). Scan opens the full-screen scanner (src/app/scan.tsx) from any tab.
+ * Floating toolbar (Material 3 Expressive): the destinations in one dark bar, the active one
+ * showing its name, and Scan (tap in/out at the gate) as its own accent button beside the bar.
+ * Scan opens the full-screen scanner (src/app/scan.tsx) from any tab.
  */
 export function Dock({ state, navigation }: DockProps): ReactNode {
   const c = useColors();
@@ -44,6 +47,7 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
     return (
       <Pressable
         key={name}
+        ref={tourTarget(`tab-${name}` as TargetId)}
         onPress={() => {
           const event = navigation.emit({
             type: "tabPress",
@@ -58,22 +62,28 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
         accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
         accessibilityLabel={tab.label}
-        style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 3, minHeight: 56 }}
+        style={{
+          height: ITEM,
+          minWidth: ITEM,
+          paddingHorizontal: focused ? 16 : 0,
+          borderRadius: ITEM / 2,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          backgroundColor: focused ? c.dockActive : "transparent",
+        }}
       >
         <Ionicons
           name={focused ? tab.active : tab.icon}
           size={22}
           color={focused ? c.onDock : c.dockMuted}
         />
-        <Text
-          style={{
-            fontFamily: focused ? fonts.semibold : fonts.medium,
-            fontSize: 11,
-            color: focused ? c.onDock : c.dockMuted,
-          }}
-        >
-          {tab.label}
-        </Text>
+        {focused ? (
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: c.onDock }}>
+            {tab.label}
+          </Text>
+        ) : null}
       </Pressable>
     );
   };
@@ -81,33 +91,36 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
   return (
     <View
       pointerEvents="box-none"
-      style={{ position: "absolute", left: 16, right: 16, bottom: insets.bottom + dock.lift }}
+      style={{
+        position: "absolute",
+        left: 16,
+        right: 16,
+        bottom: insets.bottom + dock.lift,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+      }}
     >
       <View
         accessibilityRole="tablist"
         style={{
+          flex: 1,
           flexDirection: "row",
           alignItems: "center",
+          justifyContent: "space-between",
           height: dock.height,
           paddingHorizontal: 6,
-          borderRadius: 34,
+          borderRadius: dock.height / 2,
           borderCurve: "continuous",
           backgroundColor: c.dock,
           boxShadow: "0 10px 30px rgba(11, 12, 16, 0.28)",
         }}
       >
-        {staff ? (
-          // Staff don't go out through the app: no Scan, Live or History, just their office
-          // (Today) and Profile.
-          STAFF_TABS.map(item)
-        ) : (
-          <>
-            {LEFT.map(item)}
-            <ScanButton />
-            {RIGHT.map(item)}
-          </>
-        )}
+        {/* Staff don't go out through the app: no Scan, Live or History, just their office
+            (Today) and Profile. */}
+        {(staff ? STAFF_TABS : STUDENT_TABS).map(item)}
       </View>
+      {staff ? null : <ScanButton />}
     </View>
   );
 }
@@ -115,27 +128,26 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
 function ScanButton(): ReactNode {
   const c = useColors();
   return (
-    <View style={{ width: 76, alignItems: "center" }}>
-      <Press
-        onPress={() => {
-          haptic.tap();
-          router.push("/scan");
-        }}
-        accessibilityLabel="Scan at the gate"
-        style={{
-          width: 60,
-          height: 60,
-          marginTop: -26,
-          borderRadius: 30,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: c.accent,
-          borderWidth: 4,
-          borderColor: c.page,
-        }}
-      >
-        <Ionicons name="scan" size={26} color={c.onAccent} />
-      </Press>
+    <View ref={tourTarget("scan")} collapsable={false}>
+    <Press
+      onPress={() => {
+        haptic.tap();
+        router.push("/scan");
+      }}
+      accessibilityLabel="Scan at the gate"
+      style={{
+        width: dock.height,
+        height: dock.height,
+        borderRadius: 22,
+        borderCurve: "continuous",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: c.accent,
+        boxShadow: "0 10px 24px rgba(232, 80, 26, 0.38)",
+      }}
+    >
+      <Ionicons name="scan" size={26} color={c.onAccent} />
+    </Press>
     </View>
   );
 }

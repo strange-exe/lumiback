@@ -92,7 +92,7 @@ function BackRow({
         accessibilityLabel={`Correct ${o.name}'s outing`}
         style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
       >
-        <T tone="label" style={{ color: c.accent }}>
+        <T tone="label" style={{ color: c.accentText }}>
           Correct
         </T>
       </Press>

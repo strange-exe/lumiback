@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { safeReturnNotice, type OutingShareStart, type SafeReturnOffer } from "@/lib/safe-return";
 import type { ShareSession } from "@/lib/types";
 import { openLocationSettings, settingsLabel } from "@/location/settings";
-import { isSending, startOutingShare } from "@/location/task";
+import { isSendingFor, sendProblem, startOutingShare, type SendProblem } from "@/location/task";
 import { haptic } from "@/ui/haptics";
 import { Button, Press } from "@/ui/kit";
 import { space, type, useColors } from "@/ui/theme";
@@ -83,7 +83,13 @@ export function SafeReturnTick({
   );
 }
 
-type Status = "loading" | "sending" | "paused" | "stopped";
+/** "clock" / "refused": the phone sends, but the server refuses its fixes (see task.ts). */
+type Status = "loading" | "sending" | "paused" | "stopped" | SendProblem;
+
+const REFUSED: Record<SendProblem, string> = {
+  clock: "Your phone's clock is ahead. Turn on automatic date and time in Settings.",
+  refused: "Lumiback isn't accepting this phone's location. Open Live to check the share.",
+};
 
 /**
  * On the "You're out" card: whether the emergency contact can follow, and a way to send the
@@ -104,12 +110,16 @@ export function SafeReturnStatus({
   const [busy, setBusy] = useState(false);
 
   const check = useCallback(async (): Promise<void> => {
-    const [share, sending] = await Promise.all([
+    const [share, sending, refused] = await Promise.all([
       api<ShareSession>(`/sessions/${sessionId}`).catch(() => null),
-      isSending(),
+      // For this share: the service may be running for another one only (a share started on
+      // the Live tab, when sending for this one failed at check-out).
+      isSendingFor(sessionId),
+      sendProblem(sessionId),
     ]);
     // Unknown (offline): what the student chose, so say it's on.
     if (share && share.status !== "active") setStatus("stopped");
+    else if (sending && refused) setStatus(refused);
     else setStatus(sending ? "sending" : "paused");
   }, [sessionId]);
 
@@ -152,6 +162,11 @@ export function SafeReturnStatus({
             : "Your emergency contact can't see where you are right now"}
         </Text>
       </View>
+      {status === "clock" || status === "refused" ? (
+        <Text style={[type.caption, { color: c.heroMuted }]} accessibilityRole="alert">
+          {REFUSED[status]}
+        </Text>
+      ) : null}
       {status === "paused" ? (
         <>
           {problem ? (

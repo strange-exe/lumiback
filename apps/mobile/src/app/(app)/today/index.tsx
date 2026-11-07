@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
-import { RefreshControl, Text, View } from "react-native";
+import { Animated, Easing, RefreshControl, Text, View } from "react-native";
 
 import { armSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
@@ -40,8 +40,10 @@ import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { RequestSheet } from "@/screens/outing-request";
 import { SafeReturnStatus, SafeReturnTick, sendForOuting } from "@/screens/safe-return";
 import { stopOutingShare } from "@/location/task";
+import { IN, timeLate, timeLeft } from "@/lib/led";
+import { tourTarget } from "@/tour/store";
 import { haptic } from "@/ui/haptics";
-import { Illustration } from "@/ui/illustration";
+import { LedBoard } from "@/ui/led";
 import {
   Button,
   Clock,
@@ -53,7 +55,7 @@ import {
   StatusChip,
   T,
 } from "@/ui/kit";
-import { FadeIn } from "@/ui/motion";
+import { FadeIn, useLoop } from "@/ui/motion";
 import { OutingRow } from "@/ui/OutingRow";
 import { Sheet } from "@/ui/sheet";
 import { fonts, radius, space, type, useColors } from "@/ui/theme";
@@ -101,6 +103,7 @@ function StaffToday(): ReactNode {
   return (
     <Screen
       edges={["top"]}
+      scan
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -137,7 +140,7 @@ function Greeting({ name, role }: { name: string; role?: Role }): ReactNode {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}>
       <View style={{ flex: 1, gap: space(1) }}>
-        <Text style={[type.eyebrow, { color: c.accent }]}>
+        <Text style={[type.eyebrow, { color: c.muted }]}>
           {formatDay(new Date())}
           {role && role !== "student" ? ` · ${ROLE_LABEL[role]}` : ""}
         </Text>
@@ -157,7 +160,7 @@ function Greeting({ name, role }: { name: string; role?: Role }): ReactNode {
           justifyContent: "center",
         }}
       >
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accentText }}>
           {initials || "?"}
         </Text>
       </Press>
@@ -196,10 +199,12 @@ function StudentToday(): ReactNode {
   return (
     <Screen
       edges={["top"]}
+      scan
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void reload()}
+          colors={[c.accent]}
           tintColor={c.accent}
         />
       }
@@ -270,34 +275,8 @@ function HeroSkeleton(): ReactNode {
   return (
     <View
       accessibilityLabel="Loading"
-      style={{ height: 300, borderRadius: radius.sheet + 4, backgroundColor: c.line, opacity: 0.6 }}
+      style={{ height: 300, borderRadius: radius.board, backgroundColor: c.line, opacity: 0.6 }}
     />
-  );
-}
-
-/** The status card: the screen's one focal surface, with its one 3D object. */
-function Hero({ children, art }: { children: ReactNode; art: "gate" | "lantern-lit" }): ReactNode {
-  const c = useColors();
-  return (
-    <FadeIn
-      style={{
-        backgroundColor: c.hero,
-        borderRadius: radius.sheet + 4,
-        borderCurve: "continuous",
-        padding: space(6),
-        gap: space(5),
-        overflow: "hidden",
-        boxShadow: c.shadow,
-      }}
-    >
-      <View
-        style={{ position: "absolute", right: -18, top: -10, opacity: 0.98 }}
-        importantForAccessibility="no-hide-descendants"
-      >
-        <Illustration name={art} size={150} variant="hero" />
-      </View>
-      {children}
-    </FadeIn>
   );
 }
 
@@ -379,49 +358,50 @@ function AtHostel({
 
   return (
     <>
-      <Hero art="gate">
-        <View style={{ gap: space(2), paddingRight: space(28) }}>
-          <Text style={[type.eyebrow, { color: c.heroMuted }]}>On campus</Text>
-          <Text style={[type.title, { color: c.onHero }]} accessibilityRole="header">
-            Heading out?
-          </Text>
-          <Text style={[type.body, { color: c.heroMuted }]}>{body}</Text>
-        </View>
-        {canGoOut ? (
-          <SafeReturnTick offer={offer} checked={safeReturn} onChange={setFollow} />
-        ) : null}
-        <View style={{ gap: space(2) }}>
-          <Button
-            label="Scan at the gate"
-            // Not the next step when outings are closed or need approval first: the card
-            // below says what to do, so this steps back (the gate still explains if scanned).
-            variant={canGoOut ? "primary" : "onHeroOutline"}
-            icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onHero} />}
-            onPress={() => {
-              haptic.tap();
-              // The tick travels as an in-memory intent (src/gate/intent.ts), never as a
-              // parameter a link could set: only this visible box turns safe return on.
-              router.push(
-                canGoOut && safeReturn
-                  ? { pathname: "/scan", params: { intent: armSafeReturn() } }
-                  : "/scan",
-              );
-            }}
-          />
+      <FadeIn>
+        <LedBoard glow label="On campus" labelTone="in" reading={IN}>
+          <View style={{ gap: space(2) }}>
+            <Text style={[type.title, { color: c.onBoard }]} accessibilityRole="header">
+              Heading out?
+            </Text>
+            <Text style={[type.body, { color: c.boardMuted }]}>{body}</Text>
+          </View>
           {canGoOut ? (
+            <SafeReturnTick offer={offer} checked={safeReturn} onChange={setFollow} />
+          ) : null}
+          <View style={{ gap: space(2) }}>
             <Button
-              label="Log a trip without scanning"
-              variant="onHeroOutline"
-              accessibilityLabel="Log a trip without scanning (self-reported)"
-              style={{ minHeight: 44 }}
+              label="Scan at the gate"
+              // Not the next step when outings are closed or need approval first: the card
+              // below says what to do, so this steps back (the gate still explains if scanned).
+              variant={canGoOut ? "primary" : "onHeroOutline"}
+              icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onBoard} />}
               onPress={() => {
                 haptic.tap();
-                setOpen(true);
+                // The tick travels as an in-memory intent (src/gate/intent.ts), never as a
+                // parameter a link could set: only this visible box turns safe return on.
+                router.push(
+                  canGoOut && safeReturn
+                    ? { pathname: "/scan", params: { intent: armSafeReturn() } }
+                    : "/scan",
+                );
               }}
             />
-          ) : null}
-        </View>
-      </Hero>
+            {canGoOut ? (
+              <Button
+                label="Log a trip without scanning"
+                variant="onHeroOutline"
+                accessibilityLabel="Log a trip without scanning (self-reported)"
+                style={{ minHeight: 44 }}
+                onPress={() => {
+                  haptic.tap();
+                  setOpen(true);
+                }}
+              />
+            ) : null}
+          </View>
+        </LedBoard>
+      </FadeIn>
       <LogTripSheet
         open={open}
         rules={rules}
@@ -494,7 +474,7 @@ function LogTripSheet({
       {parts ? (
         <View style={{ gap: space(1) }}>
           <T tone="caption">You&apos;ll be due back by</T>
-          <Clock time={parts.time} period={parts.period} color={c.accent} size={48} />
+          <Clock time={parts.time} period={parts.period} color={c.accentText} size={48} />
           <T tone="caption">Set by your hostel&apos;s rules. It can&apos;t be changed later.</T>
         </View>
       ) : null}
@@ -531,7 +511,8 @@ function Out({
   const overdue = outing.status === "overdue" || now > dueMs;
   const minutesLeft = Math.round((dueMs - now) / 60_000);
   const done = progress(outing.left_at, outing.expected_return_at, new Date(now));
-  const back = clockParts(outing.expected_return_at);
+  // The board counts down to the back-by time, then counts how late ("+18 min late").
+  const reading = overdue ? timeLate(-minutesLeft) : timeLeft(minutesLeft);
 
   const act = async (
     kind: NonNullable<typeof busy>,
@@ -556,55 +537,47 @@ function Out({
       api("/outings/current/late-reply", { method: "POST", body: { reply: answer } }),
     );
 
+  const gate = outing.out_via === "gate";
   return (
-    <Hero art="lantern-lit">
-      <View style={{ gap: space(2), paddingRight: space(28) }}>
-        {overdue ? (
-          <StatusChip label="Late" tone="danger" />
-        ) : (
-          <Text style={[type.eyebrow, { color: c.heroMuted }]}>You&apos;re out</Text>
-        )}
+    <FadeIn style={{ gap: space(4) }}>
+      <View style={{ gap: space(2) }}>
+        <StatusChip label={overdue ? "Late" : "Out"} tone={overdue ? "danger" : "accent"} />
         <Text
-          style={[type.title, { color: c.onHero }]}
+          style={[type.title, { color: c.ink }]}
           numberOfLines={2}
           accessibilityRole="header"
         >
           {outing.destination ?? "Out and about"}
         </Text>
-        <Text style={[type.caption, { color: c.heroMuted }]}>
-          Left at {formatTime(outing.left_at)}
-        </Text>
       </View>
-
-      <View style={{ gap: space(1) }}>
-        <Text style={[type.caption, { color: c.heroMuted }]}>Back by</Text>
-        <Clock time={back.time} period={back.period} color={c.onHero} />
-        <Text style={[type.label, { color: overdue ? c.heroDanger : c.heroAccent }]}>
-          {overdue
-            ? `${formatMinutes(Math.max(1, -minutesLeft))} late`
-            : `${formatMinutes(Math.max(0, minutesLeft))} left`}
-        </Text>
-      </View>
-
-      <View
-        accessibilityRole="progressbar"
-        accessibilityLabel="Time used of your planned outing"
-        accessibilityValue={{ min: 0, max: 100, now: Math.round(done * 100) }}
-        style={{ height: 8, borderRadius: 4, backgroundColor: c.heroLine, overflow: "hidden" }}
+      <View ref={tourTarget("today-board")} collapsable={false}>
+      <LedBoard
+        glow
+        label={overdue ? "Late by" : "Time left"}
+        labelTone={overdue ? "late" : "muted"}
+        aside={gate ? "Verified at the gate" : "Self-reported"}
+        asideTone={gate ? "in" : "muted"}
+        reading={reading}
       >
-        <View
-          style={{
-            width: `${Math.round(done * 100)}%`,
-            height: "100%",
-            borderRadius: 4,
-            backgroundColor: overdue ? c.heroDanger : c.heroAccent,
-          }}
-        />
+      <TripLine done={done} overdue={overdue} />
+      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space(3) }}>
+        <View style={{ gap: space(0.5) }}>
+          <Text style={[type.caption, { color: c.boardMuted }]}>Left</Text>
+          <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
+            {formatTime(outing.left_at)}
+          </Text>
+        </View>
+        <View style={{ gap: space(0.5), alignItems: "flex-end" }}>
+          <Text style={[type.caption, { color: c.boardMuted }]}>Back by</Text>
+          <Text style={[type.label, { color: c.onBoard, fontVariant: ["tabular-nums"] }]}>
+            {formatTime(outing.expected_return_at)}
+          </Text>
+        </View>
       </View>
 
       {overdue ? (
         outing.late_reply ? (
-          <Text style={[type.label, { color: c.heroAccent }]} accessibilityRole="text">
+          <Text style={[type.label, { color: c.ledGood }]} accessibilityRole="text">
             {outing.late_reply === "safe"
               ? "Thanks. The hostel office knows you're safe."
               : "Thanks. The hostel office knows you're on your way."}
@@ -644,17 +617,15 @@ function Out({
         <SafeReturnStatus sessionId={outing.safe_return_session_id} notice={safeNotice} />
       ) : null}
 
-      <Button
-        label="Scan to tap in"
-        icon={<Ionicons name="scan" size={18} color={c.onAccent} />}
-        onPress={() => {
-          haptic.tap();
-          router.push("/scan");
-        }}
-      />
+      </LedBoard>
+      </View>
+
+      <PhaseStrip outing={outing} overdue={overdue} />
+
+      {/* Tapping in is the Scan button beside the dock; this is the no-scan way back. */}
       <Button
         label="I'm back"
-        variant="onHeroOutline"
+        variant="secondary"
         accessibilityLabel="I'm back, without scanning (self-reported)"
         busy={busy === "return"}
         busyLabel="Marking…"
@@ -670,7 +641,7 @@ function Out({
       {/* Came back earlier and never tapped in (often noticed the next day): ask the office to
           record when, instead of "I'm back" recording now. */}
       {outing.correction?.status === "pending" ? (
-        <Text style={[type.caption, { color: c.heroMuted, textAlign: "center" }]}>
+        <Text style={[type.caption, { color: c.muted, textAlign: "center" }]}>
           Your correction is with the hostel office.
         </Text>
       ) : canAsk(outing, now) ? (
@@ -679,7 +650,7 @@ function Out({
           accessibilityLabel="Forgot to tap in? Tell the hostel office when you came back"
           style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
         >
-          <Text style={[type.label, { color: c.heroAccent }]}>Forgot to tap in?</Text>
+          <Text style={[type.label, { color: c.accentText }]}>Forgot to tap in?</Text>
         </Press>
       ) : null}
       {fixing ? (
@@ -698,11 +669,170 @@ function Out({
         />
       ) : null}
       {error ? (
-        <Text style={[type.label, { color: c.heroDanger }]} accessibilityRole="alert">
+        <Text style={[type.label, { color: c.danger }]} accessibilityRole="alert">
           {error}
         </Text>
       ) : null}
-    </Hero>
+    </FadeIn>
+  );
+}
+
+const MARK = 26;
+
+/**
+ * The trip as a route (Flighty): from leaving to the back-by time, the lit part is time used and
+ * the glowing dot is now, with a slow ring pulsing out from it. Late: the line is full and red.
+ */
+function TripLine({ done, overdue }: { done: number; overdue: boolean }): ReactNode {
+  const c = useColors();
+  const tone = overdue ? c.ledDanger : c.led;
+  const at = overdue ? 1 : done;
+  const [ring] = useState(() => new Animated.Value(0));
+  useLoop(
+    () =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(ring, {
+            toValue: 1,
+            duration: 1600,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.delay(600),
+          Animated.timing(ring, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      ),
+    () => ring.setValue(0),
+  );
+  const node = {
+    position: "absolute",
+    top: MARK / 2 - 7,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 3,
+    borderColor: c.onBoard,
+    backgroundColor: c.board,
+  } as const;
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Time used of your planned outing"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(at * 100) }}
+      style={{ height: MARK, marginHorizontal: MARK / 2 }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: MARK / 2 - 2,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: c.boardLine,
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          width: `${Math.round(at * 100)}%`,
+          top: MARK / 2 - 2,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: tone,
+          boxShadow: `0 0 10px ${tone}b3`,
+        }}
+      />
+      <View style={[node, { left: -7 }]} />
+      <View style={[node, { right: -7 }]} />
+      <View
+        style={{
+          position: "absolute",
+          left: `${Math.round(at * 100)}%`,
+          top: 0,
+          width: MARK,
+          height: MARK,
+          marginLeft: -MARK / 2,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Animated.View
+          style={{
+            position: "absolute",
+            width: MARK,
+            height: MARK,
+            borderRadius: MARK / 2,
+            backgroundColor: tone,
+            opacity: ring.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] }),
+            transform: [{ scale: ring.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) }],
+          }}
+        />
+        <View
+          style={{
+            width: MARK,
+            height: MARK,
+            borderRadius: MARK / 2,
+            backgroundColor: tone,
+            boxShadow: `0 0 16px ${tone}cc`,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.board }} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Where the trip is, in four steps: left, out now, due (or late), in. */
+function PhaseStrip({ outing, overdue }: { outing: Outing; overdue: boolean }): ReactNode {
+  const c = useColors();
+  const due = formatTime(outing.expected_return_at);
+  const steps = [
+    { label: `Left ${formatTime(outing.left_at)}`, state: "done" },
+    { label: "Out now", state: overdue ? "done" : "now" },
+    { label: overdue ? "Late" : `Due ${due}`, state: overdue ? "late" : "next" },
+    { label: "In", state: "next" },
+  ] as const;
+  return (
+    <View
+      accessible
+      accessibilityLabel={`Left ${formatTime(outing.left_at)}, ${overdue ? `late, was due ${due}` : `out now, due ${due}`}, not back in yet`}
+      style={{ flexDirection: "row", gap: space(1.5) }}
+    >
+      {steps.map((s) => {
+        const bar =
+          s.state === "done"
+            ? c.ink
+            : s.state === "now"
+              ? c.accent
+              : s.state === "late"
+                ? c.danger
+                : c.line;
+        const ink = s.state === "next" ? c.muted : s.state === "late" ? c.danger : c.ink;
+        return (
+          <View key={s.label} style={{ flex: 1, gap: space(2) }}>
+            <View style={{ height: 3, borderRadius: 2, backgroundColor: bar }} />
+            <Text
+              numberOfLines={1}
+              style={[
+                type.caption,
+                {
+                  color: ink,
+                  fontFamily: s.state === "now" || s.state === "late" ? fonts.semibold : fonts.medium,
+                  fontVariant: ["tabular-nums"],
+                },
+              ]}
+            >
+              {s.label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -756,7 +886,7 @@ function RulesCard({
         backgroundColor: c.surface,
         borderColor: c.line,
         borderWidth: 1,
-        borderRadius: radius.sheet,
+        borderRadius: radius.card,
         borderCurve: "continuous",
         padding: space(4),
       }}
@@ -776,7 +906,7 @@ function RulesCard({
             justifyContent: "center",
           }}
         >
-          <Ionicons name={formNeeded ? "document-text" : "time"} size={18} color={c.accent} />
+          <Ionicons name={formNeeded ? "document-text" : "time"} size={18} color={c.accentText} />
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <T tone="label" style={{ fontSize: 15 }}>
@@ -797,11 +927,11 @@ function RulesCard({
           accessibilityLabel="Choose your hostel so these are your hostel's times"
           style={{ flexDirection: "row", alignItems: "center", gap: space(2), minHeight: 44 }}
         >
-          <Ionicons name="home-outline" size={18} color={c.accent} />
-          <T tone="label" style={{ flex: 1, color: c.accent }}>
+          <Ionicons name="home-outline" size={18} color={c.accentText} />
+          <T tone="label" style={{ flex: 1, color: c.accentText }}>
             Choose your hostel so these are your hostel&apos;s times
           </T>
-          <Ionicons name="chevron-forward" size={16} color={c.accent} />
+          <Ionicons name="chevron-forward" size={16} color={c.accentText} />
         </Press>
       ) : null}
 
@@ -932,7 +1062,7 @@ function QuickAction({
           backgroundColor: c.surface,
           borderColor: c.line,
           borderWidth: 1,
-          borderRadius: radius.sheet,
+          borderRadius: radius.card,
           borderCurve: "continuous",
           padding: space(4),
           gap: space(3),
@@ -949,7 +1079,7 @@ function QuickAction({
             justifyContent: "center",
           }}
         >
-          <Ionicons name={icon} size={20} color={c.accent} />
+          <Ionicons name={icon} size={20} color={c.accentText} />
         </View>
         <View style={{ gap: 2 }}>
           <T tone="label" style={{ fontSize: 15 }}>
@@ -985,10 +1115,10 @@ function Recent({
           hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 }}
         >
-          <T tone="label" style={{ color: c.accent, fontVariant: ["tabular-nums"] }}>
-            {rate ? `${rate} · See all` : "See all"}
+          <T tone="label" style={{ color: c.accentText, fontVariant: ["tabular-nums"] }}>
+            {rate ? `${rate}, see all` : "See all"}
           </T>
-          <Ionicons name="chevron-forward" size={16} color={c.accent} />
+          <Ionicons name="chevron-forward" size={16} color={c.accentText} />
         </Press>
       </View>
       <View>
@@ -1028,7 +1158,7 @@ function HowItWorks(): ReactNode {
           backgroundColor: c.surface,
           borderColor: c.line,
           borderWidth: 1,
-          borderRadius: radius.sheet,
+          borderRadius: radius.card,
           borderCurve: "continuous",
           padding: space(5),
           gap: space(4),
@@ -1051,7 +1181,7 @@ function HowItWorks(): ReactNode {
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: c.accent }}>
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: c.accentText }}>
                 {i + 1}
               </Text>
             </View>

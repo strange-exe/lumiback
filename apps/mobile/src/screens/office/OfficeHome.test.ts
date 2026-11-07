@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { Text } from "react-native";
+import { AccessibilityInfo, Text } from "react-native";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { OfficeOverview } from "@/lib/types";
@@ -8,6 +8,14 @@ import { OfficeHome } from "@/screens/office/OfficeHome";
 jest.mock("expo-router", () => ({ router: { push: jest.fn() } }));
 // The icon font needs native modules jest doesn't have; icons carry no words anyway.
 jest.mock("@expo/vector-icons/Ionicons", () => () => null);
+
+beforeEach(() => {
+  // The LED board's loops wait for this answer; never giving one keeps them (and their timers)
+  // out of these tests, which are about words. src/ui/led.test.ts covers the motion.
+  jest
+    .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
+    .mockReturnValue(new Promise<boolean>(() => undefined));
+});
 
 const OVERVIEW: OfficeOverview = {
   out_now: 3,
@@ -61,6 +69,20 @@ describe("OfficeHome", () => {
     for (const zero of ZERO_STATE) expect(shown).not.toContain(zero);
     expect(shown).not.toContain("Escalations");
     expect(shown).not.toContain("Try again");
+  });
+
+  it("puts who's out on the LED board, in words for screen readers, only once loaded", () => {
+    const labels = (tree: ReactTestRenderer): unknown[] =>
+      tree.root
+        .findAll((n) => typeof n.type !== "string" && n.props.accessible === true)
+        .map((n) => n.props.accessibilityLabel);
+    const loaded = labels(render({ ...base, overview: OVERVIEW, loading: false, error: null }));
+    expect(loaded).toContain("4 students out");
+    expect(loaded).toContain("1 late");
+    const failed = labels(
+      render({ ...base, overview: undefined, loading: false, error: "You're offline." }),
+    );
+    expect(failed.some((l) => typeof l === "string" && / out$| late$/.test(l))).toBe(false);
   });
 
   it("shows the real counts once the overview loaded", () => {

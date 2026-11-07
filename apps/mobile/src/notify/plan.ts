@@ -84,9 +84,27 @@ export function endedMessage(reason: string | null): string {
   return (reason ? ENDED[reason] : undefined) ?? "Your live share has ended.";
 }
 
-/** Screens a tapped notification can open. */
+/**
+ * Why the people following see no position: the server refuses this phone's fixes. "clock":
+ * the phone's clock is ahead of the server's (it refuses times in the future).
+ */
+export function sendProblemNotice(problem: "clock" | "refused"): { title: string; body: string } {
+  return problem === "clock"
+    ? {
+        title: "Your location isn't reaching Lumiback",
+        body: "Your phone's clock is ahead. Turn on automatic date and time in Settings.",
+      }
+    : {
+        title: "Your location isn't reaching Lumiback",
+        body: "Lumiback can't accept this phone's location. Open the app to check your share.",
+      };
+}
+
+/** Screens a tapped notification can open. "/live?view=follow": the push telling a follower
+ * they were approved opens the Follow view, where the share they follow is listed. */
 export type NotificationRoute =
   | "/live"
+  | "/live?view=follow"
   | "/today"
   | "/history"
   | "/office/requests"
@@ -95,6 +113,7 @@ export type NotificationRoute =
   | "/office/corrections";
 const ROUTES: readonly string[] = [
   "/live",
+  "/live?view=follow",
   "/today",
   "/history",
   "/office/requests",

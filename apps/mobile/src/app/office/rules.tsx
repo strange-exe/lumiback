@@ -73,7 +73,7 @@ export default function Rules(): ReactNode {
         <T
           accessibilityRole="link"
           onPress={() => void Linking.openURL(`${WEB_URL}/admin/rules`).catch(() => undefined)}
-          style={{ color: c.accent }}
+          style={{ color: c.accentText }}
         >
           Edit rules on the website
         </T>

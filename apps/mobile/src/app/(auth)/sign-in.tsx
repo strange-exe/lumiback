@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Illustration } from "@/ui/illustration";
 import { Button, Field, FormError, Notice, PasswordField, Screen, T } from "@/ui/kit";
-import { space, useColors } from "@/ui/theme";
+import { fonts, space, useColors } from "@/ui/theme";
 
 export default function SignIn(): ReactNode {
   const { signIn } = useAuth();
@@ -47,7 +47,7 @@ export default function SignIn(): ReactNode {
         <View style={{ gap: space(3) }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: space(1) }}>
             <Illustration name="lantern-lit" size={56} />
-            <T tone="headline" style={{ color: c.accent }}>
+            <T tone="headline" style={{ color: c.accentText }}>
               Lumiback
             </T>
           </View>
@@ -82,8 +82,8 @@ export default function SignIn(): ReactNode {
             href={{ pathname: "/forgot-password", params: { email: email.trim() } }}
             style={{
               alignSelf: "flex-end",
-              color: c.accent,
-              fontWeight: "700",
+              color: c.accentText,
+              fontFamily: fonts.semibold,
               paddingVertical: 4,
             }}
             accessibilityRole="link"
@@ -100,7 +100,7 @@ export default function SignIn(): ReactNode {
         </View>
         <T tone="small" style={{ textAlign: "center" }}>
           New here?{" "}
-          <Link href="/register" style={{ color: c.accent, fontWeight: "700" }}>
+          <Link href="/register" style={{ color: c.accentText, fontFamily: fonts.semibold }}>
             Create your account
           </Link>
         </T>

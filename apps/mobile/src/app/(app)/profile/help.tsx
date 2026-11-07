@@ -6,6 +6,7 @@ import { Alert, Linking, Pressable, View } from "react-native";
 
 import { SUPPORT_EMAIL } from "@/lib/config";
 import { supportMailto } from "@/lib/support";
+import { replayTour } from "@/tour/store";
 import { CURRENT } from "@/updates/changelog";
 import { Row, Screen, Section, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
@@ -72,6 +73,15 @@ export default function Help(): ReactNode {
   return (
     <Screen edges={["bottom"]}>
       <Section>
+        <Row
+          leading={<Ionicons name="compass-outline" size={20} color={c.accentText} />}
+          title="Take the tour again"
+          detail="A quick walk through each part of the app"
+          trailing={<Ionicons name="chevron-forward" size={18} color={c.muted} />}
+          onPress={replayTour}
+        />
+      </Section>
+      <Section>
         {FAQ.map((item, i) => {
           const expanded = open === i;
           return (
@@ -104,7 +114,7 @@ export default function Help(): ReactNode {
         footer="If it's urgent, for example you're out and running late, call your hostel office or warden directly."
       >
         <Row
-          leading={<Ionicons name="mail-outline" size={20} color={c.accent} />}
+          leading={<Ionicons name="mail-outline" size={20} color={c.accentText} />}
           title="Email Lumiback support"
           detail={SUPPORT_EMAIL}
           trailing={<Ionicons name="open-outline" size={18} color={c.muted} />}

@@ -1,28 +1,32 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { ScrollView, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ago } from "@/lib/ago";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import { followFailure, isUuid, NOT_A_SHARE } from "@/lib/follow";
+import { timeLeft } from "@/lib/led";
 import { formatTime } from "@/lib/time";
 import type { Watching } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
 import { mockState, type Positions } from "@/location/mock";
+import { DotBackground } from "@/ui/backdrop";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Heading, T } from "@/ui/kit";
+import { LedBoard } from "@/ui/led";
 import { LiveMap } from "@/ui/LiveMap";
 import { MockNotice } from "@/ui/MockNotice";
-import { layout, space, useColors, useDockClearance } from "@/ui/theme";
+import { layout, space, type, useColors, useDockClearance } from "@/ui/theme";
 
 const POLL_MS = 5_000;
-const WAITING = "Waiting for the sharer to approve you"; // backend AWAITING_APPROVAL detail
 
 type View_ =
   | { kind: "loading" }
   | { kind: "pending" }
   | { kind: "live"; share: Watching; positions: Positions }
   | { kind: "ended"; reason: string }
+  | { kind: "failed"; reason: string }
   | { kind: "offline"; previous: View_ };
 
 export default function Watch(): ReactNode {
@@ -35,6 +39,11 @@ export default function Watch(): ReactNode {
   const wasPending = useRef(false);
 
   const poll = useCallback(async (): Promise<boolean> => {
+    if (!isUuid(id)) {
+      // A mistyped or crafted link: never put it in a backend path, and nothing to retry.
+      setView({ kind: "failed", reason: NOT_A_SHARE });
+      return false;
+    }
     try {
       if (!share.current) {
         const described = await api<Partial<Watching>>(`/sessions/${id}`);
@@ -52,18 +61,17 @@ export default function Watch(): ReactNode {
       setView({ kind: "live", share: share.current, positions });
       return true;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 403 && e.detail === WAITING) {
+      const failure = followFailure(e);
+      if (failure.kind === "pending") {
         wasPending.current = true;
         setView({ kind: "pending" });
         return true;
       }
-      if (e instanceof ApiError && (e.status === 403 || e.status === 404 || e.status === 409)) {
-        setView({
-          kind: "ended",
-          reason: e.status === 403 ? e.detail : "This live share has ended.",
-        });
-        return false; // nothing more to fetch
+      if (failure.kind === "ended" || failure.kind === "failed") {
+        setView(failure);
+        return false; // nothing more to fetch: retrying would get the same answer
       }
+      // Only "can't reach" (offline, a 5xx, rate limited) is retried.
       setView((prev) => ({
         kind: "offline",
         previous: prev.kind === "offline" ? prev.previous : prev,
@@ -94,6 +102,7 @@ export default function Watch(): ReactNode {
 
   return (
     <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: c.page }}>
+      <DotBackground scan={shown.kind === "live"} />
       <Stack.Screen
         options={{ title: shown.kind === "live" ? `Following ${first}` : "Live location" }}
       />
@@ -111,12 +120,12 @@ export default function Watch(): ReactNode {
             />
             <LiveMap point={null} label="Map, waiting for approval" height={220} />
           </>
-        ) : shown.kind === "ended" ? (
+        ) : shown.kind === "ended" || shown.kind === "failed" ? (
           <>
             <Heading
-              eyebrow="Ended"
+              eyebrow={shown.kind === "ended" ? "Ended" : "Couldn't open"}
               tone="muted"
-              title="Not sharing any more"
+              title={shown.kind === "ended" ? "Not sharing any more" : "Can't show this share"}
               lede={shown.reason}
             />
             <Button
@@ -159,14 +168,21 @@ function Live({
   const updated = location ? ago(new Date(location.recorded_at).getTime(), now) : null;
   const stale = !location || location.stale;
 
+  const minutesLeft = Math.round((new Date(share.ends_at).getTime() - now) / 60_000);
+
   return (
     <>
-      <Heading
-        eyebrow={fake ? "Location faked" : stale ? "Paused" : "Live"}
-        tone={fake ? "danger" : stale ? "muted" : "good"}
-        title={`${first}'s way back`}
-        lede={`Sharing until ${formatTime(share.ends_at)}.`}
-      />
+      <LedBoard
+        glow
+        label={fake ? "Location faked" : stale ? "Paused" : "Live"}
+        labelTone={fake ? "late" : stale ? "muted" : "in"}
+        aside={`Sharing until ${formatTime(share.ends_at)}`}
+        reading={timeLeft(minutesLeft)}
+      >
+        <Text style={[type.title, { color: c.onBoard }]} accessibilityRole="header">
+          {`${first}'s way back`}
+        </Text>
+      </LedBoard>
       <LiveMap
         point={location}
         fake={fake}

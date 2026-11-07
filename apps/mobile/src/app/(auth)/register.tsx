@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
 import { Button, Field, FormError, PasswordField, Screen, T } from "@/ui/kit";
-import { space, useColors } from "@/ui/theme";
+import { fonts, space, useColors } from "@/ui/theme";
 
 const PRIVACY_URL = `${WEB_URL}/privacy`;
 
@@ -85,7 +85,7 @@ export default function Register(): ReactNode {
           By creating an account you agree to how we handle your data, described in our{" "}
           <T
             tone="small"
-            style={{ color: c.accent, fontWeight: "700" }}
+            style={{ color: c.accentText, fontFamily: fonts.semibold }}
             onPress={() => void Linking.openURL(PRIVACY_URL)}
           >
             privacy notice
@@ -94,7 +94,7 @@ export default function Register(): ReactNode {
         </T>
         <T tone="small" style={{ textAlign: "center" }}>
           Already registered?{" "}
-          <Link href="/sign-in" style={{ color: c.accent, fontWeight: "700" }}>
+          <Link href="/sign-in" style={{ color: c.accentText, fontFamily: fonts.semibold }}>
             Sign in
           </Link>
         </T>

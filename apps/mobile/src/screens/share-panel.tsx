@@ -9,18 +9,41 @@ import { WEB_URL } from "@/lib/config";
 import { inviteMessage, whatsappUrl } from "@/lib/invite";
 import { formatTime } from "@/lib/time";
 import type { AccessLogEntry, JoinCode, ShareSession, Viewer } from "@/lib/types";
+import { timeLeft, type LedReading } from "@/lib/led";
 import { useData } from "@/lib/use-data";
+import { useNow } from "@/lib/use-now";
 import { mockState, type Positions } from "@/location/mock";
 import { openLocationSettings, settingsLabel } from "@/location/settings";
-import { isSending, startSending, stopSending, type StartResult } from "@/location/task";
+import {
+  isSending,
+  sendingShareIds,
+  sendProblem,
+  startSending,
+  stopSending,
+  type SendProblem,
+  type StartResult,
+} from "@/location/task";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Illustration } from "@/ui/illustration";
-import { Button, Card, Chips, FormError, Heading, Screen, Section, StatusChip, T } from "@/ui/kit";
+import {
+  Button,
+  Card,
+  Chips,
+  FormError,
+  Heading,
+  LoadFailed,
+  Notice,
+  Screen,
+  Section,
+  StatusChip,
+  T,
+} from "@/ui/kit";
+import { LedBoard } from "@/ui/led";
 import { LiveMap } from "@/ui/LiveMap";
 import { MockNotice } from "@/ui/MockNotice";
 import { Sheet } from "@/ui/sheet";
-import { fonts, radius, space, useColors } from "@/ui/theme";
+import { fonts, radius, space, type, useColors } from "@/ui/theme";
 
 type Length = "60" | "120" | "240" | "480";
 const LENGTHS: { value: Length; label: string }[] = [
@@ -56,6 +79,14 @@ function SettingsFix({ error }: { error: string | null }): ReactNode {
   );
 }
 
+/** What to do when the server refuses this phone's fixes (see location/task.ts). */
+const SEND_PROBLEM: Record<SendProblem, string> = {
+  clock:
+    "Your phone's clock is ahead, so the people following can't see where you are. Turn on automatic date and time in Settings.",
+  refused:
+    "Lumiback isn't accepting this phone's location, so the people following can't see where you are. Try stopping and starting the share.",
+};
+
 function message(e: unknown): string {
   return e instanceof ApiError ? e.detail : "Something went wrong. Try again.";
 }
@@ -64,23 +95,45 @@ function message(e: unknown): string {
 export function SharePanel({ header }: { header: ReactNode }): ReactNode {
   const c = useColors();
   const load = useCallback(async () => {
-    const [mine, sending] = await Promise.all([api<ShareSession[]>("/sessions/mine"), isSending()]);
+    const [mine, stored, serviceOn] = await Promise.all([
+      api<ShareSession[]>("/sessions/mine"),
+      sendingShareIds().catch((): string[] => []),
+      isSending(),
+    ]);
     // A safe-return share (started by checking out) runs on this phone's service too, so it
-    // counts: otherwise opening Live would stop sending for it below.
+    // counts: otherwise opening Live would stop sending for it below. Both can run at once (a
+    // share started here, then a check-out): the phone sends for both, and this tab shows the
+    // one started here, with a line about the other.
     const running = mine.filter((s) => s.status === "active");
-    const active =
-      running.find((s) => s.source === "app") ?? running.find((s) => s.source === "outing") ?? null;
-    // The share ended elsewhere (web, expiry, idle close): make sure the service is off too.
-    if (!active && sending) await stopSending();
-    // What viewers see: the last position the server has (sharers can read their own).
-    const [positions, looks] = active
+    const app = running.find((s) => s.source === "app") ?? null;
+    const outing = running.find((s) => s.source === "outing") ?? null;
+    const active = app ?? outing;
+    // A share that ended elsewhere (web, expiry, idle close): stop sending for it here too,
+    // leaving any other share sending.
+    const live = new Set(running.map((s) => s.id));
+    for (const id of stored.filter((id) => !live.has(id))) await stopSending(id);
+    // What viewers see: the last position the server has (sharers can read their own). A map
+    // hiccup must not hide the share: without it the Start form would invite a second one.
+    const [positions, looks, problem] = active
       ? await Promise.all([
-          api<Positions>(`/sessions/${active.id}/location`),
+          api<Positions>(`/sessions/${active.id}/location`).catch((): Positions => ({
+            location: null,
+          })),
           // Who looked, including the hostel office following up a late return.
           api<AccessLogEntry[]>(`/sessions/${active.id}/access-log`).catch(() => []),
+          sendProblem(active.id),
         ])
-      : [{ location: null }, []];
-    return { active, sending: Boolean(active) && sending, positions, looks };
+      : [{ location: null }, [], null];
+    return {
+      active,
+      // Sending for this share, not only for another one.
+      sending: Boolean(active) && serviceOn && stored.includes(active?.id ?? ""),
+      // The safe-return share running beside a share started here.
+      alsoOuting: app && outing ? outing : null,
+      positions,
+      looks,
+      problem,
+    };
   }, []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
 
@@ -96,10 +149,12 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
   return (
     <Screen
       edges={["top"]}
+      scan={live}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void reload()}
+          colors={[c.accent]}
           tintColor={c.accent}
         />
       }
@@ -111,14 +166,26 @@ export function SharePanel({ header }: { header: ReactNode }): ReactNode {
           key={data.active.id}
           share={data.active}
           sending={data.sending}
+          problem={data.problem}
+          alsoOuting={data.alsoOuting !== null}
           positions={data.positions}
           looks={data.looks}
           onChange={refetch}
         />
-      ) : (
+      ) : data ? (
         <Start onStarted={reload} />
+      ) : (
+        // Never the Start form when it couldn't tell whether a share is running: starting one
+        // on top of a running share would leave the first one's viewers with a frozen map.
+        <LoadFailed
+          title="Couldn't load your sharing"
+          message={error}
+          after="Your share, if one is running, appears here."
+          busy={refreshing}
+          onRetry={reload}
+        />
       )}
-      <FormError message={error} />
+      {data ? <FormError message={error} /> : null}
     </Screen>
   );
 }
@@ -223,17 +290,24 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
 function Live({
   share,
   sending,
+  problem,
+  alsoOuting,
   positions,
   looks,
   onChange,
 }: {
   share: ShareSession;
   sending: boolean;
+  /** The server refuses this phone's fixes: viewers see no new position. */
+  problem: SendProblem | null;
+  /** A safe-return share runs too (checked out while this share was on). */
+  alsoOuting: boolean;
   positions: Positions;
   looks: AccessLogEntry[];
   onChange: () => Promise<void>;
 }): ReactNode {
   const c = useColors();
+  const now = useNow(15_000);
   const { location } = positions;
   const mock = mockState(positions);
   const fake = mock.kind === "now" ? mock.fake : null;
@@ -257,11 +331,15 @@ function Live({
     }
   };
 
+  // Stops sending for this share only: a safe-return share running beside it keeps sending.
   const stop = () =>
     run("stop", async () => {
-      await stopSending();
+      await stopSending(share.id);
       await api(`/sessions/${share.id}/stop`, { method: "POST", body: {} });
     });
+
+  // Refused fixes never reach viewers, so "Live" would be untrue.
+  const reaching = sending && !problem;
 
   const resume = () =>
     run("resume", async () => {
@@ -278,28 +356,47 @@ function Live({
   const pending = viewers.filter((v) => v.status === "pending");
   const watching = viewers.filter((v) => v.status === "granted");
 
+  const names = watching.map((v) => v.name.split(" ")[0]).join(", ");
+  const minutesLeft = Math.round((new Date(share.ends_at).getTime() - now) / 60_000);
+  // A share started here counts down to its end; a safe-return one runs until the student is
+  // back, so its board just says whether it's on.
+  const reading: LedReading =
+    share.source === "outing"
+      ? {
+          text: reaching ? "ON" : "OFF",
+          state: "out",
+          label: reaching ? "Sharing until you're back" : "Not reaching anyone right now",
+        }
+      : timeLeft(minutesLeft);
+
   return (
     <>
-      <Heading
-        eyebrow={sending ? "Sharing live" : "Paused on this phone"}
-        tone={sending ? "good" : "accent"}
-        title={
+      <LedBoard
+        glow
+        label={
+          reaching ? "Sharing live" : sending ? "Not reaching Lumiback" : "Paused on this phone"
+        }
+        labelTone={reaching ? "in" : "muted"}
+        aside={
           share.source === "outing" ? "Until you're back" : `Until ${formatTime(share.ends_at)}`
         }
-        lede={
-          share.source === "outing" && watching.length > 0
-            ? `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you until you tap back in.`
+        reading={reading}
+        ticker={watching.length > 0 ? `${names} can see you` : undefined}
+      >
+        <Text style={[type.body, { color: c.boardMuted }]}>
+          {share.source === "outing" && watching.length > 0
+            ? `${names} can see you until you tap back in.`
             : watching.length === 0
               ? "Nobody can see you yet. Invite someone below."
-              : `${watching.map((v) => v.name.split(" ")[0]).join(", ")} can see you.`
-        }
-      />
+              : `${names} can see you.`}
+        </Text>
+      </LedBoard>
 
       <View>
         <LiveMap
           point={location}
           fake={fake}
-          paused={!sending || !location || location.stale || fake !== null}
+          paused={!reaching || !location || location.stale || fake !== null}
           height={240}
           label={[
             location
@@ -314,12 +411,29 @@ function Live({
           {fake && sending ? (
             <StatusChip label="● Faked" tone="danger" />
           ) : (
-            <StatusChip label={sending ? "● Live" : "Paused"} tone={sending ? "good" : "accent"} />
+            <StatusChip
+              label={reaching ? "● Live" : "Paused"}
+              tone={reaching ? "good" : "accent"}
+            />
           )}
         </View>
       </View>
 
       <MockNotice state={mock} />
+
+      {sending && problem ? (
+        <Card style={{ borderColor: c.accent }}>
+          <T tone="headline">Your location isn&apos;t reaching Lumiback</T>
+          <T tone="muted">{SEND_PROBLEM[problem]}</T>
+        </Card>
+      ) : null}
+
+      {alsoOuting ? (
+        <Notice>
+          Your emergency contact can also follow you until you&apos;re back. Stopping this share
+          doesn&apos;t stop theirs.
+        </Notice>
+      ) : null}
 
       {!sending ? (
         <Card style={{ borderColor: c.accent }}>
@@ -465,7 +579,7 @@ function PersonRow({ viewer, children }: { viewer: Viewer; children: ReactNode }
           justifyContent: "center",
         }}
       >
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accent }}>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: c.accentText }}>
           {viewer.name.trim().charAt(0).toUpperCase() || "?"}
         </Text>
       </View>
@@ -555,11 +669,11 @@ function InviteSheet({
         <Text
           selectable
           style={{
-            fontFamily: fonts.bold,
+            fontFamily: fonts.semibold,
             fontSize: 30,
             lineHeight: 36,
             letterSpacing: 5,
-            color: c.accent,
+            color: c.accentText,
             fontVariant: ["tabular-nums"],
           }}
         >
@@ -584,7 +698,11 @@ function InviteSheet({
             label={copied ? "Copied" : "Copy code"}
             variant="secondary"
             icon={
-              <Ionicons name={copied ? "checkmark" : "copy-outline"} size={18} color={c.accent} />
+              <Ionicons
+                name={copied ? "checkmark" : "copy-outline"}
+                size={18}
+                color={c.accentText}
+              />
             }
             onPress={() => {
               if (!code) return;
@@ -599,7 +717,7 @@ function InviteSheet({
           <Button
             label="More apps"
             variant="secondary"
-            icon={<Ionicons name="share-social-outline" size={18} color={c.accent} />}
+            icon={<Ionicons name="share-social-outline" size={18} color={c.accentText} />}
             onPress={() => {
               if (!code) return;
               void ShareSheet.share({ message: text }).catch(() => undefined);

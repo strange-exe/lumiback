@@ -11,7 +11,7 @@ import { ReleaseNotes } from "./ReleaseNotes";
 const KEY = "whats-new-seen";
 
 /** "What's new in 1.3.0", once, the first time the app opens on a newer release. */
-export function WhatsNew(): ReactNode {
+export function WhatsNew({ onSettled }: { onSettled?: () => void } = {}): ReactNode {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -26,20 +26,27 @@ export function WhatsNew(): ReactNode {
           // an updated phone: treat them as built-in code, with no sheet while developing.
           isEmbeddedLaunch: __DEV__ || !Updates.isEnabled || Updates.isEmbeddedLaunch,
         });
-        if (show && live) setOpen(true);
-        else if (seen !== CURRENT.version) await SecureStore.setItemAsync(KEY, CURRENT.version);
+        if (show && live) {
+          setOpen(true);
+          return; // settled when it closes
+        }
+        if (seen !== CURRENT.version) await SecureStore.setItemAsync(KEY, CURRENT.version);
       } catch {
         // Storage unavailable: skip the sheet rather than risk showing it every launch.
       }
+      if (live) onSettled?.();
     })();
     return () => {
       live = false;
     };
+    // Decided once per launch; onSettled is the layout's setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const close = (): void => {
     setOpen(false);
     void SecureStore.setItemAsync(KEY, CURRENT.version).catch(() => undefined);
+    onSettled?.();
   };
 
   return (

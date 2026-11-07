@@ -137,7 +137,7 @@ function LastSeenNote({ seen }: { seen: LastSeen | null }): ReactNode {
         backgroundColor: c.accentSoft,
       }}
     >
-      <Ionicons name="location-outline" size={18} color={c.accent} style={{ marginTop: 3 }} />
+      <Ionicons name="location-outline" size={18} color={c.accentText} style={{ marginTop: 3 }} />
       <View style={{ flex: 1, gap: space(1) }}>
         <T>{text}</T>
         {seen?.mock_since && seen.lat !== null ? (
@@ -149,7 +149,7 @@ function LastSeenNote({ seen }: { seen: LastSeen | null }): ReactNode {
           <T
             accessibilityRole="link"
             onPress={() => void Linking.openURL(map).catch(() => undefined)}
-            style={{ color: c.accent }}
+            style={{ color: c.accentText }}
           >
             Open map
           </T>
