@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.12.1",
+    "date": "2026-11-07",
+    "title": "Safer sign-outs and account controls",
+    "points": [
+      "Signing a device out, changing your password or turning an account off now works every time, even if that device was signing in at the same moment.",
+      "A device you sign out stops seeing live locations and getting notifications straight away.",
+      "When the hostel office changes an account's email or turns an account off, any set-password link or reset code already sent stops working.",
+      "Wardens see only students in the student list, and a refused gate tap-out no longer closes an outing still open from an earlier day.",
+      "Gate and register pages load faster."
+    ]
+  },
+  {
     "version": "1.12.0",
     "date": "2026-11-06",
     "title": "Your devices and your password",
