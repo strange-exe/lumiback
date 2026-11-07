@@ -8,6 +8,48 @@ updates:
     directory: /apps/mobile
     schedule:
       interval: weekly
+    # A new Expo SDK or React Native major changes the native build, so over-the-air updates
+    # stop reaching installed phones. Those upgrades are done by hand (npx expo install --fix)
+    # together with a new native build, never from a Dependabot PR.
+    ignore:
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@expo/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-native-*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@react-native/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jest-expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint-config-expo"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # SDK patch releases come as a set (expo pins its own modules), so they land together
+      # in one PR, to merge before the next native build.
+      expo-sdk:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native/*"
+          - "jest-expo"
+          - "eslint-config-expo"
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: uv
     directory: /backend
     schedule:
