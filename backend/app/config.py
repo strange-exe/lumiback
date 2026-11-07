@@ -7,6 +7,7 @@ Rules (PLAN.md §4.2):
 """
 
 import json
+import re
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
@@ -63,6 +64,18 @@ class Settings(BaseSettings):
     # Reverse proxies in front of this API that APPEND the caller's address to X-Forwarded-For
     # (Render: 1). Only entries they appended are trusted; anything further left is client-made.
     proxy_hops: int = Field(default=0, ge=0, le=3)
+
+    # The deployed commit, for the developer's status panel (GET /meta/status). Render sets it
+    # on every deploy (https://render.com/docs/environment-variables); unset elsewhere.
+    render_git_commit: str | None = None
+
+    @field_validator("render_git_commit", mode="before")
+    @classmethod
+    def _commit_sha(cls, v: object) -> str | None:
+        # A hex SHA or nothing: the panel never repeats an arbitrary environment value.
+        if not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{7,40}", v.strip().lower()):
+            return None
+        return v.strip().lower()
 
     @field_validator("email_reply_to", mode="before")
     @classmethod

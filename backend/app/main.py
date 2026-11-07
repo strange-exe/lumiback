@@ -4,6 +4,8 @@ Run (dev):  uv run uvicorn --factory app.main:create_app --reload --loop asyncio
 """
 
 import asyncio
+import logging
+import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -22,6 +24,7 @@ from app.api import (
     contacts,
     devices,
     gates,
+    meta,
     outings,
     profile,
     sessions,
@@ -41,9 +44,27 @@ HEALTH_CACHE_SECONDS = 5.0
 HEALTH_DB_TIMEOUT_SECONDS = 3.0  # the longest /health waits for the database's answer
 
 
+def configure_logging() -> None:
+    """Send the app's own log lines (`app.*`, INFO and up) to stderr.
+
+    uvicorn configures only its own loggers, so without this every `app.*` line went to
+    Python's last-resort handler, which drops anything below WARNING. Idempotent: one
+    handler however many apps are created (tests make many). Records still propagate, so
+    pytest's caplog sees them.
+    """
+    log = logging.getLogger("app")
+    log.setLevel(logging.INFO)
+    if not any(getattr(h, "_lumiback", False) for h in log.handlers):
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        handler._lumiback = True  # type: ignore[attr-defined]
+        log.addHandler(handler)
+
+
 def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> FastAPI:
     """`start_jobs=False` lets tests run the expiry sweep deterministically themselves."""
     settings = settings or load_settings()
+    configure_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -165,5 +186,6 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(admin_rules.router)
     app.include_router(profile.router)
     app.include_router(devices.router)
+    app.include_router(meta.router)
 
     return app

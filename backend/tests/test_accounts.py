@@ -232,6 +232,28 @@ def test_no_password_link_for_an_account_thats_off(client, admin, anna):
     assert r.status_code == 409
 
 
+def test_first_only_never_resets_someone_who_has_set_up(client, db, admin, anna):
+    # The bulk "send the set-up link again": anyone who has set up is refused, not reset.
+    uid = user_id(client, admin, ANNA)
+    r = client.post(
+        f"/admin/users/{uid}/password-link", params={"first_only": "true"}, headers=admin
+    )
+    assert r.status_code == 409
+    assert "already set up" in r.json()["detail"]
+    assert not [row for row in audit_rows(db) if row[0].startswith("password:")]
+    assert client.get("/auth/me", headers=anna).status_code == 200  # still signed in
+
+
+def test_first_only_still_sends_a_first_link(client, admin):
+    email = imported(client, admin)
+    uid = client.get("/admin/users", params={"q": email}, headers=admin).json()[0]["id"]
+    r = client.post(
+        f"/admin/users/{uid}/password-link", params={"first_only": "true"}, headers=admin
+    )
+    assert r.status_code == 200, r.text
+    assert link_token(client, email)
+
+
 # ---------- details ----------
 
 

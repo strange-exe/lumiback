@@ -405,10 +405,14 @@ async def send_password_link(
     settings: SettingsDep,
     limiter: LimiterDep,
     mailer: MailerDep,
+    first_only: bool = False,
 ) -> PasswordLinkOut:
     """Emails anyone (students and staff) a one-time link to choose a password: a first one
     if they were imported and haven't set up (the link again), otherwise a reset, which stops
-    their old password working and signs them out everywhere."""
+    their old password working and signs them out everywhere.
+
+    `first_only=true` (the People list's bulk "send the set-up link again") refuses with 409
+    instead of resetting someone who has set up, decided here per person, not from a list."""
     target = await session.get(User, user_id)
     if target is None:
         raise NOT_FOUND
@@ -423,6 +427,11 @@ async def send_password_link(
     if not target.active:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="This account is turned off. Turn it on first."
+        )
+    if first_only and target.email_verified:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Not sent: they've already set up their account.",
         )
     await enforce(limiter, "password-link:admin", str(me.id), PASSWORD_LINKS)
     pepper = settings.code_pepper.get_secret_value()
