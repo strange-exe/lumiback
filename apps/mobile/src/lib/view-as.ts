@@ -133,3 +133,13 @@ export function canViewAs(user: Pick<User, "role" | "viewing_as"> | null | undef
   if (!user) return false;
   return isDeveloper(user.role) || parseViewAsRole(user.viewing_as) !== null;
 }
+
+/**
+ * A developer as themselves (not viewing as a role): the developer-only extras, like Status,
+ * show only then, as on the website (its Status page is a 404 while viewing).
+ */
+export function isDeveloperAsSelf(
+  user: Pick<User, "role" | "viewing_as"> | null | undefined,
+): boolean {
+  return !!user && isDeveloper(user.role) && parseViewAsRole(user.viewing_as) === null;
+}

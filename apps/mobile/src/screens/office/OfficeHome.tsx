@@ -62,9 +62,9 @@ export function OfficeHome({
 
   let today: ReactNode;
   if (data) {
-    const escalations = data.open_escalations ?? 0;
-    const requests = data.pending_requests ?? 0;
-    const corrections = data.corrections ?? 0;
+    const escalations = data.open_escalations;
+    const requests = data.pending_requests;
+    const corrections = data.corrections;
     const late = data.overdue;
     const out = data.out_now + late;
     today = (

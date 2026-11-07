@@ -2,6 +2,7 @@ import { api, ApiError, detailOf } from "@/lib/api";
 import {
   canViewAs,
   clearViewAs,
+  isDeveloperAsSelf,
   DEVELOPERS_ONLY,
   isReadOnlyRefusal,
   loadViewAs,
@@ -258,5 +259,14 @@ describe("the banner and who may use View as", () => {
     }
     expect(canViewAs({ role: "admin", viewing_as: "developer" as ViewAsRole })).toBe(false);
     expect(canViewAs(null)).toBe(false);
+  });
+
+  it("developer extras (Status) need a developer as themselves, not viewing", () => {
+    expect(isDeveloperAsSelf({ role: "developer", viewing_as: null })).toBe(true);
+    expect(isDeveloperAsSelf({ role: "developer" })).toBe(true);
+    expect(isDeveloperAsSelf({ role: "student", viewing_as: "student" })).toBe(false);
+    expect(isDeveloperAsSelf({ role: "admin", viewing_as: "admin" })).toBe(false);
+    expect(isDeveloperAsSelf({ role: "admin", viewing_as: null })).toBe(false);
+    expect(isDeveloperAsSelf(null)).toBe(false);
   });
 });

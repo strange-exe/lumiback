@@ -45,6 +45,9 @@ jest.mock("@/lib/session", () => ({
   storedRefreshToken: jest.fn(async () => mockStoredToken),
   storeTokens: jest.fn(async () => void mockCalls.push("storeTokens")),
 }));
+jest.mock("@/lib/office-filters", () => ({
+  clearOfficeFilters: jest.fn(async () => void mockCalls.push("clearOfficeFilters")),
+}));
 jest.mock("@/notify/notify", () => ({
   syncPush: jest.fn(),
   syncReturnReminders: jest.fn(async () => void mockCalls.push("syncReturnReminders")),
@@ -274,6 +277,24 @@ describe("a forced sign-out leaves nothing of the student on the phone", () => {
     await act(async () => mockSignedOutListener?.());
     expect(mockCalls).toEqual(expect.arrayContaining(["stopSending", "syncReturnReminders"]));
     expect(safeReturnFor({ intent: id })).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("the office's remembered hostel and filter choices belong to one person", () => {
+  it("a sign-out (forced or not) forgets them", async () => {
+    const { tree } = await mountQuietly();
+    await act(async () => mockSignedOutListener?.());
+    expect(mockCalls).toContain("clearOfficeFilters");
+    act(() => tree.unmount());
+  });
+
+  it("a new sign-in starts without them, before its tokens are stored", async () => {
+    const { auth, tree } = await mount();
+    mockCalls.length = 0;
+    await act(async () => auth.signIn("next@geu.ac.in", "pw"));
+    expect(mockCalls).toContain("clearOfficeFilters");
+    expect(mockCalls.indexOf("clearOfficeFilters")).toBeLessThan(mockCalls.indexOf("storeTokens"));
     act(() => tree.unmount());
   });
 });

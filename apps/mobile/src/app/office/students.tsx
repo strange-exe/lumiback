@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, Pressable, RefreshControl, View } from "react-native";
 
 import {
@@ -12,6 +12,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { accountLabel, everyHostel, isAdmin, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
+import { known, loadOfficeFilters, rememberOfficeFilter } from "@/lib/office-filters";
 import type { AccountFilter, OfficeHostel, OfficeStudent, Role } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { AccountActions, AddPersonSheet, EditSheet } from "@/screens/office/AccountSheets";
@@ -58,6 +59,39 @@ export default function Students(): ReactNode {
   useEffect(() => {
     void refetch();
   }, [hostelId, search, account, refetch]);
+
+  // The last hostel and "Show" choice, once the hostels are known (a hostel no longer in the
+  // list is "All"). A choice made before the stored one is read wins.
+  const chosen = useRef(false);
+  useEffect(() => {
+    const list = hostels.data;
+    if (!list || chosen.current) return;
+    let live = true;
+    void loadOfficeFilters().then((saved) => {
+      if (!live || chosen.current) return;
+      chosen.current = true;
+      setHostelId(
+        known(
+          saved.students.hostel,
+          list.map((h) => h.id),
+        ),
+      );
+      setAccount(saved.students.account);
+    });
+    return () => {
+      live = false;
+    };
+  }, [hostels.data]);
+  const pickHostel = (value: string): void => {
+    chosen.current = true;
+    setHostelId(value);
+    void rememberOfficeFilter("students", { hostel: value, account });
+  };
+  const pickAccount = (value: "all" | AccountFilter): void => {
+    chosen.current = true;
+    setAccount(value);
+    void rememberOfficeFilter("students", { hostel: hostelId, account: value });
+  };
 
   const changed = (message: string): void => {
     setDone(message);
@@ -107,9 +141,9 @@ export default function Students(): ReactNode {
         </View>
       ) : null}
       {choices.length > 1 ? (
-        <Chips label="Hostel" options={choices} value={hostelId} onChange={setHostelId} />
+        <Chips label="Hostel" options={choices} value={hostelId} onChange={pickHostel} />
       ) : null}
-      <Chips label="Show" options={ACCOUNT_FILTERS} value={account} onChange={setAccount} />
+      <Chips label="Show" options={ACCOUNT_FILTERS} value={account} onChange={pickAccount} />
       <Field
         label="Search"
         placeholder="Name, email or roll number"

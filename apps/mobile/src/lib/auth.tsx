@@ -13,6 +13,7 @@ import { AppState, Platform } from "react-native";
 import { clearSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { deviceLabel } from "@/lib/devices";
+import { clearOfficeFilters } from "@/lib/office-filters";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
 import type { Registered, ShareSession, TokenPair, User, ViewAsRole } from "@/lib/types";
 import { clearViewAs, loadViewAs, parseViewAsRole, useViewAs, viewingAs } from "@/lib/view-as";
@@ -172,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   useEffect(() => {
     const off = onSignedOut(() => {
       void clearViewAs(); // nobody views as a role once signed out
+      void clearOfficeFilters(); // nor sees the last person's hostel choices
       setUser(null);
       setStatus("signedOut");
       // Also when the server ended the session (a refused refresh): nothing of this student
@@ -234,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
         }).catch(() => undefined);
       }
       await clearViewAs(); // a new sign-in starts as itself
+      await clearOfficeFilters(); // with its own office filters
       await storeTokens(tokens);
       await loadUser();
     },

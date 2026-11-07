@@ -13,10 +13,11 @@ import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
 import { usePrefs } from "@/lib/prefs";
 import { saveMyData } from "@/lib/my-data";
-import { formatDate } from "@/lib/time";
+import { apiStatusRows, appStatusRows, type ApiStatus, type StatusRow } from "@/lib/status";
+import { formatDate, formatStamp } from "@/lib/time";
 import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
-import { canViewAs, useViewAs } from "@/lib/view-as";
+import { canViewAs, isDeveloperAsSelf, useViewAs } from "@/lib/view-as";
 import { Press, Row, Screen, Section, T } from "@/ui/kit";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
@@ -128,6 +129,7 @@ export default function Profile(): ReactNode {
           />
         </Section>
       ) : null}
+      {isDeveloperAsSelf(user) ? <DeveloperStatus /> : null}
 
       <Section title="Settings">
         <Row
@@ -273,6 +275,65 @@ function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): React
       <T tone="small" style={{ color, fontFamily: fonts.semibold }}>
         {text}
       </T>
+    </View>
+  );
+}
+
+/**
+ * Developers only: which build and update this phone runs, and the API's own report (versions
+ * and the migration; GET /meta/status refuses everyone else). Loaded on focus; pull to refresh
+ * isn't needed, leaving and coming back checks again.
+ */
+function DeveloperStatus(): ReactNode {
+  const loadStatus = useCallback(() => api<ApiStatus>("/meta/status"), []);
+  const { data, error } = useData(loadStatus);
+  const app = appStatusRows(
+    {
+      version: CURRENT.version,
+      runtimeVersion: Updates.runtimeVersion,
+      channel: Updates.channel,
+      updateId: Updates.updateId,
+      createdAt: Updates.createdAt,
+      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+    },
+    formatStamp,
+  );
+  return (
+    <Section title="Status">
+      <StatusRows rows={app} />
+      {data ? (
+        <StatusRows rows={apiStatusRows(data, formatStamp)} />
+      ) : (
+        <View
+          accessibilityLiveRegion="polite"
+          style={{ paddingHorizontal: space(4), paddingVertical: space(3) }}
+        >
+          <T tone="caption">{error ? `The API didn't answer: ${error}` : "Asking the API…"}</T>
+        </View>
+      )}
+    </Section>
+  );
+}
+
+function StatusRows({ rows }: { rows: StatusRow[] }): ReactNode {
+  return (
+    <View style={{ paddingHorizontal: space(4), paddingVertical: space(3), gap: space(1.5) }}>
+      {rows.map(([label, value]) => (
+        // Read as one line: "Channel, production".
+        <View
+          key={label}
+          accessible
+          accessibilityLabel={`${label}, ${value}`}
+          style={{ flexDirection: "row", gap: space(3) }}
+        >
+          <T tone="caption" style={{ width: 104 }}>
+            {label}
+          </T>
+          <T tone="small" selectable style={{ flex: 1, fontVariant: ["tabular-nums"] }}>
+            {value}
+          </T>
+        </View>
+      ))}
     </View>
   );
 }

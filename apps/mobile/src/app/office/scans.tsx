@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { SCAN_RESULT_LABEL, scanDistance } from "@/lib/office";
 import { office } from "@/lib/office-api";
+import { known, loadOfficeFilters, rememberOfficeFilter } from "@/lib/office-filters";
 import { formatDay, formatTime } from "@/lib/time";
 import type { OfficeScan, OfficeScanPage, ScanResult } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -56,6 +57,39 @@ export default function Scans(): ReactNode {
   useEffect(() => {
     void refetch();
   }, [gateId, result, refetch]);
+
+  // The last gate and result, once the gates are known (a gate no longer listed is "All").
+  // A choice made before the stored one is read wins.
+  const chosen = useRef(false);
+  useEffect(() => {
+    const list = gates.data;
+    if (!list || chosen.current) return;
+    let live = true;
+    void loadOfficeFilters().then((saved) => {
+      if (!live || chosen.current) return;
+      chosen.current = true;
+      setGateId(
+        known(
+          saved.scans.gate,
+          list.map((g) => g.id),
+        ),
+      );
+      setResult(saved.scans.result);
+    });
+    return () => {
+      live = false;
+    };
+  }, [gates.data]);
+  const pickGate = (value: string): void => {
+    chosen.current = true;
+    setGateId(value);
+    void rememberOfficeFilter("scans", { gate: value, result });
+  };
+  const pickResult = (value: ResultFilter): void => {
+    chosen.current = true;
+    setResult(value);
+    void rememberOfficeFilter("scans", { gate: gateId, result: value });
+  };
 
   // Older pages are appended here; a refresh or a new filter starts over from the newest.
   const [older, setOlder] = useState<{
@@ -111,9 +145,9 @@ export default function Scans(): ReactNode {
         lede="Every scan, including refused ones. We keep the distance from the gate, never a student's location."
       />
       {gateChoices.length > 2 ? (
-        <Chips label="Gate" options={gateChoices} value={gateId} onChange={setGateId} />
+        <Chips label="Gate" options={gateChoices} value={gateId} onChange={pickGate} />
       ) : null}
-      <Chips label="Result" options={RESULT_CHIPS} value={result} onChange={setResult} />
+      <Chips label="Result" options={RESULT_CHIPS} value={result} onChange={pickResult} />
 
       {!data && loading ? (
         <T tone="muted">Loading…</T>

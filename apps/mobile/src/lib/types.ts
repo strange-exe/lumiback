@@ -255,10 +255,10 @@ export type LateReply = "on_my_way" | "safe";
 export interface OfficeOverview {
   out_now: number;
   overdue: number;
-  pending_requests?: number;
-  open_escalations?: number;
+  pending_requests: number;
+  open_escalations: number;
   /** Students' correction asks plus unrecorded returns to fix. */
-  corrections?: number;
+  corrections: number;
 }
 
 export interface OfficeOuting {
