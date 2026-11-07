@@ -27,13 +27,13 @@
     "expo-task-manager": "~57.0.22",
     "expo-updates": "~57.0.27",
     "react": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0",
-    "react-native-webview": "13.16.1"
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "react-native-webview": "13.17.0"
   },
   "devDependencies": {
-    "@react-native/jest-preset": "~0.86.3",
+    "@react-native/jest-preset": "~0.88.1",
     "@types/jest": "^29.5.14",
     "@types/node": "26.6.4",
     "@types/react": "~19.2.2",
