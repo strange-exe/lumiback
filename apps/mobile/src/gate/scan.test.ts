@@ -222,6 +222,15 @@ describe("refusal", () => {
     expect(refusal(403, "Not allowed")).toMatchObject({ fallback: false });
   });
 
+  it("says a read-only refusal plainly, with no retry (a developer viewing as a student)", () => {
+    expect(refusal(403, "Read-only while viewing as another role")).toEqual({
+      kind: "refused",
+      message: "Read-only while viewing as another role",
+      retry: false,
+      fallback: false,
+    });
+  });
+
   it("doesn't offer a retry for a double scan", () => {
     expect(refusal(409, "You just scanned.")).toEqual({
       kind: "refused",

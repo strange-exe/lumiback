@@ -10,11 +10,20 @@ export interface User {
   created_at: string;
   /** Wardens (their hostels) and admins (every hostel) also get the hostel office. */
   role?: Role;
+  /**
+   * Set while a developer views the app as a role (then `role` is that role too): the account
+   * really signed in is a developer's. Null or absent otherwise.
+   */
+  viewing_as?: ViewAsRole | null;
 }
 
 /** Warden: their assigned hostels. Head warden: every hostel, plus the outing rules.
- * Admin: everything, including gates, roles and settings. */
-export type Role = "student" | "warden" | "head_warden" | "admin";
+ * Admin: everything, including gates, roles and settings. Developer: an admin who can also
+ * view the app as another role (read-only); granted only by a server script. */
+export type Role = "student" | "warden" | "head_warden" | "admin" | "developer";
+
+/** The roles a developer can view the app as (the X-View-As-Role header). */
+export type ViewAsRole = Exclude<Role, "developer">;
 
 export interface TokenPair {
   access_token: string;

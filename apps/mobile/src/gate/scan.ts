@@ -156,7 +156,11 @@ export interface Refusal {
 
 /** Map an API failure (status + detail) to what the student sees and whether scanning again helps. */
 export function refusal(status: number, detail: string): Refusal {
-  if (status === 409) return { kind: "refused", message: detail, retry: false, fallback: false };
+  // 409: already in or out. 403: not allowed at all, e.g. "Read-only while viewing as another
+  // role" (a developer viewing as a student): scanning again can't change either.
+  if (status === 409 || status === 403) {
+    return { kind: "refused", message: detail, retry: false, fallback: false };
+  }
   if (status === 0) {
     return {
       kind: "refused",

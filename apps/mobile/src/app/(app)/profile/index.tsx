@@ -16,6 +16,7 @@ import { saveMyData } from "@/lib/my-data";
 import { formatDate } from "@/lib/time";
 import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
+import { canViewAs, useViewAs } from "@/lib/view-as";
 import { Press, Row, Screen, Section, T } from "@/ui/kit";
 import { fonts, radius, space, useColors } from "@/ui/theme";
 import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
@@ -31,6 +32,7 @@ export default function Profile(): ReactNode {
   const c = useColors();
   const [signingOut, setSigningOut] = useState(false);
   const [savingData, setSavingData] = useState(false);
+  const viewing = useViewAs();
   // Re-checked on focus: the student may come back from Android settings.
   const [blocked, setBlocked] = useState(false);
   useFocusEffect(
@@ -109,6 +111,23 @@ export default function Profile(): ReactNode {
           />
         </Section>
       )}
+
+      {/* Developers only (granted by a server script), also while viewing, to switch. */}
+      {canViewAs(user) ? (
+        <Section title="Developer">
+          <Row
+            leading={icon("eye-outline")}
+            title="View as"
+            detail={
+              viewing
+                ? `${ROLE_LABEL[viewing]}, read-only`
+                : "See the app as another role, read-only"
+            }
+            trailing={chevron}
+            onPress={() => router.push("/profile/view-as")}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Settings">
         <Row

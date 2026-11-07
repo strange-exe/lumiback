@@ -6,6 +6,7 @@ import {
   sessionGeneration,
   SessionUnavailable,
 } from "@/lib/session";
+import { clearViewAs, loadViewAs, refusesViewAs, viewAsHeaders } from "@/lib/view-as";
 
 /**
  * A structured error detail: `{code, message, ...}` (e.g. the gate's "stale_outing"). Most
@@ -61,10 +62,20 @@ interface Options {
   body?: unknown;
   /** Send the signed-in student's token (default). Sign-in and sign-up calls pass false. */
   auth?: boolean;
+  /**
+   * Without the View as header, even while a developer views as another role: the location
+   * service sending for the phone's own share (a read-only view would refuse it).
+   */
+  self?: boolean;
 }
 
-async function send(path: string, options: Options, token: string | null): Promise<Response> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+async function send(
+  path: string,
+  options: Options,
+  token: string | null,
+  extra: Record<string, string> = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { Accept: "application/json", ...extra };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
@@ -94,8 +105,11 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const began = sessionGeneration(); // a refusal only ends the session this request began in
   let token = auth ? await renewing(accessToken) : null;
   if (auth && !token) throw new ApiError(401, "Please sign in again.");
+  // Viewing as a role (developers): every signed-in request names it.
+  const viewAs = auth && !options.self ? await loadViewAs() : null;
+  const extra = viewAsHeaders(viewAs);
 
-  let response = await send(path, options, token);
+  let response = await send(path, options, token, extra);
   if (auth && response.status === 401) {
     // Another sign-in (or a sign-out) since this request began: never renew or retry it with
     // the next session's tokens.
@@ -103,7 +117,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
     if (stale()) throw new ApiError(401, "Please sign in again.");
     token = await renewing(refresh);
     if (!token || stale()) throw new ApiError(401, "Please sign in again.");
-    response = await send(path, options, token);
+    response = await send(path, options, token, extra);
     if (response.status === 401) {
       if (sessionGeneration() === began) await clearTokens();
       throw new ApiError(401, "Please sign in again.");
@@ -113,7 +127,12 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   if (response.status === 204 || response.status === 202) return undefined as T;
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new ApiError(response.status, detailOf(payload, response.status), problemOf(payload));
+    const detail = detailOf(payload, response.status);
+    // Not a developer (any more), or a role the server doesn't know: stop viewing, here too.
+    // Read-only refusals ("Read-only while viewing as another role") reach the screen as
+    // they are.
+    if (viewAs && refusesViewAs(response.status, detail)) await clearViewAs(viewAs);
+    throw new ApiError(response.status, detail, problemOf(payload));
   }
   return payload as T;
 }

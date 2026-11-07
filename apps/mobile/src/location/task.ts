@@ -4,6 +4,7 @@ import * as TaskManager from "expo-task-manager";
 
 import { api, ApiError } from "@/lib/api";
 import type { ShareSession } from "@/lib/types";
+import { loadViewAs, READ_ONLY } from "@/lib/view-as";
 import { notifyFollowRequest, notifySendProblem, notifyShareEnded } from "@/notify/notify";
 import { hasPushToken } from "@/notify/push";
 import { newRequests } from "@/notify/plan";
@@ -90,14 +91,16 @@ async function endedElsewhere(share: ActiveShare): Promise<void> {
   // A storage error reads as "still this share": ending it must never get stuck here.
   const stored = await activeShares().catch(() => [share]);
   if (!stored.some((s) => s.sessionId === share.sessionId)) return;
-  const view = await api<ShareSession>(`/sessions/${share.sessionId}`).catch(() => null);
+  const view = await api<ShareSession>(`/sessions/${share.sessionId}`, { self: true }).catch(
+    () => null,
+  );
   await stopSending(share.sessionId);
   // Past ends_at the server reports "ended" before its sweep has recorded a reason.
   await notifyShareEnded(view?.ended_reason ?? (view ? "expired" : null));
 }
 
 async function checkRequests(share: ActiveShare): Promise<void> {
-  const view = await api<ShareSession>(`/sessions/${share.sessionId}`);
+  const view = await api<ShareSession>(`/sessions/${share.sessionId}`, { self: true });
   if (view.status !== "active") return endedElsewhere(share);
   const fresh = newRequests(view.viewers, share.notified ?? []);
   if (fresh.length === 0) return;
@@ -113,7 +116,10 @@ async function checkRequests(share: ActiveShare): Promise<void> {
 /** Sends one fix to one share. True when the server no longer knows the student (signed out). */
 async function sendFix(share: ActiveShare, fix: Location.LocationObject): Promise<boolean> {
   try {
+    // `self`: the phone's own share, sent without the View as header (a read-only view would
+    // refuse it, and end the share here).
     await api(`/sessions/${share.sessionId}/location`, {
+      self: true,
       method: "PUT",
       body: {
         lat: fix.coords.latitude,
@@ -199,6 +205,8 @@ export async function locationOn(): Promise<boolean> {
  * any other share the phone already sends for.
  */
 export async function startSending(sessionId: string, endsAt: string): Promise<StartResult> {
+  // A developer viewing as another role never starts sending this phone's location.
+  if (await loadViewAs()) throw new ApiError(403, READ_ONLY);
   if (!(await locationOn())) return "servicesOff";
   const { granted } = await Location.requestForegroundPermissionsAsync();
   if (!granted) return "denied";

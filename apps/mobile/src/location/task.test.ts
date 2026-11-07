@@ -5,6 +5,8 @@ import {
   startSending,
   stopSending,
 } from "@/location/task";
+import { ApiError } from "@/lib/api";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 
 // jest.mock calls are hoisted above the import; the factories read these only when called.
 const mockHasStarted = jest.fn();
@@ -114,6 +116,20 @@ describe("starting to send with the phone's location switched off", () => {
     mockAsk.mockResolvedValue({ granted: false, canAskAgain: false });
     expect(await startSending("s1", later())).toBe("denied");
     expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it("never starts while a developer views the app as another role", async () => {
+    mockServicesOn.mockResolvedValue(true);
+    await setViewAs("student");
+    try {
+      await expect(startSending("s1", later())).rejects.toBeInstanceOf(ApiError);
+      expect(mockAsk).not.toHaveBeenCalled();
+      expect(mockStart).not.toHaveBeenCalled();
+    } finally {
+      await clearViewAs();
+    }
+    // Back in their own view, it starts as usual.
+    expect(await startSending("s1", later())).toBe("started");
   });
 });
 

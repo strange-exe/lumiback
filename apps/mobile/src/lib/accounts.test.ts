@@ -81,6 +81,19 @@ describe("accountControls", () => {
     }
   });
 
+  it("gives a developer the admin's controls", () => {
+    expect(accountControls({ id: "d", role: "developer" }, person())).toEqual(
+      accountControls({ id: "a", role: "admin" }, person()),
+    );
+    expect(accountControls({ id: "d", role: "developer" }, person("admin")).editEmail).toBe(true);
+  });
+
+  it("offers nothing on a developer's account (only a server script changes it)", () => {
+    for (const role of ["admin", "developer", "head_warden", "warden"] as const) {
+      expect(accountControls({ id: "x", role }, person("developer"))).toEqual(NONE);
+    }
+  });
+
   it("never offers anything on your own account, or to a student or nobody", () => {
     expect(accountControls({ id: "p1", role: "admin" }, person())).toEqual(NONE);
     expect(accountControls({ id: "s", role: "student" }, person())).toEqual(NONE);

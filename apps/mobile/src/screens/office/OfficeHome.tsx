@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
 import { View } from "react-native";
 
-import { canEditRules, everyHostel } from "@/lib/office";
+import { canEditRules, everyHostel, isAdmin } from "@/lib/office";
 import type { OfficeOverview, Role } from "@/lib/types";
 import { FormError, LoadFailed, Row, Section, StatusChip, T } from "@/ui/kit";
 import { LedBoard, LedFigure } from "@/ui/led";
@@ -154,7 +154,7 @@ export function OfficeHome({
           leading={icon("people-outline")}
           title="Students"
           detail={
-            role === "admin"
+            isAdmin(role)
               ? "By hostel; change roles"
               : all
                 ? "Every hostel's students and contacts"
@@ -185,7 +185,7 @@ export function OfficeHome({
           leading={icon("qr-code-outline")}
           title="Gates"
           detail={
-            role === "admin" ? "Add gates and kiosk links" : "Which gates take scans (view only)"
+            isAdmin(role) ? "Add gates and kiosk links" : "Which gates take scans (view only)"
           }
           trailing={chevron}
           onPress={() => router.push("/office/gates")}
@@ -197,7 +197,7 @@ export function OfficeHome({
 
 /** One line on what this person's office covers. */
 export function officeScope(role: Role | undefined): string {
-  if (role === "admin") return "Every hostel's students, and the campus setup.";
+  if (isAdmin(role)) return "Every hostel's students, and the campus setup.";
   if (role === "head_warden") {
     return "Every hostel's students, and the outing rules. Gates and roles are set by an admin.";
   }

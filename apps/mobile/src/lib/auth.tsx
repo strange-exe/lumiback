@@ -14,7 +14,8 @@ import { clearSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { deviceLabel } from "@/lib/devices";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
-import type { Registered, ShareSession, TokenPair, User } from "@/lib/types";
+import type { Registered, ShareSession, TokenPair, User, ViewAsRole } from "@/lib/types";
+import { clearViewAs, loadViewAs, parseViewAsRole, useViewAs, viewingAs } from "@/lib/view-as";
 import { sendingShareIds, stopSending } from "@/location/task";
 import { syncPush, syncReturnReminders } from "@/notify/notify";
 import { forgetPushToken, unregisterPush, watchPushToken } from "@/notify/push";
@@ -76,6 +77,18 @@ async function forgetStudentOnPhone(): Promise<void> {
   await stopSending().catch(() => undefined);
 }
 
+/**
+ * Checks `/auth/me` against the role the app asked to view as. When the server didn't honour
+ * it (no `viewing_as`, or another role), the app shows the developer's own view, so the stored
+ * role is cleared and the banner never says otherwise. Returns the role `me` was loaded as.
+ */
+async function settleViewAs(as: ViewAsRole | null, me: User): Promise<ViewAsRole | null> {
+  if (!as) return null;
+  if (parseViewAsRole(me.viewing_as) === as) return as;
+  await clearViewAs(as);
+  return null;
+}
+
 /** Only the server refusing the session ends it, as in refresh(): not a 5xx or 429. */
 function refusedSession(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
@@ -87,12 +100,30 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   // Kept in memory between "create account" and "enter the code" only, so the student is signed
   // in after verifying without typing the password again. Never written anywhere.
   const pendingPassword = useRef<{ email: string; password: string } | null>(null);
+  // Developer View as: which role `user` was loaded as (null: the developer's own), and the
+  // load under way, so a View as change and a screen asking at once share one request.
+  const loadedFor = useRef<ViewAsRole | null>(null);
+  const userLoad = useRef<{ as: ViewAsRole | null; run: Promise<void> } | null>(null);
 
   const loadUser = useCallback(async () => {
-    const me = await api<User>("/auth/me");
-    setUser(me);
-    setStatus("signedIn");
-    void syncPush();
+    const as = await loadViewAs();
+    const running = userLoad.current;
+    if (running && running.as === as) return running.run;
+    const run = (async () => {
+      const me = await api<User>("/auth/me");
+      // View as changed while this was loading: the load for the new role sets the user.
+      if (viewingAs() !== as) return;
+      loadedFor.current = await settleViewAs(as, me);
+      setUser(me);
+      setStatus("signedIn");
+      void syncPush(); // skipped while viewing as a role (push.ts)
+    })();
+    userLoad.current = { as, run };
+    try {
+      await run;
+    } finally {
+      if (userLoad.current?.run === run) userLoad.current = null;
+    }
   }, []);
 
   // The latest status for callbacks that outlive a render (a retry still in flight).
@@ -107,8 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
     const stillChecking = (): boolean =>
       statusRef.current === "loading" || statusRef.current === "offline";
     try {
+      const as = await loadViewAs();
       const me = await api<User>("/auth/me");
       if (!stillChecking()) return;
+      loadedFor.current = await settleViewAs(as, me);
       setUser(me);
       setStatus("signedIn");
       void syncPush();
@@ -128,8 +161,17 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
 
   useEffect(() => (status === "signedIn" ? watchPushToken() : undefined), [status]);
 
+  // View as chosen, stopped, or ended by the server ("developers only"): load the role the app
+  // now shows. A flow that already asked (refreshUser) shares that request.
+  const viewAsRole = useViewAs();
+  useEffect(() => {
+    if (statusRef.current !== "signedIn" || loadedFor.current === viewAsRole) return;
+    void loadUser().catch(() => undefined);
+  }, [viewAsRole, loadUser]);
+
   useEffect(() => {
     const off = onSignedOut(() => {
+      void clearViewAs(); // nobody views as a role once signed out
       setUser(null);
       setStatus("signedOut");
       // Also when the server ended the session (a refused refresh): nothing of this student
@@ -191,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
           body: { refresh_token: kept },
         }).catch(() => undefined);
       }
+      await clearViewAs(); // a new sign-in starts as itself
       await storeTokens(tokens);
       await loadUser();
     },
@@ -239,6 +282,9 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   }, []);
 
   const signOut = useCallback(async () => {
+    // First, so everything below (the push token, shares, the logout call) goes out without the
+    // read-only View as header.
+    await clearViewAs();
     clearSafeReturn();
     // A share must not keep sending this phone's location (or keep its stored session) after
     // the student signs out. Best effort: a failure here never keeps them signed in.

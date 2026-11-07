@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 
 import { api } from "@/lib/api";
 import { loadPrefs } from "@/lib/prefs";
+import { loadViewAs } from "@/lib/view-as";
 import { mutedChannels } from "@/notify/plan";
 
 /**
@@ -32,6 +33,8 @@ export async function hasPushToken(): Promise<boolean> {
 
 async function register(): Promise<void> {
   if (Platform.OS !== "android") return;
+  // A developer viewing as another role: no push-token registration (read-only preview).
+  if (await loadViewAs()) return;
   if (!(await Notifications.getPermissionsAsync()).granted) return; // asked elsewhere, in context
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });

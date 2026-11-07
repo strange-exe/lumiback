@@ -4,11 +4,15 @@ import {
   canEditRules,
   clock,
   dayLine,
+  everyHostel,
   formatPhone,
+  isAdmin,
+  isDeveloper,
   isStaff,
   kioskLink,
   parseHolidayDate,
   passwordLinkCopy,
+  ROLE_LABEL,
   scanDistance,
   scanQuery,
 } from "@/lib/office";
@@ -104,6 +108,31 @@ describe("isStaff", () => {
     expect(isStaff("admin")).toBe(true);
     expect(isStaff("student")).toBe(false);
     expect(isStaff(undefined)).toBe(false);
+  });
+
+  it("counts a developer as staff (the dock, the office)", () => {
+    expect(isStaff("developer")).toBe(true);
+  });
+});
+
+describe("a developer has every admin power", () => {
+  it("is an admin, looks after every hostel and edits the rules", () => {
+    expect(isAdmin("developer")).toBe(true);
+    expect(isAdmin("admin")).toBe(true);
+    expect(isAdmin("head_warden")).toBe(false);
+    expect(isAdmin("warden")).toBe(false);
+    expect(isAdmin("student")).toBe(false);
+    expect(isAdmin(undefined)).toBe(false);
+    expect(everyHostel("developer")).toBe(true);
+    expect(canEditRules("developer")).toBe(true);
+  });
+
+  it("is the only role that may view as another role", () => {
+    expect(isDeveloper("developer")).toBe(true);
+    for (const role of ["admin", "head_warden", "warden", "student", undefined] as const) {
+      expect(isDeveloper(role)).toBe(false);
+    }
+    expect(ROLE_LABEL.developer).toBe("Developer");
   });
 });
 

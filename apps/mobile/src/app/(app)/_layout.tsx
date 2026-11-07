@@ -3,11 +3,13 @@ import { useState, type ReactNode } from "react";
 
 import { useAuth } from "@/lib/auth";
 import { usePrefs } from "@/lib/prefs";
+import { useViewAs } from "@/lib/view-as";
 import { useNotificationRoutes } from "@/notify/notify";
 import { Tour } from "@/tour/Tour";
 import { WhatsNew } from "@/updates/WhatsNew";
 import { Dock } from "@/ui/dock";
 import { useColors } from "@/ui/theme";
+import { ViewAsFrame } from "@/ui/view-as-banner";
 
 /** Four destinations in a floating dock (with Scan in the middle), one stack per tab. */
 export default function AppLayout(): ReactNode {
@@ -15,12 +17,14 @@ export default function AppLayout(): ReactNode {
   const { onboarded } = usePrefs();
   const c = useColors();
   const [notesSettled, setNotesSettled] = useState(false);
+  // A developer viewing as another role: no tour and no release notes (not for a preview).
+  const viewingAs = useViewAs() !== null;
   useNotificationRoutes(status === "signedIn" && onboarded);
   if (status !== "signedIn") return <Redirect href="/sign-in" />;
   if (!onboarded) return <Redirect href="/onboarding" />;
 
   return (
-    <>
+    <ViewAsFrame>
       <Tabs
         tabBar={(props) => <Dock {...props} />}
         screenOptions={{
@@ -36,8 +40,12 @@ export default function AppLayout(): ReactNode {
       </Tabs>
       {/* Signed in and past onboarding: the moment a release note makes sense. The guided
           tour waits for it, so the two never stack. */}
-      <WhatsNew onSettled={() => setNotesSettled(true)} />
-      <Tour ready={notesSettled} />
-    </>
+      {viewingAs ? null : (
+        <>
+          <WhatsNew onSettled={() => setNotesSettled(true)} />
+          <Tour ready={notesSettled} />
+        </>
+      )}
+    </ViewAsFrame>
   );
 }

@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 
 import { loadPrefs } from "@/lib/prefs";
 import type { Viewer } from "@/lib/types";
+import { loadViewAs } from "@/lib/view-as";
 import {
   endedMessage,
   followRequestNotice,
@@ -141,7 +142,8 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
   try {
     await Notifications.cancelScheduledNotificationAsync(RETURN_SOON);
     await Notifications.cancelScheduledNotificationAsync(RETURN_DUE);
-    const enabled = (await loadPrefs()).returnReminders;
+    // Viewing as another role (developers): no reminders from a preview.
+    const enabled = (await loadPrefs()).returnReminders && !(await loadViewAs());
     const plan = enabled ? returnReminders(expectedReturnAt, Date.now()) : [];
     if (plan.length === 0) return;
     await ensureChannels();

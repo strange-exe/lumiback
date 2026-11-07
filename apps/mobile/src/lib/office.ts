@@ -119,13 +119,23 @@ export function kioskLink(webUrl: string, token: string): string {
   return `${webUrl}/kiosk#k=${token}`;
 }
 
+/** Admin powers: admins, and developers (who have every admin power). */
+export function isAdmin(role: Role | undefined): boolean {
+  return role === "admin" || role === "developer";
+}
+
 export function isStaff(role: Role | undefined): boolean {
-  return role === "warden" || role === "head_warden" || role === "admin";
+  return role === "warden" || role === "head_warden" || isAdmin(role);
+}
+
+/** Only a developer may view the app as another role. */
+export function isDeveloper(role: Role | undefined): boolean {
+  return role === "developer";
 }
 
 /** Admins and head wardens look after every hostel; a warden, only theirs. */
 export function everyHostel(role: Role | undefined): boolean {
-  return role === "head_warden" || role === "admin";
+  return role === "head_warden" || isAdmin(role);
 }
 
 /** Who may change the outing rules (on the website) and the holidays (here too): admins and
@@ -139,6 +149,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   warden: "Warden",
   head_warden: "Head warden",
   admin: "Admin",
+  developer: "Developer",
 };
 
 /** A person's account in words, or null when it's in use (nothing to say). */

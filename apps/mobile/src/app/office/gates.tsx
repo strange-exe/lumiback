@@ -7,7 +7,7 @@ import { Alert, Linking, RefreshControl, Share, View } from "react-native";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { WEB_URL } from "@/lib/config";
-import { kioskLink } from "@/lib/office";
+import { isAdmin, kioskLink } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { Gate } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -20,7 +20,7 @@ import { fonts, space, useColors } from "@/ui/theme";
 export default function Gates(): ReactNode {
   const { user } = useAuth();
   const c = useColors();
-  const admin = user?.role === "admin";
+  const admin = isAdmin(user?.role);
   const load = useCallback(() => office.gates(), []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
   const [link, setLink] = useState<{ gate: string; url: string } | null>(null);

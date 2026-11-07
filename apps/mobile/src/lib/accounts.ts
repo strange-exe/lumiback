@@ -25,7 +25,7 @@ const NONE: AccountControls = {
 };
 
 /**
- * Admins: anyone but themselves. Wardens and head wardens: students only (the list already
+ * Admins (and developers): anyone but themselves and developers. Wardens and head wardens: students only (the list already
  * holds only the hostels they look after). Nobody changes their own account here.
  */
 export function accountControls(
@@ -33,9 +33,12 @@ export function accountControls(
   person: Pick<OfficeStudent, "id" | "role" | "account">,
 ): AccountControls {
   if (!viewer || viewer.id === person.id) return NONE;
-  const admin = viewer.role === "admin";
+  // Developers have every admin power. Nobody changes a developer's account from the office:
+  // the server refuses it (the role is granted and removed only by a server script).
+  const admin = viewer.role === "admin" || viewer.role === "developer";
   const staffViewer = admin || viewer.role === "warden" || viewer.role === "head_warden";
   if (!staffViewer || (!admin && person.role !== "student")) return NONE;
+  if (person.role === "developer") return NONE;
   return {
     turn: true,
     edit: true,

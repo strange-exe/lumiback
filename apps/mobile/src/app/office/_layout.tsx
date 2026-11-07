@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { isStaff } from "@/lib/office";
 import { fonts, useColors } from "@/ui/theme";
+import { ViewAsFrame } from "@/ui/view-as-banner";
 
 /** The hostel office: admins and wardens only (the API also checks, on every call). */
 export default function OfficeLayout(): ReactNode {
@@ -12,23 +13,25 @@ export default function OfficeLayout(): ReactNode {
   if (status !== "signedIn") return <Redirect href="/sign-in" />;
   if (!isStaff(user?.role)) return <Redirect href="/today" />;
   return (
-    <Stack
-      screenOptions={{
-        title: "Hostel office",
-        headerStyle: { backgroundColor: c.page },
-        headerTintColor: c.ink,
-        headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 18 },
-        headerShadowVisible: false,
-        contentStyle: { backgroundColor: c.page },
-        animation: "none", // switching sections replaces the screen in place
-      }}
-    >
-      {/* Staff open the office from Today (OfficeHome); it has no hub screen of its own. */}
-      <Stack.Screen name="students" options={{ animation: "default" }} />
-      <Stack.Screen name="scans" options={{ animation: "default" }} />
-      <Stack.Screen name="rules" options={{ animation: "default" }} />
-      <Stack.Screen name="gates" options={{ animation: "default" }} />
-      <Stack.Screen name="corrections" options={{ animation: "default" }} />
-    </Stack>
+    <ViewAsFrame>
+      <Stack
+        screenOptions={{
+          title: "Hostel office",
+          headerStyle: { backgroundColor: c.page },
+          headerTintColor: c.ink,
+          headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 18 },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: c.page },
+          animation: "none", // switching sections replaces the screen in place
+        }}
+      >
+        {/* Staff open the office from Today (OfficeHome); it has no hub screen of its own. */}
+        <Stack.Screen name="students" options={{ animation: "default" }} />
+        <Stack.Screen name="scans" options={{ animation: "default" }} />
+        <Stack.Screen name="rules" options={{ animation: "default" }} />
+        <Stack.Screen name="gates" options={{ animation: "default" }} />
+        <Stack.Screen name="corrections" options={{ animation: "default" }} />
+      </Stack>
+    </ViewAsFrame>
   );
 }

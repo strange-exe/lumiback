@@ -10,7 +10,7 @@ import {
 } from "@/lib/accounts";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { accountLabel, everyHostel, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
+import { accountLabel, everyHostel, isAdmin, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { AccountFilter, OfficeHostel, OfficeStudent, Role } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -31,7 +31,7 @@ const STATUS = {
 export default function Students(): ReactNode {
   const { user } = useAuth();
   const c = useColors();
-  const admin = user?.role === "admin";
+  const admin = isAdmin(user?.role);
   const [hostelId, setHostelId] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -147,7 +147,8 @@ export default function Students(): ReactNode {
               key={s.id}
               student={s}
               first={i === 0}
-              onChangeRole={admin ? () => setRoleFor(s) : undefined}
+              // A developer's role is set only by a server script.
+              onChangeRole={admin && s.role !== "developer" ? () => setRoleFor(s) : undefined}
               controls={accountControls(viewer, s)}
               onEdit={() => {
                 setDone(null);
