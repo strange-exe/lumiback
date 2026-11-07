@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { LedFigure } from "@/components/led/LedFigure";
 import { formatTime } from "@/features/outings/time";
 import { QrCode } from "@/features/kiosk/QrCode";
 import type { KioskCode } from "@/lib/types";
@@ -16,7 +17,7 @@ type View =
   | { kind: "no-token" }
   | { kind: "replaced" }
   | { kind: "off"; message: string }
-  | { kind: "code"; code: KioskCode; offline: boolean; countdownMs: number }
+  | { kind: "code"; code: KioskCode; offline: boolean; countdownMs: number; nextAt: number }
   | { kind: "offline" };
 
 function readToken(): string | null {
@@ -90,7 +91,7 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
       const usable = last && Date.parse(last.refresh_at) + STILL_VALID_FOR_MS > Date.now();
       setView(
         usable && last
-          ? { kind: "code", code: last, offline: true, countdownMs: 0 }
+          ? { kind: "code", code: last, offline: true, countdownMs: 0, nextAt: 0 }
           : { kind: "offline" },
       );
       later(5_000);
@@ -135,7 +136,13 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
         20_000,
         Math.max(2_000, Date.parse(last.refresh_at) - Date.now() + 300),
       );
-      setView({ kind: "code", code: last, offline: false, countdownMs: wait });
+      setView({
+        kind: "code",
+        code: last,
+        offline: false,
+        countdownMs: wait,
+        nextAt: Date.now() + wait,
+      });
       later(wait);
     }
 
@@ -155,7 +162,7 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
   }, [apiUrl]);
 
   return (
-    <main className="flex min-h-dvh flex-col bg-hero text-on-hero">
+    <main className="kiosk-board flex min-h-dvh flex-col bg-board text-on-board">
       <header className="flex items-center justify-between gap-4 px-6 pt-6 sm:px-10 sm:pt-8">
         <span className="font-display text-xl">Lumiback</span>
         <span className="font-display text-title tabular-nums" aria-label="Time now">
@@ -170,7 +177,14 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
 function Body({ view }: { view: View }): ReactNode {
   switch (view.kind) {
     case "code":
-      return <CodeView code={view.code} offline={view.offline} countdownMs={view.countdownMs} />;
+      return (
+        <CodeView
+          code={view.code}
+          offline={view.offline}
+          countdownMs={view.countdownMs}
+          nextAt={view.nextAt}
+        />
+      );
     case "starting":
       return <Message title="Starting…" />;
     case "offline":
@@ -204,55 +218,73 @@ function Body({ view }: { view: View }): ReactNode {
   }
 }
 
+/** Seconds until the next code, as an LED figure. Empty until mounted (no clock on the server). */
+function NextCodeIn({ nextAt }: { nextAt: number }): ReactNode {
+  const now = useNow(1_000);
+  if (!now || !nextAt) return <span className="h-12" />;
+  const seconds = Math.max(0, Math.ceil((nextAt - now) / 1_000));
+  return (
+    <LedFigure
+      text={String(seconds)}
+      unit="s"
+      label={`New code in ${seconds} ${seconds === 1 ? "second" : "seconds"}`}
+      className="text-5xl"
+    />
+  );
+}
+
 function CodeView({
   code,
   offline,
   countdownMs,
+  nextAt,
 }: {
   code: KioskCode;
   offline: boolean;
   countdownMs: number;
+  nextAt: number;
 }): ReactNode {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-8 sm:px-10 landscape:flex-row landscape:gap-16">
       <div className="flex max-w-md flex-col gap-4 text-center landscape:text-left">
-        <p className="text-sm font-bold tracking-wide text-hero-accent uppercase">
-          Tap out · Tap in
-        </p>
         <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-[1.05]">
           {code.gate_name}
         </h1>
-        <p className="text-lg text-hero-muted">
-          Open the Lumiback app, tap <strong className="text-on-hero">Scan</strong>, and point your
-          camera here.
+        <p className="text-lg text-board-muted">
+          Tap out or tap in: open the Lumiback app, tap{" "}
+          <strong className="text-on-board">Scan</strong>, and point your camera here.
         </p>
-        <p className="text-hero-muted">
-          No app? Check out on <strong className="text-on-hero">lumiback.abhinesh.codes</strong>{" "}
+        <p className="text-board-muted">
+          No app? Check out on <strong className="text-on-board">lumiback.abhinesh.codes</strong>{" "}
           instead.
         </p>
         <p
           aria-live="polite"
-          className={offline ? "font-bold text-hero-danger" : "text-hero-muted"}
+          className={offline ? "font-bold text-led-danger" : "text-board-muted"}
         >
           {offline
             ? "Offline: this code still works for a few seconds."
             : "New code every 20 seconds."}
         </p>
       </div>
-      <div className="flex flex-col items-center gap-4">
-        <div className="rounded-[28px] bg-white p-3 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
+      <div className="led-board flex flex-col items-center gap-4 p-4 sm:p-5">
+        {/* White tile with the code's own quiet zone (qr-path.ts), so phones still scan it. */}
+        <div className="rounded-[18px] bg-white p-3">
           <QrCode
             text={code.qr}
             label={`Gate code for ${code.gate_name}`}
-            className={`block size-[min(78vw,52vh)] landscape:size-[min(42vw,70vh)] ${offline ? "opacity-60" : ""}`}
+            className={`block size-[min(72vw,48vh)] landscape:size-[min(40vw,62vh)] ${offline ? "opacity-60" : ""}`}
           />
         </div>
-        <div className="h-1.5 w-full max-w-[min(78vw,52vh)] overflow-hidden rounded-full bg-hero-line landscape:max-w-[min(42vw,70vh)]">
-          <div
-            key={code.qr}
-            className="kiosk-countdown h-full origin-left rounded-full bg-hero-accent"
-            style={{ animationDuration: `${countdownMs}ms` }}
-          />
+        <div className="flex w-full items-center gap-4">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-board-line">
+            <div
+              key={code.qr}
+              className="kiosk-countdown h-full origin-left rounded-full bg-led"
+              style={{ animationDuration: `${countdownMs}ms` }}
+            />
+          </div>
+          {offline ? null : <NextCodeIn nextAt={nextAt} />}
         </div>
       </div>
     </div>
@@ -266,7 +298,7 @@ function Message({ title, detail }: { title: string; detail?: string }): ReactNo
       className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
     >
       <h1 className="font-display text-[clamp(1.75rem,4vw,2.75rem)] leading-tight">{title}</h1>
-      {detail && <p className="max-w-lg text-lg text-hero-muted">{detail}</p>}
+      {detail && <p className="max-w-lg text-lg text-board-muted">{detail}</p>}
     </div>
   );
 }

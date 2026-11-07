@@ -285,10 +285,25 @@ export function HolidayRow({ holiday }: { holiday: Holiday }): ReactNode {
       <span className="text-ink">
         <span className="tabular-nums text-muted">{label}</span> · {holiday.name}
       </span>
-      <form action={remove} className="flex items-center gap-2">
+      <form
+        action={remove}
+        onSubmit={(event) => {
+          if (
+            !window.confirm(
+              `Remove ${holiday.name} (${label})? That day follows its usual weekday rules again, for every hostel.`,
+            )
+          )
+            event.preventDefault();
+        }}
+        className="flex items-center gap-2"
+      >
         <input type="hidden" name="day" value={holiday.day} />
         <SubmitButton variant="quiet" pendingLabel="Removing…" className="min-h-11 text-sm">
           Remove
+          <span className="sr-only">
+            {" "}
+            {holiday.name}, {label}
+          </span>
         </SubmitButton>
         <Notice state={state} />
       </form>

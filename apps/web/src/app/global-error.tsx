@@ -1,15 +1,13 @@
 "use client";
 
-import { Geist } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { errorCopy, supportHref } from "@/lib/error-copy";
+import { fontVariables } from "@/lib/fonts";
 import { useOnline } from "@/lib/use-online";
 
 import "./globals.css";
-
-const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 
 /**
  * Last resort: the root layout itself failed, so this replaces the whole document (its own html
@@ -24,7 +22,7 @@ export default function GlobalError({
 }): ReactNode {
   const copy = errorCopy({ online: useOnline() });
   return (
-    <html lang="en-IN" className={geist.variable}>
+    <html lang="en-IN" className={fontVariables}>
       <body className="min-h-dvh">
         <title>{`${copy.title} · Lumiback`}</title>
         <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5">
@@ -48,7 +46,7 @@ export default function GlobalError({
               <button
                 type="button"
                 onClick={() => retry()}
-                className="min-h-12 rounded-control bg-accent px-6 font-bold text-on-accent hover:brightness-110"
+                className="press min-h-12 rounded-control bg-accent px-6 font-bold text-on-accent hover:brightness-105"
               >
                 Try again
               </button>

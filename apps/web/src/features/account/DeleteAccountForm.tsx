@@ -27,8 +27,10 @@ export function DeleteAccountForm(): ReactNode {
       </summary>
       <form action={action} className="flex flex-col gap-4 border-t border-line px-5 pb-5 pt-4">
         <p className="leading-relaxed text-ink">
-          This erases your account, outings, shares and everything tied to them, right away. Anyone
-          following you loses access. It can&apos;t be undone.
+          This erases your account, shares and everything tied to them, right away. Anyone following
+          you loses access. It can&apos;t be undone. The hostel keeps your outing records, with your
+          name and roll number, for its retention period (180 days by default), then deletes them.
+          You can&apos;t delete your account while you&apos;re out or a late follow-up is open.
         </p>
         <PasswordField label="Password" name="password" autoComplete="current-password" required />
         <Field

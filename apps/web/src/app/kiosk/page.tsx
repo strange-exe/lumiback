@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export const viewport: Viewport = { themeColor: "#0b0c10" };
+export const viewport: Viewport = { themeColor: "#0d0e10" };
 
 /** The tablet at a gate. Its own device token (from the admin's kiosk link) lives on the tablet. */
 export default function KioskPage(): ReactNode {

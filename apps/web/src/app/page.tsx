@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { HeroVisual } from "@/components/hero/HeroVisual";
+import { DemoBoard } from "@/components/hero/DemoBoard";
 import { Lantern } from "@/components/illustrations/Lantern";
 import { SiteFooter } from "@/components/ui/SiteFooter";
 import { currentUser } from "@/lib/session";
@@ -14,9 +14,9 @@ export const metadata: Metadata = {
 };
 
 const PRIMARY =
-  "inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_10px_24px_-10px_rgba(31,63,209,0.45)] transition hover:-translate-y-px hover:brightness-110 active:translate-y-0";
+  "press inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent shadow-[0_10px_24px_-12px_color-mix(in_srgb,var(--accent)_70%,transparent)] hover:brightness-105";
 const SECONDARY =
-  "inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-accent ring-1 ring-line transition hover:-translate-y-px hover:ring-accent/40 active:translate-y-0";
+  "press inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-accent ring-1 ring-line hover:ring-accent/40";
 
 /** A real, static slice of the app's UI (not a screenshot): today's rules and check-out. */
 function CheckOutPreview(): ReactNode {
@@ -64,12 +64,12 @@ export default async function Landing(): Promise<ReactNode> {
       </header>
 
       <main className="flex flex-1 flex-col">
-        <section className="grid items-center gap-8 pb-16 pt-6 md:grid-cols-[1fr_1.1fr] md:gap-12 md:pb-24 md:pt-14">
+        <section className="grid grid-cols-[minmax(0,1fr)] items-center gap-8 pb-16 pt-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-12 md:pb-24 md:pt-14">
           <div className="reveal flex flex-col gap-6">
             <h1 className="font-display text-[2.6rem] leading-[1.02] text-ink sm:text-5xl lg:text-6xl">
               Head out.
               <br />
-              <span className="text-accent">Get back safe.</span>
+              <span className="text-muted">Get back safe.</span>
             </h1>
             <p className="max-w-[40ch] text-lg leading-relaxed text-muted">
               Tap out at the gate or log your trip; your hostel&apos;s rules set when you&apos;re
@@ -92,7 +92,7 @@ export default async function Landing(): Promise<ReactNode> {
               Get the Android app
             </Link>
           </div>
-          <HeroVisual className="mx-auto max-w-xl md:max-w-none" />
+          <DemoBoard className="mx-auto w-full max-w-xl md:max-w-none" />
         </section>
 
         <section
@@ -116,16 +116,16 @@ export default async function Landing(): Promise<ReactNode> {
               </div>
               <CheckOutPreview />
             </article>
-            <article className="lift reveal flex flex-col gap-5 rounded-sheet bg-accent p-6 text-on-accent md:p-8">
+            <article className="led-board reveal flex flex-col gap-5 p-6 md:p-8">
               <div>
-                <h3 className="font-display text-2xl">You choose who sees you</h3>
-                <p className="mt-2 leading-relaxed opacity-85">
+                <h3 className="font-display text-2xl text-on-board">You choose who sees you</h3>
+                <p className="mt-2 leading-relaxed text-board-muted">
                   People join with a one-time code and see nothing until you approve them.
                 </p>
               </div>
               <span
                 aria-hidden="true"
-                className="self-start rounded-control border-2 border-dashed border-on-accent/50 px-4 py-2 font-mono text-lg font-bold tracking-[0.18em]"
+                className="self-start rounded-control border border-dashed border-board-line px-4 py-2 font-led text-2xl font-black text-led"
               >
                 7KQ2M-XW4PD
               </span>
@@ -173,7 +173,7 @@ export default async function Landing(): Promise<ReactNode> {
 
         <section
           aria-labelledby="privacy-heading"
-          className="reveal my-16 flex flex-col gap-4 border-l-4 border-accent py-2 pl-6 md:my-24"
+          className="reveal my-16 flex flex-col gap-4 border-t border-line pt-10 md:my-24"
         >
           <h2
             id="privacy-heading"

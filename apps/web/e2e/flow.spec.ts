@@ -95,11 +95,12 @@ test.describe("signed out, without JavaScript", () => {
   });
 });
 
-test("check out, see the return arc, come back, find it in history", async ({ page }) => {
+test("check out, see the status board, come back, find it in history", async ({ page }) => {
   await checkOut(page, "Paltan Bazaar");
 
   await expect(page.getByText("Back by", { exact: true })).toBeVisible();
-  await expect(page.getByRole("img", { name: /due back at/ })).toBeVisible();
+  // The board's LED countdown is named in words: "1 hour 12 minutes left" / "18 minutes late".
+  await expect(page.getByRole("img", { name: /(left|late)$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "I'm back" }).click();
   await expect(page.getByRole("heading", { name: "Heading out?" })).toBeVisible();

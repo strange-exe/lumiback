@@ -2,18 +2,12 @@ import "server-only";
 
 import { headers } from "next/headers";
 
+import { ApiError, reachBackend } from "@/lib/api-error";
 import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
 import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
 import { FAULT_HEADER, faultsEnabled, shouldFail } from "@/lib/test-faults";
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly detail: string,
-  ) {
-    super(`${status}: ${detail}`);
-  }
-}
+export { ApiError };
 
 interface CallOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -62,12 +56,15 @@ async function send(path: string, options: CallOptions): Promise<Response> {
   if (options.guestToken) requestHeaders["X-Guest-Token"] = options.guestToken;
   Object.assign(requestHeaders, visitorHeaders(options.clientIp ?? null, INTERNAL_API_SECRET));
 
-  return fetch(`${BACKEND_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers: requestHeaders,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    cache: "no-store",
-  });
+  // No timeout of our own: on the free host a cold start can hold a request for up to a minute.
+  return reachBackend(() =>
+    fetch(`${BACKEND_URL}${path}`, {
+      method: options.method ?? "GET",
+      headers: requestHeaders,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      cache: "no-store",
+    }),
+  );
 }
 
 /**

@@ -23,7 +23,7 @@ const PARTS: Part[] = [
       "Your account: name, university email, an optional roll number, and your password, stored only as a one-way hash.",
       "Your outings: when you left, when you expect to be back, when you returned, and an optional destination.",
       "Your hostel (it decides your outing hours), and, if you add them, your phone number and an emergency contact's name, relation, phone number and email.",
-      "Outing requests for days that need approval (currently Sundays and holidays): where and why, how long, and the phone numbers on the form, with the hostel office's decision.",
+      "Outing requests for days that need approval (the hostel office chooses which days, such as Sundays and holidays): where and why, how long, and the phone numbers on the form, with the hostel office's decision.",
       "If you're late: your answer to the “Are you OK?” alert, and whether the hostel office followed it up.",
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
       "Who looked at your share and when, so you can see it. Guests who follow you give a name for you to recognise.",
@@ -47,7 +47,7 @@ const PARTS: Part[] = [
     heading: "How long we keep it",
     items: [
       "Your location is deleted as soon as you stop sharing or close the tab. If a share ends on its own (its time runs out, or your tab goes quiet for 5 minutes), it is deleted within a minute.",
-      "Outings and records of your past shares stay until you delete your account.",
+      "Outings and records of your past shares stay until you delete your account. After that, the hostel keeps your outing and late follow-up records for the campus retention period below, then they are deleted.",
       "Gate scans, outing requests, records of who viewed your share, and handled late follow-ups are deleted automatically after 180 days (admins can set this between 7 and 730 days). A late follow-up still open stays until the hostel office handles it.",
       "Join codes are deleted a day after they expire. You are signed out after 30 days without using the app.",
       "A phone's push token is deleted when you sign out on it, or after 90 days without the app being opened on it.",
@@ -73,8 +73,12 @@ const PARTS: Part[] = [
         people who viewed your shares.
       </>,
       <>
-        Delete your account from the <Link href="/account">Account</Link> page. Everything tied to
-        it is erased immediately and can&apos;t be recovered.
+        Delete your account from the <Link href="/account">Account</Link> page. Your account,
+        contacts, shares, requests, gate scans and phones are erased immediately and can&apos;t be
+        recovered. The hostel keeps your outing records and any late follow-ups, with your name and
+        roll number, for the campus retention period (180 days by default), so the office can still
+        account for past trips; then they are deleted too. You can&apos;t delete your account while
+        you are out or a late follow-up is still open, and the last admin can&apos;t delete theirs.
       </>,
     ],
   },
@@ -93,7 +97,7 @@ export default function PrivacyPage(): ReactNode {
           <h1 className="font-display text-title text-ink">Privacy</h1>
           <p className="mt-2 max-w-[60ch] leading-relaxed text-muted">
             Lumiback exists to share your location with people you choose, so this page says exactly
-            what is kept, who can see it, and for how long. Last updated 5 November 2026.
+            what is kept, who can see it, and for how long. Last updated 7 November 2026.
           </p>
         </div>
         {PARTS.map((part) => (

@@ -17,10 +17,22 @@ const STATUS: Record<AdminRequest["status"], { label: string; className: string 
   cancelled: { label: "Cancelled by student", className: "bg-line text-muted" },
 };
 
-/** One outing request (a day that needs approval): who, why, for how long, whom to call; and a decision. */
-export function RequestCard({ request }: { request: AdminRequest }): ReactNode {
+/**
+ * One outing request (a day that needs approval): who, why, for how long, whom to call; and a
+ * decision. `past`: an earlier day's request, shown as a record (its day is over, so no decision).
+ */
+export function RequestCard({
+  request,
+  past = false,
+}: {
+  request: AdminRequest;
+  past?: boolean;
+}): ReactNode {
   const [state, action] = useActionState(decideRequest, EMPTY);
-  const status = STATUS[request.status];
+  const status =
+    past && request.status === "pending"
+      ? { label: "Never decided", className: "bg-line text-muted" }
+      : STATUS[request.status];
   const minutes = request.requested_minutes ?? request.max_minutes;
   return (
     <article
@@ -72,7 +84,7 @@ export function RequestCard({ request }: { request: AdminRequest }): ReactNode {
         />
       </dl>
 
-      {request.status === "pending" ? (
+      {request.status === "pending" && !past ? (
         <form action={action} className="flex flex-col gap-3 border-t border-line pt-4">
           <input type="hidden" name="request_id" value={request.id} />
           <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">

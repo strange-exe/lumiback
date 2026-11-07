@@ -10,8 +10,8 @@ import { addLabel, csvFileProblem, importSummary } from "@/features/admin/studen
 import { ROLE_LABEL, type StudentImportRow } from "@/lib/types";
 
 const BUTTON =
-  "min-h-12 rounded-control px-5 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-50";
-const PRIMARY = `${BUTTON} bg-accent text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] enabled:hover:brightness-110 enabled:active:translate-y-px`;
+  "press min-h-12 rounded-control px-5 text-base font-bold disabled:cursor-not-allowed disabled:opacity-50";
+const PRIMARY = `${BUTTON} bg-accent text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] enabled:hover:brightness-105`;
 const SECONDARY = `${BUTTON} bg-surface text-accent ring-1 ring-line enabled:hover:ring-accent/40`;
 
 /** Each row's state in words; problems also carry an icon and bold text, never colour alone. */

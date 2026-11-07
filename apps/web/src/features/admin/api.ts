@@ -71,8 +71,10 @@ export const adminApi = {
     return callBackend<OfficeStudent[]>(`/admin/students${search ? `?${search}` : ""}`, { token });
   },
 
-  requests(token: string): Promise<AdminRequest[]> {
-    return callBackend<AdminRequest[]>("/admin/requests", { token });
+  /** A day's requests: today, or an earlier day (YYYY-MM-DD, already checked by the page). */
+  requests(token: string, day?: string | null): Promise<AdminRequest[]> {
+    const query = day ? `?${new URLSearchParams({ day }).toString()}` : "";
+    return callBackend<AdminRequest[]>(`/admin/requests${query}`, { token });
   },
 
   escalations(token: string, state: "open" | "all" = "open"): Promise<Escalation[]> {

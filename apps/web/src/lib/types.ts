@@ -263,9 +263,11 @@ export interface AdminOverview {
 
 export interface AdminOuting {
   id: string;
-  student_id: string;
+  /** null (with email) for an outing kept after the student deleted their account. */
+  student_id: string | null;
+  /** Ends " (deleted account)" once the student deleted it. */
   name: string;
-  email: string;
+  email: string | null;
   roll_no: string | null;
   destination: string | null;
   /** IST (+05:30) */
@@ -422,8 +424,9 @@ export interface LastSeen {
 export interface Escalation {
   id: string;
   created_at: string;
+  /** Ends " (deleted account)" once the student deleted it; email is then null. */
   name: string;
-  email: string;
+  email: string | null;
   roll_no: string | null;
   hostel: string | null;
   warden_name: string | null;

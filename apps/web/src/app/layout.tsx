@@ -1,20 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { shareApi } from "@/features/share/api";
 import { LiveBar } from "@/features/share/components/LiveBar";
 import { ShareProvider } from "@/features/share/ShareProvider";
+import { fontVariables } from "@/lib/fonts";
 import { accessToken } from "@/lib/session";
 
 import "./globals.css";
-
-// One family for everything: Geist is a variable font, so every weight is a single file.
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: { default: "Lumiback", template: "%s · Lumiback" },
@@ -28,8 +21,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fafafb" },
-    { media: "(prefers-color-scheme: dark)", color: "#08090c" },
+    { media: "(prefers-color-scheme: light)", color: "#f1f1f2" },
+    { media: "(prefers-color-scheme: dark)", color: "#08090a" },
   ],
 };
 
@@ -47,7 +40,7 @@ export default async function RootLayout({
   const token = await accessToken();
   const liveShare = token ? await shareApi.activeTabShare(token).catch(() => null) : null;
   return (
-    <html lang="en-IN" className={geist.variable}>
+    <html lang="en-IN" className={fontVariables}>
       <body className="min-h-dvh">
         <ShareProvider initial={liveShare}>
           <LiveBar />

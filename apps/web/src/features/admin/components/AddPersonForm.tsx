@@ -62,7 +62,7 @@ export function AddPersonForm({ hostels }: { hostels: Hostel[] }): ReactNode {
       <button
         type="button"
         onClick={() => dialog.current?.showModal()}
-        className="min-h-12 self-start rounded-control bg-accent px-5 font-bold text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-110 active:translate-y-px"
+        className="press min-h-12 self-start rounded-control bg-accent px-5 font-bold text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-105"
       >
         Add a person
       </button>

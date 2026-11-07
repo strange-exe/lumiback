@@ -9,7 +9,7 @@ interface LanternProps {
   style?: CSSProperties;
 }
 
-/** The anchor object of the app (and its icon): an ink lantern whose window glows cobalt. Decorative; meaning is always in text. */
+/** The anchor object of the app (and its icon): an ink lantern whose window glows in the accent. Decorative; meaning is always in text. */
 export function Lantern({ lit, className, style }: LanternProps): ReactNode {
   const id = "lantern";
   return (

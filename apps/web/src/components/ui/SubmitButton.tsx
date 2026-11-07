@@ -7,11 +7,10 @@ type Variant = "primary" | "secondary" | "quiet" | "danger";
 
 const STYLES: Record<Variant, string> = {
   primary:
-    "bg-accent text-on-accent font-bold shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-110 active:translate-y-px",
-  secondary:
-    "bg-surface text-accent font-bold ring-1 ring-line hover:ring-accent/40 active:scale-[0.98]",
-  danger: "bg-danger text-surface font-bold hover:brightness-110 active:translate-y-px",
-  quiet: "text-accent underline-offset-4 hover:underline",
+    "press bg-accent text-on-accent font-bold shadow-[0_2px_0_rgba(0,0,0,0.12)] hover:brightness-105",
+  secondary: "press bg-surface text-accent font-bold ring-1 ring-line hover:ring-accent/40",
+  danger: "press bg-danger text-surface font-bold hover:brightness-110",
+  quiet: "transition text-accent underline-offset-4 hover:underline",
 };
 
 interface SubmitButtonProps {
@@ -42,7 +41,7 @@ export function SubmitButton({
       onClick={(event) => {
         if (pending) event.preventDefault();
       }}
-      className={`min-h-12 rounded-control px-5 text-base transition ${STYLES[variant]} ${
+      className={`min-h-12 rounded-control px-5 text-base ${STYLES[variant]} ${
         pending ? "cursor-progress opacity-75" : ""
       } ${className}`}
     >

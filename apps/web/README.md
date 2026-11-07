@@ -11,8 +11,14 @@ the return arc, "I'm back", and history.
   JavaScript never sees them, and there is no generic API proxy.
 - `src/proxy.ts` refreshes the access token before pages and actions run, and shares one refresh
   between simultaneous requests (the API revokes a login if a refresh token is reused).
-- The visitor's IP is forwarded as `X-Forwarded-For` so the API's per-IP limits apply per student.
-  In production run the API with `--forwarded-allow-ips=<this server's IP>`.
+- The visitor's IP goes to the API in `X-Client-IP`, with `X-Internal-Auth` carrying
+  `INTERNAL_API_SECRET`, so the API's per-IP limits apply per student (`src/lib/client-ip.ts`).
+  Set `INTERNAL_API_SECRET` to the same value on both services; without it the API ignores
+  `X-Client-IP` and counts every student as this server. The web server reads the IP from
+  `CLIENT_IP_HEADER` (behind Cloudflare: `cf-connecting-ip`) and trusts it only when the edge also
+  sends `EDGE_SECRET` in `X-Edge-Auth`; `CLIENT_IP_HEADER` without `EDGE_SECRET` refuses to start.
+  `X-Forwarded-For` is never trusted here. For callers that reach the API directly, the API's
+  own `PROXY_HOPS` says how many proxies in front of it append to `X-Forwarded-For` (Render: 1).
 
 ## Develop
 
@@ -27,8 +33,14 @@ npm run dev
 ```bash
 npm run lint
 npm run typecheck
+npm run test:unit            # node --test on src/**/*.test.ts
+npm run format:check         # Prettier
+npm run build
 npm run test:e2e             # Playwright: flows + design matrix (desktop/mobile × light/dark, axe)
 ```
 
 `test:e2e` starts the API on :8100 against the **local test database** (`TEST_DATABASE_URL`,
-reset on every run) and signs in once as a seeded student. Screenshots land in `e2e/shots/`.
+reset on every run), starts Next.js on :3000 pointed at it, and signs in once as each seeded
+role. Screenshots land in `e2e/shots/`. If something already listens on :3000 (say your own
+`npm run dev`), the run stops instead of testing against it. To reuse a server on purpose, start
+it with `BACKEND_URL=http://127.0.0.1:8100 E2E_FAULTS=1` and run with `E2E_REUSE_WEB=1`.

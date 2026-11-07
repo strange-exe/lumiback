@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { Gate } from "@/components/illustrations/Gate";
+import { LedBoard, LedStage } from "@/components/led/LedBoard";
+import { LedFigure } from "@/components/led/LedFigure";
 import { outingsApi } from "@/features/outings/api";
 import { CheckOutForm } from "@/features/outings/components/CheckOutForm";
 import { OutView } from "@/features/outings/components/OutView";
@@ -130,7 +131,20 @@ export default async function HomePage({ searchParams }: PageProps): Promise<Rea
           Heading out?
         </h1>
       </div>
-      <Gate className="mx-auto w-full max-w-[16rem]" />
+      <LedStage>
+        <LedBoard>
+          <p className="text-sm text-board-muted">Your status</p>
+          <LedFigure
+            text="IN"
+            state="in"
+            label="In: you're not checked out"
+            className="py-1 text-[clamp(4.25rem,22vw,6.5rem)]"
+          />
+          <p className="border-t border-board-line pt-3 text-sm text-board-muted">
+            Check out before you leave, and tap in when you&apos;re back.
+          </p>
+        </LedBoard>
+      </LedStage>
       {body}
     </section>
   );

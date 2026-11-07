@@ -18,12 +18,14 @@ export async function decideRequest(_: FormState, form: FormData): Promise<FormS
   if (!approve && !note) {
     return { error: "Say why, so the student knows what to do.", fields: { note } };
   }
-  const result = await attempt(() =>
-    callBackend(`/admin/requests/${pathId(id)}/decision`, {
-      method: "POST",
-      token,
-      body: { approve, note: note || null },
-    }),
+  const result = await attempt(
+    () =>
+      callBackend(`/admin/requests/${pathId(id)}/decision`, {
+        method: "POST",
+        token,
+        body: { approve, note: note || null },
+      }),
+    { note }, // keep what they typed when the backend refuses
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/requests");

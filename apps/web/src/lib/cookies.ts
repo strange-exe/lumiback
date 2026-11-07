@@ -8,7 +8,10 @@ export const REFRESH_MAX_AGE = 30 * 24 * 60 * 60;
 /**
  * Options every cookie we set shares. Secure in production (the same test as IS_PRODUCTION in
  * config.ts, which this file doesn't import so unit tests can load it); plain http only in
- * local development. render.yaml pins NODE_ENV=production for the deployed web service.
+ * local development. render.yaml does NOT set NODE_ENV: the deployed service gets "production"
+ * because `next build` and `next start` default it when unset (next/dist/bin/next) and the build
+ * inlines it. Starting the server another way, or setting NODE_ENV=development on the host,
+ * would drop Secure from these cookies.
  */
 export function cookieBase(nodeEnv: string | undefined) {
   return {

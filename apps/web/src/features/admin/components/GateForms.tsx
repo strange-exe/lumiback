@@ -178,10 +178,21 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
   const [kiosk, kioskAction] = useActionState(newKioskLink, EMPTY);
   const [edit, editAction] = useActionState(updateGate, EMPTY);
   const [removal, removeAction] = useActionState(removeGate, EMPTY);
+  // Each action keeps its last result, so show the error of the one submitted most recently:
+  // an old switch-off error must not hide why a later removal failed.
+  const [last, setLast] = useState<"toggle" | "kiosk" | "removal" | null>(null);
+  const error =
+    last === "toggle"
+      ? toggle.error
+      : last === "kiosk"
+        ? kiosk.error
+        : last === "removal"
+          ? removal.error
+          : null;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
-        <form action={toggleAction}>
+        <form action={toggleAction} onSubmit={() => setLast("toggle")}>
           <input type="hidden" name="gate_id" value={gate.id} />
           <input type="hidden" name="active" value={gate.active ? "false" : "true"} />
           <SubmitButton
@@ -198,7 +209,8 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
             const ok = window.confirm(
               `Make a new kiosk link for ${gate.name}? The tablet using the old link stops working until you open the new one on it.`,
             );
-            if (!ok) event.preventDefault();
+            if (ok) setLast("kiosk");
+            else event.preventDefault();
           }}
         >
           <input type="hidden" name="gate_id" value={gate.id} />
@@ -213,7 +225,8 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
               const ok = window.confirm(
                 `Remove ${gate.name}? Nobody has scanned at it yet, so it can go completely. Its kiosk link stops working.`,
               );
-              if (!ok) event.preventDefault();
+              if (ok) setLast("removal");
+              else event.preventDefault();
             }}
           >
             <input type="hidden" name="gate_id" value={gate.id} />
@@ -228,7 +241,7 @@ export function GateActions({ gate }: { gate: Gate }): ReactNode {
           Scans have used this gate, so it stays for the records. Switch it off to stop it.
         </p>
       )}
-      <FormError message={toggle.error ?? kiosk.error ?? removal.error} />
+      <FormError message={error} />
       {kiosk.kiosk && <KioskLink gate={kiosk.kiosk.gate} token={kiosk.kiosk.token} />}
       <details className="group">
         <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-sm font-bold text-accent">

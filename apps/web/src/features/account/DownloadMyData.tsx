@@ -63,7 +63,7 @@ export function DownloadMyData(): ReactNode {
         type="button"
         onClick={() => void download()}
         aria-disabled={working}
-        className={`inline-flex min-h-12 items-center justify-center gap-2 self-start rounded-control bg-surface px-5 text-base font-bold text-accent ring-1 ring-line transition hover:ring-accent/40 active:scale-[0.98] ${
+        className={`inline-flex min-h-12 items-center justify-center gap-2 self-start rounded-control bg-surface px-5 text-base font-bold text-accent ring-1 ring-line press hover:ring-accent/40 ${
           working ? "cursor-progress opacity-75" : ""
         }`}
       >

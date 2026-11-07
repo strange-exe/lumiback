@@ -45,7 +45,11 @@ export default defineConfig({
     {
       command: "npm run dev -- --port 3000",
       url: "http://localhost:3000",
-      reuseExistingServer: true,
+      // A server already on :3000 is usually `npm run dev` pointed at the dev API and its
+      // database, without E2E_FAULTS: reusing it would run the suite against the wrong data.
+      // So the run fails on a busy port unless you opt in with E2E_REUSE_WEB=1, for a server
+      // you started yourself with BACKEND_URL=http://127.0.0.1:8100 and E2E_FAULTS=1.
+      reuseExistingServer: process.env.E2E_REUSE_WEB === "1",
       timeout: 120_000,
       // E2E_FAULTS=1: tests may make the server's own API calls fail (src/lib/test-faults.ts).
       env: { BACKEND_URL: "http://127.0.0.1:8100", E2E_FAULTS: "1" },

@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import type { LedState } from "@/components/led/led";
+import { LedFigure } from "@/components/led/LedFigure";
+import { FormError } from "@/components/ui/Field";
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { CorrectionDialog } from "@/features/admin/components/CorrectionForms";
+import { exportDate, exportMessage } from "@/features/admin/export";
 import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
 import { inViaLabel } from "@/features/outings/corrections";
@@ -22,12 +26,13 @@ const STATES = [
 type State = (typeof STATES)[number]["value"];
 
 interface PageProps {
-  searchParams: Promise<{ state?: string }>;
+  searchParams: Promise<{ state?: string; export_error?: string; from?: string; to?: string }>;
 }
 
 export default async function RegisterPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
-  const requested = (await searchParams).state;
+  const params = await searchParams;
+  const requested = params.state;
   const state: State = STATES.find((s) => s.value === requested)?.value ?? "all";
   const [overview, outings, late] = await Promise.all([
     adminApi.overview(token),
@@ -37,11 +42,16 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
   // Rendered per request: the server's clock is "now" for the correction forms.
   const nowIso = new Date().toISOString();
 
-  const stats = [
-    { label: "Out now", value: overview.out_now, alert: false },
-    { label: "Late", value: overview.overdue, alert: overview.overdue > 0 },
-    { label: "Gate scans today", value: overview.scans_today, alert: false },
-    { label: "Refused scans today", value: overview.rejected_today, alert: false },
+  // Red only when something is wrong; the label always says what the number is.
+  const stats: { label: string; value: number; state: LedState }[] = [
+    { label: "Out now", value: overview.out_now, state: "out" },
+    { label: "Late", value: overview.overdue, state: overview.overdue > 0 ? "late" : "out" },
+    { label: "Gate scans today", value: overview.scans_today, state: "out" },
+    {
+      label: "Refused scans today",
+      value: overview.rejected_today,
+      state: overview.rejected_today > 0 ? "late" : "out",
+    },
   ];
 
   return (
@@ -62,14 +72,17 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           requests={overview.pending_requests ?? 0}
           corrections={overview.corrections ?? 0}
         />
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-sheet border border-line bg-line sm:grid-cols-4">
+        <dl className="led-board grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-4 sm:p-6">
           {stats.map((stat) => (
-            <div key={stat.label} className="flex flex-col-reverse gap-1 bg-surface px-5 py-4">
-              <dt className="text-sm text-muted">{stat.label}</dt>
-              <dd
-                className={`font-display text-title tabular-nums ${stat.alert ? "text-danger" : "text-ink"}`}
-              >
-                {stat.value}
+            <div key={stat.label} className="flex min-w-0 flex-col-reverse gap-2">
+              <dt className="text-sm text-board-muted">{stat.label}</dt>
+              <dd>
+                <LedFigure
+                  text={String(stat.value)}
+                  label={String(stat.value)}
+                  state={stat.state}
+                  className="text-[4.5rem]"
+                />
               </dd>
             </div>
           ))}
@@ -109,7 +122,11 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
 
       <LateToday late={late} nowIso={nowIso} />
 
-      <ExportForm />
+      <ExportForm
+        error={exportMessage(params.export_error)}
+        from={exportDate(params.from)}
+        to={exportDate(params.to)}
+      />
     </div>
   );
 }
@@ -292,7 +309,16 @@ function NeedsAction({
   );
 }
 
-function ExportForm(): ReactNode {
+/** A failed download comes back here (export/route.ts) with a fixed problem key and its dates. */
+function ExportForm({
+  error,
+  from,
+  to,
+}: {
+  error: string | null;
+  from?: string;
+  to?: string;
+}): ReactNode {
   const today = istToday();
   const monthStart = `${today.slice(0, 8)}01`;
   const input = "min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink";
@@ -316,7 +342,7 @@ function ExportForm(): ReactNode {
           <input
             type="date"
             name="from"
-            defaultValue={monthStart}
+            defaultValue={from ?? monthStart}
             max={today}
             required
             className={input}
@@ -327,7 +353,7 @@ function ExportForm(): ReactNode {
           <input
             type="date"
             name="to"
-            defaultValue={today}
+            defaultValue={to ?? today}
             max={today}
             required
             className={input}
@@ -335,11 +361,12 @@ function ExportForm(): ReactNode {
         </label>
         <button
           type="submit"
-          className="min-h-12 rounded-control bg-ink px-5 font-bold text-page hover:opacity-90 active:translate-y-px"
+          className="press min-h-12 rounded-control bg-ink px-5 font-bold text-page hover:opacity-90"
         >
           Download CSV
         </button>
       </form>
+      <FormError message={error} />
     </section>
   );
 }

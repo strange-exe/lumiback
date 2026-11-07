@@ -256,7 +256,7 @@ test.describe("as an admin", () => {
     await holidays
       .getByRole("listitem")
       .filter({ hasText: "Founders' Day" })
-      .getByRole("button", { name: "Remove" })
+      .getByRole("button", { name: /^Remove Founders' Day, / }) // each names its holiday
       .click();
     await expect(holidays.getByText("No upcoming holidays.")).toBeVisible();
   });
@@ -382,6 +382,25 @@ test.describe("as an admin", () => {
     );
     const text = readFileSync(await file.path(), "utf8");
     expect(text.split("\n")[0]).toContain("Name,Email,Roll no.,Destination");
+  });
+
+  test("a refused register download comes back to the form with the reason", async ({ page }) => {
+    await page.goto("/admin/export?from=2026-01-01&to=2026-06-30");
+    await expect(page).toHaveURL(/\/admin\?export_error=range&from=2026-01-01&to=2026-06-30/);
+    const form = page.getByRole("region", { name: "Download the register" });
+    await expect(form.getByRole("alert")).toHaveText(/at most 92 days/);
+    await expect(form.getByLabel("From")).toHaveValue("2026-01-01"); // the dates are kept
+  });
+
+  test("requests: look up an earlier day, then back to today", async ({ page }) => {
+    await page.goto("/admin/requests");
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+    await page.getByLabel("Show another day").fill(yesterday);
+    await page.getByRole("button", { name: "Show", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`day=${yesterday}`));
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Outing requests, ");
+    await page.getByRole("link", { name: "Back to today" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Outing requests");
   });
 });
 

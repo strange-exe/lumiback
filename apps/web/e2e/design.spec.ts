@@ -343,14 +343,24 @@ for (const scheme of SCHEMES) {
   });
 }
 
-test("reduced motion: the lantern does not animate", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
+test("reduced motion: the LED board's colon, glow and scan stop", async ({ page }) => {
   await checkOut(page, "Library");
-  const animation = await page
-    .locator(".lantern-lit")
-    .first()
-    .evaluate((el) => getComputedStyle(el).animationName);
-  expect(animation).toBe("none");
+  const colon = page.locator(".led-lit .led-colon").first();
+  const fx = page.locator(".led-stage-fx").first();
+  const names = async (): Promise<string[]> => [
+    await colon.evaluate((el) => getComputedStyle(el).animationName),
+    await fx.evaluate((el) => getComputedStyle(el, "::before").animationName),
+    await fx.evaluate((el) => getComputedStyle(el, "::after").animationName),
+  ];
+  // With motion allowed they run (so the check below can't pass vacuously)...
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const moving = await names();
+  expect(moving[0]).toContain("led-blink");
+  expect(moving[1]).toBe("led-breathe");
+  expect(moving[2]).toBe("led-scan");
+  // ...and with reduced motion every one stops.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await names()).toEqual(["none", "none", "none"]);
   await page.screenshot({ path: `${SHOTS}/home-out-reduced-motion.png` });
   await ensureIn(page);
 });
