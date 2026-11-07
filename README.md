@@ -26,18 +26,27 @@ needs only while-in-use location permission, never background location.
 
 ## API overview
 
+A summary by area. The running API's OpenAPI docs (FastAPI's `/docs`) are the full reference.
+
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/register` `POST /auth/verify-email` `POST /auth/resend-verification` `POST /auth/login` `POST /auth/refresh` `POST /auth/logout` `GET /auth/me` |
-| Contacts | `POST /contacts` `GET /contacts` `POST /contacts/{id}/accept` `DELETE /contacts/{id}` |
-| Sessions | `POST /sessions` `GET /sessions/mine` `GET /sessions/watching` `GET /sessions/{id}` `POST /sessions/{id}/stop` |
-| Viewers | `POST /sessions/{id}/codes` `POST /codes/redeem` `POST /sessions/{id}/viewers/{vid}/approve` `POST /sessions/{id}/viewers/{vid}/revoke` |
-| Location | `PUT /sessions/{id}/location` `GET /sessions/{id}/location` `GET /sessions/{id}/access-log` |
-| Outings | `POST /outings` `GET /outings/current` `PATCH /outings/current` `POST /outings/current/return` `GET /outings` `GET /outings/summary` |
+| Sign-up and sign-in | `POST /auth/register` `/auth/verify-email` `/auth/resend-verification` `/auth/login` `/auth/refresh` `/auth/logout`, `GET /auth/me` |
+| Passwords | `POST /auth/forgot-password` `/auth/reset-password` `/auth/password-link` `/auth/set-password` `/auth/change-password` |
+| Account | `GET /auth/devices`, `DELETE /auth/devices/{id}`, `POST /auth/devices/sign-out-others` `/auth/delete-account`; `GET /profile` `/profile/export`, `PATCH /profile`; `GET /hostels` |
+| Contacts | `POST /contacts`, `GET /contacts`, `POST /contacts/{id}/accept`, `DELETE /contacts/{id}` |
+| Sessions | `POST /sessions`, `GET /sessions/mine` `/sessions/watching` `/sessions/{id}`, `POST /sessions/{id}/stop` |
+| Viewers | `POST /sessions/{id}/codes` `/codes/redeem` `/sessions/{id}/viewers/{vid}/approve` `/sessions/{id}/viewers/{vid}/revoke` |
+| Location | `PUT /sessions/{id}/location`, `GET /sessions/{id}/location` `/sessions/{id}/access-log` |
+| Outings | `POST /outings`, `GET /outings` `/outings/current` `/outings/summary`, `POST /outings/current/return` `/outings/current/late-reply` `/outings/{id}/correction` |
+| Outing requests | `GET /outings/request`, `POST /outings/request`, `DELETE /outings/request/{id}` |
 | Live | `WS /ws`: authenticate in the first message, then subscribe to session ids |
-| Gates | `POST /gates/scan` (students tap out / in) `GET /kiosk/qr` (gate tablet, `X-Kiosk-Token`) |
-| Devices | `POST /devices/push-token` `POST /devices/push-token/remove` |
-| Admin | `GET /admin/overview` `GET /admin/outings` `GET /admin/outings.csv` `GET /admin/scans` `GET /admin/gates` `POST /admin/gates` `PATCH /admin/gates/{id}` `POST /admin/gates/{id}/kiosk-token` `GET /admin/settings` `PUT /admin/settings` `GET /admin/users` `POST /admin/users/{id}/role` |
+| Gates | `GET /campus`, `POST /gates/scan` (students tap out / in), `GET /kiosk/qr` (gate tablet, `X-Kiosk-Token`) |
+| Devices | `POST /devices/push-token` `/devices/push-token/remove` |
+| Admin: monitoring | `GET /admin/overview` `/admin/outings` `/admin/outings.csv` `/admin/late-today` `/admin/scans` `/admin/escalations`, `POST /admin/escalations/{id}/resolve` |
+| Admin: gates, settings | `/admin/gates` (list, create, edit, delete), `POST /admin/gates/{id}/kiosk-token`, `GET`/`PUT /admin/settings` |
+| Admin: people | `GET /admin/users` `/admin/students`, `POST /admin/people` `/admin/students/import` `/admin/students/{id}/hostel` `/admin/users/{id}/role` `/admin/users/{id}/active` `/admin/users/{id}/password-link`, `PATCH /admin/users/{id}`, `DELETE /admin/users/{id}/invite` |
+| Admin: rules | `/admin/rule-sets` (list, create, edit, delete, `POST .../{id}/default`), `/admin/hostels` (list, create, edit, delete, `GET /admin/my-hostels`, `PATCH .../{id}/contact`), `/admin/holidays` (`GET`, `PUT`/`DELETE .../{day}`) |
+| Admin: decisions | `GET /admin/requests` `/admin/corrections`, `POST /admin/requests/{id}/decision` `/admin/corrections/{id}/decision` `/admin/outings/{id}/correction` |
 
 Access tokens last 15 minutes; refresh tokens rotate on every use. Guests send their token in the
 `X-Guest-Token` header. Outing times are returned in IST (`+05:30`); outing status (out, overdue,
