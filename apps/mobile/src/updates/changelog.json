@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.13.0",
+    "date": "2026-11-07",
+    "title": "A new look, and a guided tour",
+    "points": [
+      "Lumiback has a new look on the app and the website: a dark board with a dot-matrix countdown, like the boards at a station.",
+      "While you're out, Today shows your trip as a line from when you left to your back-by time, with a dot for now, and the time left as 1:32 h or 32 min.",
+      "Scan has its own button next to the bar, so it's always one tap away.",
+      "History lists each outing on one line, with its times on the left.",
+      "A short guided tour points out each part of the app the first time you sign in, and after updates that change something. Take it again any time from Profile, then Help."
+    ]
+  },
+  {
     "version": "1.12.1",
     "date": "2026-11-07",
     "title": "Safer sign-outs and account controls",
