@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.16.0",
+    "date": "2026-11-08",
+    "title": "A student's whole history, and an audit log",
+    "points": [
+      "The hostel office can open a student's history from People, the register or the Out list: who they are, their outings with any corrections and late follow-ups, their requests and their gate scans. Wardens see only their own hostels' students.",
+      "Admins have an audit log of what the office changed, with a search and dates.",
+      "Scans can be searched by name or roll number and narrowed to dates, and the register and Late today can be narrowed to one hostel.",
+      "The CSV export opens cleanly in Excel, with clear column names and times in Indian time.",
+      "The Gates page shows whether each gate's tablet is still checking in, and admins can set quiet hours when the gate tablets rest (off unless set).",
+      "While the server wakes up after a quiet spell, the app and the website show a Lumiback waiting screen instead of a blank page."
+    ]
+  },
+  {
     "version": "1.15.0",
     "date": "2026-11-08",
     "title": "Act on several people at once, and lists that remember",
