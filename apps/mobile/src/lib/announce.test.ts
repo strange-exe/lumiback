@@ -1,6 +1,7 @@
 import {
   ANNOUNCE_CONFIRM,
   announceBody,
+  announceDraft,
   announceError,
   announceTiming,
   canAnnounce,
@@ -8,6 +9,30 @@ import {
   MAX_ANNOUNCE_TITLE,
   reachedLine,
 } from "@/lib/announce";
+import { CURRENT } from "@/updates/changelog";
+
+describe("announceDraft", () => {
+  test("is the release's title and summary", () => {
+    expect(announceDraft({ title: "Faster", summary: "It's quicker.", points: ["A."] })).toEqual({
+      title: "Faster",
+      body: "It's quicker.",
+    });
+  });
+
+  test("falls back to a short first point, and leaves too-long text empty", () => {
+    expect(announceDraft({ title: "Faster", points: ["Opens quicker."] })).toEqual({
+      title: "Faster",
+      body: "Opens quicker.",
+    });
+    const long = { title: "t".repeat(51), summary: "s".repeat(141), points: ["p".repeat(141)] };
+    expect(announceDraft(long)).toEqual({ title: "", body: "" });
+  });
+
+  test("the current release can be announced as it is (add a summary up to 140)", () => {
+    const draft = announceDraft(CURRENT);
+    expect(announceBody(draft.title, draft.body).ok).toBe(true);
+  });
+});
 
 const fmt = (iso: string): string => `<${iso}>`;
 const NOW = Date.parse("2026-11-08T20:00:00+05:30");

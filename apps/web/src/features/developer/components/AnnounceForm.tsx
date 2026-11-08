@@ -5,7 +5,12 @@ import { useActionState, useEffect, useId, useRef, useState, type ReactNode } fr
 import { FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { announceUpdate } from "@/features/developer/actions";
-import { announceBody, MAX_ANNOUNCE_BODY, MAX_ANNOUNCE_TITLE } from "@/features/developer/announce";
+import {
+  announceBody,
+  MAX_ANNOUNCE_BODY,
+  MAX_ANNOUNCE_TITLE,
+  type AnnounceDraft,
+} from "@/features/developer/announce";
 import type { FormState } from "@/lib/types";
 
 const EMPTY: FormState = { error: null };
@@ -20,7 +25,16 @@ const INPUT =
  * Lumiback once confirmed. `last` and `next` say when the last one went out and when the next
  * is allowed (the API refuses a second within a day).
  */
-export function AnnounceForm({ last, next }: { last: string; next: string }): ReactNode {
+export function AnnounceForm({
+  last,
+  next,
+  draft,
+}: {
+  last: string;
+  next: string;
+  /** What the fields start with: this release's title and summary (the changelog). */
+  draft: AnnounceDraft;
+}): ReactNode {
   const [state, action] = useActionState(announceUpdate, EMPTY);
   const [problem, setProblem] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
@@ -30,7 +44,7 @@ export function AnnounceForm({ last, next }: { last: string; next: string }): Re
 
   useEffect(() => {
     dialog.current?.close(); // the action answered: sent (notice) or refused (error below)
-    if (state.notice) form.current?.reset();
+    if (state.notice) form.current?.reset(); // to empty: sent, not a draft any more
   }, [state]);
 
   function ask(): void {
@@ -73,7 +87,7 @@ export function AnnounceForm({ last, next }: { last: string; next: string }): Re
             required
             maxLength={MAX_ANNOUNCE_TITLE}
             autoComplete="off"
-            defaultValue={state.fields?.title}
+            defaultValue={state.notice ? "" : (state.fields?.title ?? draft.title)}
             placeholder="Lumiback has been updated"
             aria-describedby={`${id}-title-hint`}
             className={INPUT}
@@ -92,7 +106,7 @@ export function AnnounceForm({ last, next }: { last: string; next: string }): Re
             required
             maxLength={MAX_ANNOUNCE_BODY}
             autoComplete="off"
-            defaultValue={state.fields?.body}
+            defaultValue={state.notice ? "" : (state.fields?.body ?? draft.body)}
             placeholder="Running late? Move your due-back time once per outing."
             aria-describedby={`${id}-body-hint`}
             className={INPUT}

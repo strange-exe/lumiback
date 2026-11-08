@@ -74,6 +74,10 @@ test("a developer announces an update, confirmed first, once a day", async ({ br
   try {
     await page.goto("/admin/status");
     const form = page.getByRole("region", { name: "Announce an update" });
+    // Starts with the current release's title and summary (changelog.json), ready to edit.
+    const current: { title: string; summary?: string } = changelog[0]!;
+    await expect(form.getByLabel("Title")).toHaveValue(current.title);
+    await expect(form.getByLabel("What's new")).toHaveValue(current.summary ?? "");
     await form.getByLabel("Title").fill("Lumiback has been updated");
     await form.getByLabel("What's new").fill("Running late? Move your due-back time once.");
     await form.getByRole("button", { name: "Announce" }).click();

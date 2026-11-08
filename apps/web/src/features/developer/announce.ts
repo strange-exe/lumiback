@@ -14,10 +14,33 @@ export interface AnnounceState {
   next_at: string | null;
 }
 
-/** POST /admin/announcements (202) */
+/** POST /admin/announcements (200) */
 export interface Announced {
   devices: number;
   next_at: string;
+}
+
+/** What the form starts with: the newest release's title and its one-line summary. */
+export interface AnnounceDraft {
+  title: string;
+  body: string;
+}
+
+/**
+ * The announcement for a release, ready to edit: its title, and its `summary` (or its first
+ * point, if that is short enough). Anything too long for a push starts empty rather than cut.
+ */
+export function announceDraft(release: {
+  title: string;
+  summary?: string;
+  points: readonly string[];
+}): AnnounceDraft {
+  const fits = (value: string | undefined, max: number): string =>
+    value && [...value].length <= max ? value : "";
+  return {
+    title: fits(release.title, MAX_ANNOUNCE_TITLE),
+    body: fits(release.summary, MAX_ANNOUNCE_BODY) || fits(release.points[0], MAX_ANNOUNCE_BODY),
+  };
 }
 
 const INVISIBLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
   announceBody,
+  announceDraft,
   announceError,
   announceTiming,
   MAX_ANNOUNCE_BODY,
@@ -12,6 +14,30 @@ import {
 
 const NL = String.fromCodePoint(0x0a);
 const ZWSP = String.fromCodePoint(0x200b);
+
+test("the draft is the release's title and summary", () => {
+  assert.deepEqual(announceDraft({ title: "Faster", summary: "It's quicker.", points: ["A."] }), {
+    title: "Faster",
+    body: "It's quicker.",
+  });
+});
+
+test("the draft falls back to a short first point, and leaves too-long text empty", () => {
+  assert.deepEqual(announceDraft({ title: "Faster", points: ["Opens quicker."] }), {
+    title: "Faster",
+    body: "Opens quicker.",
+  });
+  const long = { title: "t".repeat(51), summary: "s".repeat(141), points: ["p".repeat(141)] };
+  assert.deepEqual(announceDraft(long), { title: "", body: "" });
+});
+
+test("the current release has a draft that can be sent as it is", () => {
+  const [current] = JSON.parse(
+    readFileSync(new URL("../../lib/changelog.json", import.meta.url), "utf8"),
+  ) as { title: string; summary?: string; points: string[] }[];
+  const draft = announceDraft(current!);
+  assert.ok(announceBody(draft.title, draft.body).ok, "Add a summary (up to 140) to the release");
+});
 
 test("a title of up to 50 and one line of up to 140 characters, trimmed", () => {
   assert.equal(MAX_ANNOUNCE_TITLE, 50);

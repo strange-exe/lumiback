@@ -9,6 +9,8 @@ export interface Release {
   /** YYYY-MM-DD */
   date: string;
   title: string;
+  /** One line (at most 140 characters) for the update announcement push. */
+  summary?: string;
   points: string[];
 }
 

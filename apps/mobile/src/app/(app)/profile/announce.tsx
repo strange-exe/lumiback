@@ -4,6 +4,7 @@ import { AccessibilityInfo, View } from "react-native";
 import {
   ANNOUNCE_CONFIRM,
   announceBody,
+  announceDraft,
   announceError,
   announceTiming,
   canAnnounce,
@@ -16,6 +17,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatStamp } from "@/lib/time";
+import { CURRENT } from "@/updates/changelog";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { haptic } from "@/ui/haptics";
@@ -23,6 +25,7 @@ import { Button, Card, Field, FormError, LoadFailed, Notice, Screen, T } from "@
 import { space } from "@/ui/theme";
 
 const fmt = (iso: string): string => formatStamp(new Date(iso));
+const DRAFT = announceDraft(CURRENT);
 
 /**
  * Developers only: tell every phone with Lumiback that a new version is out, at most once a day.
@@ -42,8 +45,9 @@ export default function Announce(): ReactNode {
   const now = useNow(30_000);
   // After a send, the server's new limit (until the next load).
   const [sent, setSent] = useState<AnnounceState | null>(null);
-  const [title, setTitle] = useState("");
-  const [line, setLine] = useState("");
+  // Starts with this release's title and summary (the changelog), ready to edit.
+  const [title, setTitle] = useState(DRAFT.title);
+  const [line, setLine] = useState(DRAFT.body);
   const [confirming, setConfirming] = useState<{ title: string; body: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

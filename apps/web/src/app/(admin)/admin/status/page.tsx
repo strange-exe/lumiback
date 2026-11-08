@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { formatWhen } from "@/features/admin/format";
-import { announceTiming, type AnnounceState } from "@/features/developer/announce";
+import { announceDraft, announceTiming, type AnnounceState } from "@/features/developer/announce";
 import { AnnounceForm } from "@/features/developer/components/AnnounceForm";
 import { ApiError, callBackend } from "@/lib/backend";
 import { CURRENT } from "@/lib/changelog";
@@ -72,6 +72,7 @@ export default async function StatusPage(): Promise<ReactNode> {
       <AnnounceForm
         last={timing?.last ?? "Couldn't check when the last update was announced."}
         next={timing?.next ?? "The API refuses a second one within a day."}
+        draft={announceDraft(CURRENT)}
       />
     </div>
   );
