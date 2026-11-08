@@ -127,27 +127,12 @@ export async function designMatrix(page: Page, name: string): Promise<void> {
       );
       // A scheme flip starts colour transitions (the active nav link, buttons): fill and label
       // fade across each other for ~150 ms, and a fast runner's axe pass sampled that crossing.
-      // Judge the resting colours: wait for running CSS transitions (never infinite loops),
-      // at most 2 s so a transition that never settles can't stall the test.
-      // Lists any still running, so a failure names the element and property.
-      const unsettled = await page.evaluate(async () => {
-        const running = document
-          .getAnimations()
-          .filter((a): a is CSSTransition => a instanceof CSSTransition);
-        await Promise.race([
-          Promise.all(running.map((a) => a.finished.catch(() => undefined))),
-          new Promise((done) => setTimeout(done, 2_000)),
-        ]);
-        return running
-          .filter((a) => a.playState !== "finished" && a.playState !== "idle")
-          .map((a) => {
-            const el = (a.effect as KeyframeEffect | null)?.target;
-            const where = el ? `${el.tagName.toLowerCase()}.${[...el.classList].join(".")}` : "?";
-            const t = a.effect?.getComputedTiming();
-            return `${where} ${a.transitionProperty} ${a.playState} at ${String(a.currentTime)} of ${String(t?.endTime)}`;
-          });
+      // Judge the resting colours: jump running CSS transitions to their end (never infinite
+      // animations). Waiting for them is unreliable: headless Chromium sometimes renders no
+      // frames for seconds, so a 150 ms transition stalled in ~1 of 20 probes and hung a test.
+      await page.evaluate(() => {
+        for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish();
       });
-      expect(unsettled, `colour transitions settle (${name} ${label} ${scheme})`).toEqual([]);
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
