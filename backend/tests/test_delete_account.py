@@ -299,7 +299,13 @@ def test_the_office_keeps_the_outing_with_a_snapshot(client, db, office):
     r = client.get(f"/admin/outings.csv?from={today}&to={today}", headers=office)
     assert r.status_code == 200, r.text
     [_, line] = list(csv.reader(io.StringIO(r.text)))
-    assert line[:3] == ["Riya (deleted account)", "", "22CS101"]
+    # Student, roll number, hostel, email (none: the account is gone).
+    assert [line[0], line[1], line[2], line[3]] == [
+        "Riya (deleted account)",
+        "22CS101",
+        expected[4] or "",
+        "",
+    ]
     # The office can still fix the record (nobody to notify).
     fixed = client.post(
         f"/admin/outings/{outing['id']}/correction",

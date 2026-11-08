@@ -49,6 +49,7 @@ ADMIN_GETS = [
     "/admin/gates",
     "/admin/settings",
     "/admin/users?q=ri",
+    "/admin/audit",
 ]
 
 
@@ -168,17 +169,85 @@ def test_csv_export(client, db, admin, riya):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     assert f'filename="outings-{today}-to-{today}.csv"' in r.headers["content-disposition"]
-    rows = list(csv.reader(io.StringIO(r.text)))
-    assert rows[0][:4] == ["Name", "Email", "Roll no.", "Destination"]
+    # A byte order mark first, so Excel reads the file as UTF-8.
+    assert r.content.startswith(b"\xef\xbb\xbf")
+    rows = read_csv(r)
+    assert rows[0] == [
+        "Student",
+        "Roll number",
+        "Hostel",
+        "Email",
+        "Destination",
+        "Left (IST)",
+        "Left through",
+        "Due back (IST)",
+        "Back (IST)",
+        "Came back through",
+        "Status",
+        "Minutes late",
+        "Approved form",
+    ]
     assert len(rows) == 2
-    name, email, _, destination, *_rest = rows[1]
-    assert (name, email) == ("Riya", "riya@example.com")
-    assert destination.startswith("'=")  # a spreadsheet won't run it as a formula
-    assert rows[1][5] == "self"
+    row = dict(zip(rows[0], rows[1], strict=True))
+    assert (row["Student"], row["Email"]) == ("Riya", "riya@example.com")
+    assert row["Destination"].startswith("'=")  # a spreadsheet won't run it as a formula
+    assert row["Left through"] == "App or website"
+    assert (row["Back (IST)"], row["Came back through"], row["Status"]) == ("", "", "Out")
+    assert row["Approved form"] == "No"
 
     yesterday = today - timedelta(days=1)
     empty = client.get(f"/admin/outings.csv?from={yesterday}&to={yesterday}", headers=admin)
-    assert len(list(csv.reader(io.StringIO(empty.text)))) == 1
+    assert len(read_csv(empty)) == 1
+
+
+def read_csv(response) -> list[list[str]]:
+    """The download's rows, without the byte order mark that leads the file."""
+    return list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+
+
+def test_csv_names_the_hostel_gates_and_how_trips_ended(client, db, admin, riya):
+    """Management reads it without a key: the hostel at the time, gates and how each trip ended
+    in words, IST times, and the roll number."""
+    gate = create_gate(client, admin)
+    db.execute(
+        text(
+            "INSERT INTO hostels (name, rule_set_id) SELECT 'Ganga', id FROM rule_sets LIMIT 1; "
+            "UPDATE users SET roll_no = '2510370', "
+            "hostel_id = (SELECT id FROM hostels WHERE name = 'Ganga') "
+            "WHERE email = 'riya@example.com'"
+        )
+    )
+    db.commit()
+    scan = {"qr": kiosk_qr(client, gate["kiosk_token"]), **AT_GATE}
+    assert client.post("/gates/scan", json=scan, headers=riya[1]).status_code == 200
+    db.execute(
+        text(
+            "UPDATE outings SET left_at = now() - interval '3 hours', "
+            "expected_return_at = now() - interval '1 hour'"
+        )
+    )
+    db.commit()
+    assert client.post("/outings/current/return", headers=riya[1]).status_code == 200
+    _, arjun = signup(client, "arjun@example.com", "Arjun")
+    assert client.post("/outings", json={}, headers=arjun).status_code == 201
+    today = (datetime.now(UTC) + timedelta(hours=5, minutes=30)).date()
+    # From yesterday: three hours ago may have been yesterday on the campus clock.
+    r = client.get(f"/admin/outings.csv?from={today - timedelta(days=1)}&to={today}", headers=admin)
+    header, *lines = read_csv(r)
+    rows = {line[0]: dict(zip(header, line, strict=True)) for line in lines}
+    riya_row = rows["Riya"]
+    assert (riya_row["Roll number"], riya_row["Hostel"]) == ("2510370", "Ganga")
+    assert riya_row["Left through"] == "Gate scan at Main Gate"
+    assert riya_row["Came back through"] == "App or website"
+    assert riya_row["Status"] == "Back late"
+    assert 59 <= int(riya_row["Minutes late"]) <= 61
+    # IST wall-clock times, to the minute.
+    left = datetime.strptime(riya_row["Left (IST)"], "%Y-%m-%d %H:%M")
+    expected = (datetime.now(UTC) + timedelta(hours=5, minutes=30) - timedelta(hours=3)).replace(
+        tzinfo=None
+    )
+    assert abs((left - expected).total_seconds()) < 120
+    assert (rows["Arjun"]["Hostel"], rows["Arjun"]["Status"]) == ("", "Out")
 
 
 @pytest.mark.parametrize(
@@ -265,17 +334,19 @@ def test_only_an_unused_gate_can_be_removed(client, db, admin):
 
 
 def test_settings_round_trip(client, db, admin):
+    quiet_off = {"kiosk_quiet_from": None, "kiosk_quiet_until": None}
     assert client.get("/admin/settings", headers=admin).json() == {
         "curfew": "21:30",
         "scan_retention_days": 180,
+        **quiet_off,
     }
     new = {"curfew": "22:15", "scan_retention_days": 90}
-    assert client.put("/admin/settings", json=new, headers=admin).json() == new
-    assert client.get("/admin/settings", headers=admin).json() == new
+    assert client.put("/admin/settings", json=new, headers=admin).json() == {**new, **quiet_off}
+    assert client.get("/admin/settings", headers=admin).json() == {**new, **quiet_off}
     assert audit(db) == [("settings", "keep scans 90 d")]
     # The settings page no longer sends the curfew (rule sets replaced it): it stays as it was.
     r = client.put("/admin/settings", json={"scan_retention_days": 60}, headers=admin)
-    assert r.json() == {"curfew": "22:15", "scan_retention_days": 60}
+    assert r.json() == {"curfew": "22:15", "scan_retention_days": 60, **quiet_off}
     for bad in (
         {"curfew": "24:00", "scan_retention_days": 90},
         {"curfew": "22:00", "scan_retention_days": 1},
@@ -405,21 +476,33 @@ def test_csv_export_neutralises_every_typed_cell(client, db, admin, riya):
         "/outings", json={"expected_return_at": soon(), "destination": "|cmd"}, headers=riya[1]
     )
     today = (datetime.now(UTC) + timedelta(hours=5, minutes=30)).date()
-    rows = list(
-        csv.reader(
-            io.StringIO(
-                client.get(f"/admin/outings.csv?from={today}&to={today}", headers=admin).text
-            )
+    db.execute(
+        text(
+            "INSERT INTO hostels (name, rule_set_id) SELECT '@Ganga', id FROM rule_sets LIMIT 1; "
+            "UPDATE outings SET hostel_id = (SELECT id FROM hostels WHERE name = '@Ganga')"
         )
     )
-    name, email, roll_no, destination, *_rest = rows[1]
+    db.commit()
+    rows = read_csv(client.get(f"/admin/outings.csv?from={today}&to={today}", headers=admin))
+    name, roll_no, hostel, email, destination, *_rest = rows[1]
     assert name == """'=HYPERLINK("http://x","Riya")"""
     assert (email, roll_no, destination) == ("riya@example.com", "'+2510370", "'|cmd")
+    assert hostel == "'@Ganga"
 
 
 @pytest.mark.parametrize(
     ("cell", "safe"),
-    [("%Riya", "'%Riya"), ("@SUM(A1)", "'@SUM(A1)"), ("-1", "'-1"), ("Riya", "Riya"), ("", "")],
+    [
+        ("%Riya", "'%Riya"),
+        ("@SUM(A1)", "'@SUM(A1)"),
+        ("-1", "'-1"),
+        ("+91", "'+91"),
+        ("=1+1", "'=1+1"),
+        (chr(9) + "=1", "'" + chr(9) + "=1"),  # a tab
+        (chr(13) + "=1", "'" + chr(13) + "=1"),  # a carriage return
+        ("Riya", "Riya"),
+        ("", ""),
+    ],
 )
 def test_formula_guard(cell, safe):
     from app.services.admin import _safe

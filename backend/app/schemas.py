@@ -702,6 +702,14 @@ class GateOut(BaseModel):
     # Any scan or outing names this gate: it stays for the records (switch it off instead).
     # Only an unused gate can be removed.
     used: bool = False
+    # Kiosk health, for admins only (None for wardens): when the tablet last asked for a code,
+    # and what that means now (services/gates.py kiosk_health).
+    kiosk_seen_at: datetime | None = None
+    kiosk: Literal["ok", "stale", "never", "quiet"] | None = None
+
+    @field_serializer("kiosk_seen_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
 
 
 class GateCreated(BaseModel):
@@ -709,10 +717,25 @@ class GateCreated(BaseModel):
     kiosk_token: str  # shown once; only its hash is stored
 
 
+ClockTime = Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+
+
 class CampusSettingsIO(Input):
     # Superseded by rule sets; optional so the settings page can leave it out.
-    curfew: Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] | None = None
+    curfew: ClockTime | None = None
     scan_retention_days: int = Field(ge=7, le=730)
+    # Kiosk quiet hours, "HH:MM" IST: both, or both null (off, the default). May cross
+    # midnight. Leaving both out of a PUT keeps them as they are.
+    kiosk_quiet_from: ClockTime | None = None
+    kiosk_quiet_until: ClockTime | None = None
+
+    @model_validator(mode="after")
+    def _quiet_pair(self) -> "CampusSettingsIO":
+        if (self.kiosk_quiet_from is None) != (self.kiosk_quiet_until is None):
+            raise ValueError("Give both quiet-hour times, or neither")
+        if self.kiosk_quiet_from is not None and self.kiosk_quiet_from == self.kiosk_quiet_until:
+            raise ValueError("Quiet hours need different start and end times")
+        return self
 
 
 class AdminOverview(BaseModel):
@@ -751,6 +774,47 @@ class AdminOuting(BaseModel):
         return value.astimezone(IST).isoformat() if value else None
 
 
+class RecordEscalation(BaseModel):
+    """The late follow-up of one outing on a student's record."""
+
+    created_at: datetime
+    resolved_at: datetime | None
+    resolved_by: str | None  # the staff member's name (None: open, or their account is gone)
+    note: str | None
+
+    @field_serializer("created_at", "resolved_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class RecordOuting(AdminOuting):
+    """An outing on a student's record, with everything that happened to it."""
+
+    purpose: str | None = None
+    corrections: list["CorrectionOut"] = []  # oldest first
+    escalation: RecordEscalation | None = None
+
+
+class RecordOutingPage(BaseModel):
+    items: list[RecordOuting]
+    next_before: datetime | None  # a left_at: pass as ?before= for older outings
+
+    @field_serializer("next_before")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class StudentRecordOut(BaseModel):
+    """The top of a student's record: who they are, and their record in numbers (outings and
+    late ones in the hostels the viewer looks after)."""
+
+    student: "StudentOut"
+    outings: int
+    late: int
+    open_escalations: int
+    requests: int
+
+
 class CorrectionAsk(BaseModel):
     """A student's correction ask, with the outing as it stands."""
 
@@ -766,6 +830,7 @@ class CorrectionQueue(BaseModel):
 
 class AdminScan(BaseModel):
     id: int
+    student_id: uuid.UUID | None = None  # for a link to their record
     name: str
     roll_no: str | None
     gate: str | None
@@ -783,6 +848,27 @@ class AdminScan(BaseModel):
 class AdminScanPage(BaseModel):
     items: list[AdminScan]
     next_before: int | None  # scan id: pass as ?before= for older scans
+
+
+class AuditEntry(BaseModel):
+    """One change in admin_audit. The actor fields are None once their account was deleted."""
+
+    id: int
+    at: datetime
+    actor_name: str | None
+    actor_email: str | None
+    actor_role: AnyRole | None
+    action: str  # "gate:create", "settings", ...: the area, then what was done
+    target: str
+
+    @field_serializer("at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class AuditPage(BaseModel):
+    items: list[AuditEntry]
+    next_before: int | None  # entry id: pass as ?before= for older ones
 
 
 class AdminUser(BaseModel):
@@ -1036,6 +1122,17 @@ class AdminRequestOut(BaseModel):
     again: bool  # another outing after today's approved one was used
 
     @field_serializer("decided_at", "created_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class RecordRequestPage(BaseModel):
+    """A student's requests on their record, newest first."""
+
+    items: list[AdminRequestOut]
+    next_before: datetime | None  # a created_at: pass as ?before= for older requests
+
+    @field_serializer("next_before")
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
 

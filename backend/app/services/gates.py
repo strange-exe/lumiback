@@ -13,7 +13,7 @@ the coordinates), so admins can see rejected attempts too.
 import math
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,6 +109,85 @@ def outing_is_stale(left_at: datetime, due: datetime, now: datetime) -> bool:
     if rules.ist_date(left_at) >= rules.ist_date(now):
         return False
     return now - due >= STALE_PAST_DUE or now - left_at >= STALE_AFTER_LEAVING
+
+
+IST = timedelta(hours=5, minutes=30)  # the campus clock (no daylight saving)
+# Kiosk health: a tablet asks for a code every 20 s (30 s while its gate is off), but its last
+# seen time is written at most this often, so a kiosk isn't a database write per poll.
+KIOSK_SEEN_EVERY = timedelta(minutes=1)
+# No poll for this long (outside quiet hours) and the admin is warned the tablet looks down.
+KIOSK_STALE_AFTER = timedelta(minutes=5)
+
+
+@dataclass(frozen=True)
+class QuietHours:
+    """Kiosk quiet hours on the campus clock: from `start` up to (not including) `end`. The
+    window crosses midnight when `end` is earlier than `start` (23:00 to 05:00)."""
+
+    start: time
+    end: time
+
+    def is_quiet(self, now: datetime) -> bool:
+        t = _ist(now).time()
+        if self.start < self.end:
+            return self.start <= t < self.end
+        return t >= self.start or t < self.end
+
+    def opens_at(self, now: datetime) -> datetime:
+        """The next time the kiosks open (the end of the window) after `now`."""
+        local = _ist(now)
+        opens = datetime.combine(local.date(), self.end)
+        if opens <= local:
+            opens += timedelta(days=1)
+        return _utc(opens)
+
+    def last_opened(self, now: datetime) -> datetime:
+        """When the kiosks last opened, at or before `now`."""
+        local = _ist(now)
+        opened = datetime.combine(local.date(), self.end)
+        if opened > local:
+            opened -= timedelta(days=1)
+        return _utc(opened)
+
+
+def _ist(now: datetime) -> datetime:
+    """`now` as a naive wall-clock time on the campus clock."""
+    return (now.astimezone(UTC) + IST).replace(tzinfo=None)
+
+
+def _utc(local: datetime) -> datetime:
+    return (local - IST).replace(tzinfo=UTC)
+
+
+def quiet_hours(row: CampusSettings) -> QuietHours | None:
+    """None: quiet hours are off (the default)."""
+    if row.kiosk_quiet_from is None or row.kiosk_quiet_until is None:
+        return None
+    return QuietHours(row.kiosk_quiet_from, row.kiosk_quiet_until)
+
+
+def kiosk_health(gate: Gate, quiet: QuietHours | None, now: datetime) -> str:
+    """quiet: inside quiet hours (tablets are meant to be idle). never: no tablet has asked for
+    a code since health was recorded. ok: asked recently, or the kiosks only just opened.
+    stale: silent too long; the tablet may be off, asleep or offline."""
+    if quiet is not None and quiet.is_quiet(now):
+        return "quiet"
+    if gate.kiosk_seen_at is None:
+        return "never"
+    if now - gate.kiosk_seen_at <= KIOSK_STALE_AFTER:
+        return "ok"
+    if quiet is not None and now - quiet.last_opened(now) <= KIOSK_STALE_AFTER:
+        return "ok"  # opened moments ago: the tablet wakes up on its own
+    return "stale"
+
+
+def note_kiosk_seen(gate: Gate, now: datetime) -> bool:
+    """Records a kiosk poll on `gate` unless one was recorded in the last minute. True when it
+    changed (the caller commits)."""
+    if gate.kiosk_seen_at is not None and now - gate.kiosk_seen_at < KIOSK_SEEN_EVERY:
+        return False
+    gate.kiosk_seen_at = now
+    return True
 
 
 async def campus_settings(session: AsyncSession) -> CampusSettings:

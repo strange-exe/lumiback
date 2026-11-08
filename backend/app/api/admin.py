@@ -18,7 +18,7 @@ from app.api.deps import (
     StaffUser,
     enforce,
 )
-from app.models import Gate, Hostel, ScanResult, User, UserRole
+from app.models import CampusSettings, Gate, Hostel, ScanResult, User, UserRole
 from app.realtime import AccessChanged
 from app.schemas import (
     AccountEditIn,
@@ -26,6 +26,7 @@ from app.schemas import (
     AdminOuting,
     AdminOverview,
     AdminScanPage,
+    AuditPage,
     CampusSettingsIO,
     GateCreated,
     GateIn,
@@ -47,7 +48,14 @@ from app.security.gate_codes import new_kiosk_token
 from app.security.rate_limit import Limit
 from app.services import account_links, accounts, student_import
 from app.services import admin as svc
-from app.services.gates import campus_settings, used_gate_ids
+from app.services.gates import (
+    QuietHours,
+    campus_settings,
+    kiosk_health,
+    quiet_hours,
+    used_gate_ids,
+)
+from app.services.staff import Staff
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -65,19 +73,53 @@ async def overview(staff: StaffUser, session: SessionDep) -> AdminOverview:
     return await svc.overview(session, staff)
 
 
+Search = Annotated[str | None, Query(min_length=2, max_length=100)]
+
+
+def own_hostel(staff: Staff, hostel_id: uuid.UUID | None) -> uuid.UUID | None:
+    """A hostel filter must be one of the office's own hostels: another one is a 404, as if it
+    didn't exist (the same answer as for an unknown id)."""
+    if hostel_id is not None and not staff.covers_hostel(hostel_id):
+        raise NOT_FOUND
+    return hostel_id
+
+
+def day_range(start: date | None, end: date | None) -> tuple[date, date] | None:
+    """An optional range of IST dates; one end alone is the open range to/from it."""
+    if start is None and end is None:
+        return None
+    first, last = start or date(2000, 1, 1), end or date(2999, 12, 31)
+    # Dates at the ends of the calendar overflow when converted to IST instants (a 500).
+    if first.year < 2000 or last.year > 2999:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose real dates")
+    if last < first:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="The end date is before the start date"
+        )
+    return first, last
+
+
 @router.get("/outings")
 async def open_outings(
     staff: StaffUser,
     session: SessionDep,
     state: Literal["all", "out", "overdue", "back"] = "all",
+    hostel_id: uuid.UUID | None = None,
+    q: Search = None,
 ) -> list[AdminOuting]:
-    return await svc.open_outings(session, staff, state)
+    """`hostel_id`: one of the office's hostels (the outing's hostel). `q`: name or roll no."""
+    return await svc.open_outings(session, staff, state, own_hostel(staff, hostel_id), q)
 
 
 @router.get("/late-today")
-async def late_today(staff: StaffUser, session: SessionDep) -> list[AdminOuting]:
+async def late_today(
+    staff: StaffUser,
+    session: SessionDep,
+    hostel_id: uuid.UUID | None = None,
+    q: Search = None,
+) -> list[AdminOuting]:
     """Tonight's latecomers: back after their return time, or still out past it."""
-    return await svc.late_today(session, staff)
+    return await svc.late_today(session, staff, own_hostel(staff, hostel_id), q)
 
 
 @router.get("/outings.csv")
@@ -107,13 +149,24 @@ async def outings_csv(
 async def scans(
     staff: StaffUser,
     session: SessionDep,
-    before: int | None = None,
+    before: Annotated[int | None, Query(ge=1, le=2**63 - 1)] = None,  # inside BIGINT: 422, not 500
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     gate_id: uuid.UUID | None = None,
     result: ScanResult | None = None,
+    q: Search = None,
+    start: Annotated[date | None, Query(alias="from")] = None,
+    end: Annotated[date | None, Query(alias="to")] = None,
 ) -> AdminScanPage:
+    """`q`: a student's name or roll number. `from`/`to`: IST dates, inclusive."""
     return await svc.scans(
-        session, staff, before=before, limit=limit, gate_id=gate_id, result=result
+        session,
+        staff,
+        before=before,
+        limit=limit,
+        gate_id=gate_id,
+        result=result,
+        q=q,
+        days=day_range(start, end),
     )
 
 
@@ -121,16 +174,27 @@ async def scans(
 
 
 @router.get("/gates")
-async def list_gates(_: StaffUser, session: SessionDep) -> list[GateOut]:
-    """Readable by wardens too (the scan log filters by gate); changing gates is admin-only."""
-    gates = await session.scalars(select(Gate).order_by(Gate.name))
+async def list_gates(staff: StaffUser, session: SessionDep) -> list[GateOut]:
+    """Readable by wardens too (the scan log filters by gate); changing gates is admin-only,
+    and so is kiosk health (left out for wardens)."""
+    gates = list(await session.scalars(select(Gate).order_by(Gate.name)))
     used = await used_gate_ids(session)
-    return [GateOut.model_validate(g).model_copy(update={"used": g.id in used}) for g in gates]
+    quiet = quiet_hours(await campus_settings(session))
+    return [_gate_view(g, g.id in used, quiet, staff.user.is_admin) for g in gates]
+
+
+def _gate_view(gate: Gate, used: bool, quiet: QuietHours | None, admin: bool) -> GateOut:
+    out = GateOut.model_validate(gate).model_copy(update={"used": used})
+    if not admin:
+        return out.model_copy(update={"kiosk_seen_at": None, "kiosk": None})
+    return out.model_copy(update={"kiosk": kiosk_health(gate, quiet, datetime.now(UTC))})
 
 
 async def _gate_out(session: SessionDep, gate: Gate) -> GateOut:
+    """A gate as answered to an admin's change."""
     used = bool(await used_gate_ids(session, gate.id))
-    return GateOut.model_validate(gate).model_copy(update={"used": used})
+    quiet = quiet_hours(await campus_settings(session))
+    return _gate_view(gate, used, quiet, admin=True)
 
 
 @router.post("/gates", status_code=status.HTTP_201_CREATED)
@@ -151,7 +215,7 @@ async def create_gate(body: GateIn, me: AdminUser, session: SessionDep) -> GateC
         await session.rollback()
         raise NAME_TAKEN from None
     await session.refresh(gate)
-    return GateCreated(gate=GateOut.model_validate(gate), kiosk_token=token)
+    return GateCreated(gate=await _gate_out(session, gate), kiosk_token=token)
 
 
 @router.patch("/gates/{gate_id}")
@@ -210,29 +274,76 @@ async def rotate_kiosk_token(gate_id: uuid.UUID, me: AdminUser, session: Session
 # ---------- settings ----------
 
 
+def _hhmm(value: time | None) -> str | None:
+    return value.strftime("%H:%M") if value is not None else None
+
+
+def _time(value: str | None) -> time | None:
+    if value is None:
+        return None
+    hours, minutes = (int(x) for x in value.split(":"))
+    return time(hours, minutes)
+
+
+def _settings_out(row: CampusSettings) -> CampusSettingsIO:
+    return CampusSettingsIO(
+        curfew=row.curfew.strftime("%H:%M"),
+        scan_retention_days=row.scan_retention_days,
+        kiosk_quiet_from=_hhmm(row.kiosk_quiet_from),
+        kiosk_quiet_until=_hhmm(row.kiosk_quiet_until),
+    )
+
+
 @router.get("/settings")
 async def get_settings(_: AdminUser, session: SessionDep) -> CampusSettingsIO:
     row = await campus_settings(session)
     await session.commit()
-    return CampusSettingsIO(
-        curfew=row.curfew.strftime("%H:%M"), scan_retention_days=row.scan_retention_days
-    )
+    return _settings_out(row)
 
 
 @router.put("/settings")
 async def put_settings(
     body: CampusSettingsIO, me: AdminUser, session: SessionDep
 ) -> CampusSettingsIO:
+    """Quiet hours change only when the body names them (both, or both null for off), so a
+    page that doesn't know them leaves them as they are."""
     row = await campus_settings(session)
     if body.curfew is not None:  # older admin pages still send it
-        hours, minutes = (int(x) for x in body.curfew.split(":"))
-        row.curfew = time(hours, minutes)
+        row.curfew = _time(body.curfew)  # type: ignore[assignment]
     row.scan_retention_days = body.scan_retention_days
+    what = f"keep scans {body.scan_retention_days} d"
+    if {"kiosk_quiet_from", "kiosk_quiet_until"} & body.model_fields_set:
+        row.kiosk_quiet_from = _time(body.kiosk_quiet_from)
+        row.kiosk_quiet_until = _time(body.kiosk_quiet_until)
+        what += (
+            f", kiosks quiet {body.kiosk_quiet_from}-{body.kiosk_quiet_until}"
+            if body.kiosk_quiet_from
+            else ", kiosks always on"
+        )
     row.updated_at = datetime.now(UTC)
-    svc.audit(session, me, "settings", f"keep scans {body.scan_retention_days} d")
+    svc.audit(session, me, "settings", what)
     await session.commit()
-    return CampusSettingsIO(
-        curfew=row.curfew.strftime("%H:%M"), scan_retention_days=row.scan_retention_days
+    return _settings_out(row)
+
+
+# ---------- audit log ----------
+
+
+@router.get("/audit")
+async def audit_log(
+    _: AdminUser,
+    session: SessionDep,
+    before: Annotated[int | None, Query(ge=1, le=2**63 - 1)] = None,  # inside BIGINT: 422, not 500
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    area: Literal[svc.AUDIT_AREAS] | None = None,  # type: ignore[valid-type]
+    q: Search = None,
+    start: Annotated[date | None, Query(alias="from")] = None,
+    end: Annotated[date | None, Query(alias="to")] = None,
+) -> AuditPage:
+    """Who changed what, newest first: admins and developers only, and read-only (nothing
+    writes here; every change elsewhere adds its own row)."""
+    return await svc.audit_log(
+        session, before=before, limit=limit, area=area, q=q, days=day_range(start, end)
     )
 
 

@@ -27,6 +27,7 @@ from app.api import (
     meta,
     outings,
     profile,
+    records,
     sessions,
     ws,
 )
@@ -184,6 +185,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(gates.router)
     app.include_router(admin.router)
     app.include_router(admin_rules.router)
+    app.include_router(records.router)
     app.include_router(profile.router)
     app.include_router(devices.router)
     app.include_router(meta.router)

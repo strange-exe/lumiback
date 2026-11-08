@@ -30,6 +30,7 @@ from app.models import (
     ScanResult,
     User,
     UserRole,
+    Via,
     WardenHostel,
 )
 from app.schemas import (
@@ -38,6 +39,8 @@ from app.schemas import (
     AdminScan,
     AdminScanPage,
     AdminUser,
+    AuditEntry,
+    AuditPage,
     StudentOut,
 )
 from app.services.account_links import has_password
@@ -71,6 +74,81 @@ def ist_midnight(now: datetime) -> datetime:
 
 def audit(session: AsyncSession, actor: User, action: str, target: str) -> None:
     session.add(AdminAudit(actor_id=actor.id, action=action, target=target[:160]))
+
+
+# The first word of every admin_audit action ("gate:create" -> "gate"): what the audit log
+# viewer filters by. A new kind of action gets its area added here (and a label on the web).
+AUDIT_AREAS = (
+    "account",
+    "correction",
+    "escalation",
+    "gate",
+    "holiday",
+    "hostel",
+    "invite",
+    "outing",
+    "password",
+    "people",
+    "request",
+    "role",
+    "rules",
+    "settings",
+    "student",
+)
+
+
+async def audit_log(
+    session: AsyncSession,
+    *,
+    before: int | None,
+    limit: int,
+    area: str | None = None,
+    q: str | None = None,
+    days: tuple[date, date] | None = None,
+) -> AuditPage:
+    """admin_audit, newest first, `limit` at a time. `area`: one kind of change (AUDIT_AREAS).
+    `q`: who made it (name or email) or what it was about. `days`: IST dates, inclusive."""
+    query = (
+        select(AdminAudit, User)
+        .outerjoin(User, User.id == AdminAudit.actor_id)  # a deleted account's changes too
+        .order_by(AdminAudit.id.desc())
+        .limit(limit + 1)
+    )
+    if before is not None:
+        query = query.where(AdminAudit.id < before)
+    if area is not None:
+        query = query.where(
+            or_(AdminAudit.action == area, AdminAudit.action.like(f"{area}:%", escape="\\"))
+        )
+    if q:
+        pattern = _like(q)
+        query = query.where(
+            or_(
+                func.lower(func.coalesce(User.name, "")).like(pattern, escape="\\"),
+                func.lower(func.coalesce(User.email, "")).like(pattern, escape="\\"),
+                func.lower(AdminAudit.target).like(pattern, escape="\\"),
+            )
+        )
+    if days is not None:
+        since, until = ist_days(*days)
+        query = query.where(AdminAudit.at >= since, AdminAudit.at < until)
+    rows = list(await session.execute(query))
+    page = rows[:limit]
+    return AuditPage(
+        items=[
+            AuditEntry(
+                id=a.id,
+                at=a.at,
+                actor_name=u.name if u is not None else None,
+                actor_email=u.email if u is not None else None,
+                actor_role=u.role.value if u is not None else None,
+                action=a.action,
+                target=a.target,
+            )
+            for a, u in page
+        ],
+        next_before=page[-1][0].id if len(rows) > limit else None,
+    )
 
 
 def student_name(o: Outing, u: User | None) -> str:
@@ -149,7 +227,35 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
     )
 
 
-async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[AdminOuting]:
+def _register_filters(hostel_id: uuid.UUID | None, q: str | None) -> list:
+    """The register's own filters (on top of the office's scope): one hostel (the outing's,
+    as everywhere in the register), and a name or roll number. A deleted account's outing
+    matches by the name and roll number kept with it."""
+    where = []
+    if hostel_id is not None:
+        where.append(Outing.hostel_id == hostel_id)
+    if q:
+        pattern = _like(q)
+        where.append(
+            or_(
+                func.lower(func.coalesce(User.name, Outing.student_name, "")).like(
+                    pattern, escape="\\"
+                ),
+                func.lower(func.coalesce(User.roll_no, Outing.student_roll_no, "")).like(
+                    pattern, escape="\\"
+                ),
+            )
+        )
+    return where
+
+
+async def open_outings(
+    session: AsyncSession,
+    staff: Staff,
+    state: str,
+    hostel_id: uuid.UUID | None = None,
+    q: str | None = None,
+) -> list[AdminOuting]:
     """Students currently out: `overdue`, `out` (not yet due) or `all`. Most urgent first.
     `back`: outings that ended today (IST), latest first, for the office to correct."""
     now = datetime.now(UTC)
@@ -158,7 +264,7 @@ async def open_outings(session: AsyncSession, staff: Staff, state: str) -> list[
         .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(Gate, Gate.id == Outing.out_gate_id)
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
-        .where(staff.covers(Outing.hostel_id))
+        .where(staff.covers(Outing.hostel_id), *_register_filters(hostel_id, q))
         .limit(500)
     )
     if state == "back":
@@ -201,7 +307,12 @@ def _register_row(
     )
 
 
-async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
+async def late_today(
+    session: AsyncSession,
+    staff: Staff,
+    hostel_id: uuid.UUID | None = None,
+    q: str | None = None,
+) -> list[AdminOuting]:
     """Everyone late today: back after their return time, or still out past it. Most late first.
     "Today" is the IST day the return time fell on, so 8 PM latecomers are tonight's list."""
     now = datetime.now(UTC)
@@ -212,6 +323,7 @@ async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
         .outerjoin(Hostel, Hostel.id == Outing.hostel_id)
         .where(
             staff.covers(Outing.hostel_id),
+            *_register_filters(hostel_id, q),
             Outing.expected_return_at >= ist_midnight(now),
             Outing.expected_return_at < now,
             or_(Outing.returned_at.is_(None), Outing.returned_at > Outing.expected_return_at),
@@ -222,6 +334,28 @@ async def late_today(session: AsyncSession, staff: Staff) -> list[AdminOuting]:
     return sorted(late, key=lambda r: r.late_minutes, reverse=True)
 
 
+def ist_days(start: date, end: date) -> tuple[datetime, datetime]:
+    """[start, end] as IST dates (inclusive), as the UTC instants [since, until)."""
+    since = (datetime.combine(start, time()) - IST).replace(tzinfo=UTC)
+    until = (datetime.combine(end + timedelta(days=1), time()) - IST).replace(tzinfo=UTC)
+    return since, until
+
+
+def _like(q: str) -> str:
+    """A case-insensitive "contains" pattern; the user's own % and _ match only themselves."""
+    escaped = q.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def name_or_roll(q: str):  # noqa: ANN201 - a SQL expression
+    """Students whose name or roll number contains `q` (any case)."""
+    pattern = _like(q)
+    return or_(
+        func.lower(User.name).like(pattern, escape="\\"),
+        func.lower(func.coalesce(User.roll_no, "")).like(pattern, escape="\\"),
+    )
+
+
 async def scans(
     session: AsyncSession,
     staff: Staff,
@@ -230,7 +364,12 @@ async def scans(
     limit: int,
     gate_id: uuid.UUID | None,
     result: ScanResult | None,
+    q: str | None = None,
+    days: tuple[date, date] | None = None,
+    student_id: uuid.UUID | None = None,
 ) -> AdminScanPage:
+    """Newest first, `limit` at a time. `q`: a student's name or roll number. `days`: scans on
+    these IST dates (inclusive). `student_id`: one student's (their record page)."""
     query = (
         select(GateScan, User, Gate.name)
         .join(User, User.id == GateScan.user_id)
@@ -245,12 +384,20 @@ async def scans(
         query = query.where(GateScan.gate_id == gate_id)
     if result is not None:
         query = query.where(GateScan.result == result)
+    if q:
+        query = query.where(name_or_roll(q))
+    if days is not None:
+        since, until = ist_days(*days)
+        query = query.where(GateScan.scanned_at >= since, GateScan.scanned_at < until)
+    if student_id is not None:
+        query = query.where(GateScan.user_id == student_id)
     rows = list(await session.execute(query))
     page = rows[:limit]
     return AdminScanPage(
         items=[
             AdminScan(
                 id=s.id,
+                student_id=u.id,
                 name=u.name,
                 roll_no=u.roll_no,
                 gate=gate_name,
@@ -270,57 +417,89 @@ def _ist(value: datetime | None) -> str:
     return (value.astimezone(UTC) + IST).strftime("%Y-%m-%d %H:%M") if value else ""
 
 
+# The register download's columns, in order: plain words a hostel's management reads without
+# a key (no "self"/"gate" codes), every time on the campus clock.
+CSV_COLUMNS = (
+    "Student",
+    "Roll number",
+    "Hostel",
+    "Email",
+    "Destination",
+    "Left (IST)",
+    "Left through",
+    "Due back (IST)",
+    "Back (IST)",
+    "Came back through",
+    "Status",
+    "Minutes late",
+    "Approved form",
+)
+# Excel opens a UTF-8 file without this mark as the PC's own code page, garbling names
+# written in other scripts.
+CSV_BOM = chr(0xFEFF)
+
+
+def _through(via: Via | InVia | None, gate: str | None) -> str:
+    """How a trip started or ended, in words (empty: not back yet)."""
+    if via is None:
+        return ""
+    if via in (Via.GATE, InVia.GATE):
+        return f"Gate scan at {gate}" if gate else "Gate scan"
+    if via in (Via.SELF, InVia.SELF):
+        return "App or website"
+    if via == InVia.STAFF:
+        return "Hostel office"
+    return "Not recorded"  # InVia.UNRECORDED: they tapped out again on a later day
+
+
+def _csv_status(o: Outing, late: int, now: datetime) -> str:
+    match status_of(o, now):
+        case "returned":
+            return "Back late" if late > 0 else "Back on time"
+        case "overdue":
+            return "Late, not back"
+        case _:
+            return "Out"
+
+
 async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: date) -> str:
     """The register for [start, end] (IST dates, inclusive), oldest first."""
-    since = (datetime.combine(start, time()) - IST).replace(tzinfo=UTC)
-    until = (datetime.combine(end + timedelta(days=1), time()) - IST).replace(tzinfo=UTC)
+    since, until = ist_days(start, end)
     out_gate, in_gate = aliased(Gate), aliased(Gate)
     rows = await session.execute(
-        select(Outing, User, out_gate.name, in_gate.name)
+        select(Outing, User, out_gate.name, in_gate.name, Hostel.name)
         .outerjoin(User, User.id == Outing.student_id)  # a deleted account's record too
         .outerjoin(out_gate, out_gate.id == Outing.out_gate_id)
         .outerjoin(in_gate, in_gate.id == Outing.in_gate_id)
+        .outerjoin(Hostel, Hostel.id == Outing.hostel_id)  # the hostel at the time
         .where(staff.covers(Outing.hostel_id), Outing.left_at >= since, Outing.left_at < until)
         .order_by(Outing.left_at)
     )
     buffer = io.StringIO()
+    buffer.write(CSV_BOM)
     writer = csv.writer(buffer)
-    writer.writerow(
-        [
-            "Name",
-            "Email",
-            "Roll no.",
-            "Destination",
-            "Left (IST)",
-            "Out via",
-            "Out gate",
-            "Due back (IST)",
-            "Returned (IST)",
-            "In via",
-            "In gate",
-            "Minutes late",
-        ]
-    )
+    writer.writerow(CSV_COLUMNS)
     now = datetime.now(UTC)
-    for o, u, out_name, in_name in rows:
+    for o, u, out_name, in_name, hostel in rows:
         end_at = o.returned_at or now
         late = max(0, int((end_at - o.expected_return_at).total_seconds() // 60))
         # Spreadsheet formula injection: every text cell someone typed (name, roll number,
-        # destination, gate names) is neutralised.
+        # hostel, destination, gate names) is neutralised.
         writer.writerow(
             [
                 _safe(student_name(o, u)),
-                _safe(u.email if u is not None else ""),
                 _safe(student_roll_no(o, u) or ""),
+                _safe(hostel or ""),
+                _safe(u.email if u is not None else ""),
                 _safe(o.destination or ""),
                 _ist(o.left_at),
-                o.out_via.value,
-                _safe(out_name or ""),
+                _safe(_through(o.out_via, out_name)),
                 _ist(o.expected_return_at),
                 _ist(o.returned_at),
-                o.in_via.value if o.in_via else "",
-                _safe(in_name or ""),
+                _safe(_through(o.in_via, in_name)),
+                _csv_status(o, late, now),
                 late,
+                "Yes" if o.request_id is not None else "No",
             ]
         )
     return buffer.getvalue()

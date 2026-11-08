@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 
 from app.api.deps import (
     CurrentUser,
@@ -139,14 +140,33 @@ async def kiosk_qr(
     limiter: LimiterDep,
     x_kiosk_token: Annotated[str | None, Header()] = None,
 ) -> KioskOut:
-    """What a gate kiosk shows right now. Authenticated by the kiosk's own device token."""
+    """What a gate kiosk shows right now. Authenticated by the kiosk's own device token.
+
+    Every poll from a known kiosk counts as a sign of life (kiosk health on Admin, Gates),
+    written at most once a minute. In quiet hours the answer is a 423 with `quiet` and
+    `opens_at`: the kiosk shows when it opens and asks nothing more until then. An older kiosk
+    page reads only `detail` and checks back every 30 seconds."""
     await enforce(limiter, "kiosk:ip", client_ip(request), KIOSK_PER_IP)
     gate = await svc.gate_for_kiosk(session, x_kiosk_token) if x_kiosk_token else None
     if gate is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Unknown kiosk")
-    if not gate.active:
-        raise HTTPException(status.HTTP_423_LOCKED, detail=f"{gate.name} is switched off")
     now = datetime.now(UTC)
+    quiet = svc.quiet_hours(await svc.campus_settings(session))
+    name = gate.name
+    if svc.note_kiosk_seen(gate, now):
+        await session.commit()
+    if not gate.active:
+        raise HTTPException(status.HTTP_423_LOCKED, detail=f"{name} is switched off")
+    if quiet is not None and quiet.is_quiet(now):
+        opens = quiet.opens_at(now)
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=status.HTTP_423_LOCKED,
+            content={
+                "detail": f"{name} opens at {opens.astimezone(rules.IST):%H:%M}",
+                "quiet": True,
+                "opens_at": opens.isoformat(),
+            },
+        )
     window = window_at(now)
     code = gate_code(settings.code_pepper.get_secret_value(), gate.id, window)
     return KioskOut(

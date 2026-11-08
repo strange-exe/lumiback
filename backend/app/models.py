@@ -406,6 +406,8 @@ class OutingCorrection(Base):
             postgresql_where=text("status = 'pending'"),
         ),
         Index("ix_outing_corrections_status_created", "status", "created_at"),
+        # A student's record lists each outing's corrections.
+        Index("ix_outing_corrections_outing_id", "outing_id"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -450,6 +452,8 @@ class OutingRequest(Base):
         ),
         Index("ix_outing_requests_status_created", "status", "created_at"),
         Index("ix_outing_requests_day", "day"),  # the sweep clears past days' requests
+        # A student's record pages their requests, newest first.
+        Index("ix_outing_requests_student_created", "student_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -503,6 +507,12 @@ class CampusSettings(Base):
     __table_args__ = (
         CheckConstraint("id = 1", name="single_row"),
         CheckConstraint("scan_retention_days BETWEEN 7 AND 730", name="retention_range"),
+        # Quiet hours are both times or neither (off), and never an empty or whole-day window.
+        CheckConstraint(
+            "(kiosk_quiet_from IS NULL) = (kiosk_quiet_until IS NULL) "
+            "AND (kiosk_quiet_from IS NULL OR kiosk_quiet_from <> kiosk_quiet_until)",
+            name="kiosk_quiet_pair",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, server_default=text("1"))
@@ -513,6 +523,11 @@ class CampusSettings(Base):
         ForeignKey("rule_sets.id", ondelete="SET NULL")
     )
     scan_retention_days: Mapped[int] = mapped_column(server_default=text("180"))
+    # Kiosk quiet hours (IST): the gate tablets show when they open again and stop asking the
+    # API for codes, so the free host can sleep. Off (both None) unless an admin sets them:
+    # late returns tap in at night. The window may cross midnight (23:00 to 05:00).
+    kiosk_quiet_from: Mapped[time | None] = mapped_column(Time)
+    kiosk_quiet_until: Mapped[time | None] = mapped_column(Time)
     updated_at: Mapped[datetime] = created_at()
 
 
@@ -534,6 +549,9 @@ class Gate(Base):
     kiosk_token_hash: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
     active: Mapped[bool] = mapped_column(server_default=text("true"))
     created_at: Mapped[datetime] = created_at()
+    # When the gate's tablet last asked for a code (kiosk health), written at most once a
+    # minute (services/gates.py KIOSK_SEEN_EVERY). None: never since this was added.
+    kiosk_seen_at: Mapped[datetime | None]
 
 
 class GateScan(Base):
