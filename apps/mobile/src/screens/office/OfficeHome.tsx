@@ -21,6 +21,7 @@ export function OfficeHome({
   loading,
   refreshing,
   onRetry,
+  onSendNotice,
 }: {
   role: Role | undefined;
   overview: OfficeOverview | undefined;
@@ -28,6 +29,8 @@ export function OfficeHome({
   loading: boolean;
   refreshing: boolean;
   onRetry: () => Promise<void>;
+  /** Opens "Send a notice" (the sheet lives with the screen, which makes the API call). */
+  onSendNotice: () => void;
 }): ReactNode {
   const c = useColors();
   const all = everyHostel(role);
@@ -62,6 +65,7 @@ export function OfficeHome({
 
   let today: ReactNode;
   if (data) {
+    const help = data.open_help ?? 0;
     const escalations = data.open_escalations;
     const requests = data.pending_requests;
     const corrections = data.corrections;
@@ -91,6 +95,16 @@ export function OfficeHome({
           />
         </LedBoard>
         <Section title="Today">
+          {/* Only while someone is waiting: Help goes first, above the late students. */}
+          {help > 0 ? (
+            <Row
+              leading={icon("hand-left-outline", c.danger)}
+              title="Asked for help"
+              detail={`${help} ${help === 1 ? "student pressed" : "students pressed"} Help`}
+              trailing={count(help, "danger")}
+              onPress={() => open("escalations")}
+            />
+          ) : null}
           <Row
             leading={icon("alert-circle-outline", escalations > 0 ? c.danger : c.accentText)}
             title="Escalations"
@@ -126,6 +140,13 @@ export function OfficeHome({
             detail={`${data.out_now + late} out${late > 0 ? `, ${late} late` : ""}`}
             trailing={chevron}
             onPress={() => open("out")}
+          />
+          <Row
+            leading={icon("megaphone-outline")}
+            title="Send a notice"
+            detail="To students out now, or ask them back"
+            trailing={chevron}
+            onPress={onSendNotice}
           />
         </Section>
         {/* A refresh failed: these are the last counts that loaded. */}

@@ -2,6 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ReactNode } from "react";
 import { Alert, Linking, View } from "react-native";
 
+import { telHref } from "@/lib/alerts";
 import { formatPhone } from "@/lib/office";
 import { Press, T } from "@/ui/kit";
 import { fonts, radius, space, useColors } from "@/ui/theme";
@@ -19,7 +20,7 @@ export function Contact({
   const c = useColors();
   const call = (): void => {
     if (!phone) return;
-    Linking.openURL(`tel:${phone}`).catch(() =>
+    Linking.openURL(telHref(phone)).catch(() =>
       Alert.alert("Couldn't start a call", `Call ${formatPhone(phone)} from your phone app.`),
     );
   };

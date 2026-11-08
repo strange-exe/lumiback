@@ -7,7 +7,7 @@ import { armSafeReturn } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { canAsk } from "@/lib/corrections";
-import { isStaff, ROLE_LABEL } from "@/lib/office";
+import { everyHostel, isStaff, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import {
   asksAgain,
@@ -36,7 +36,9 @@ import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
 import { CorrectionSheet } from "@/screens/correction-sheet";
+import { NoticeSheet } from "@/screens/office/NoticeSheet";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
+import { OutOffice } from "@/screens/out-office";
 import { RequestSheet } from "@/screens/outing-request";
 import { SafeReturnStatus, SafeReturnTick, sendForOuting } from "@/screens/safe-return";
 import { stopOutingShare } from "@/location/task";
@@ -93,6 +95,7 @@ function StaffToday(): ReactNode {
   const { user } = useAuth();
   const load = useCallback(() => office.overview(), []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
+  const [noticing, setNoticing] = useState(false);
   // Keep the counts current while Today is on screen, like the website's register.
   useFocusEffect(
     useCallback(() => {
@@ -122,7 +125,11 @@ function StaffToday(): ReactNode {
         loading={loading}
         refreshing={refreshing}
         onRetry={reload}
+        onSendNotice={() => setNoticing(true)}
       />
+      {noticing ? (
+        <NoticeSheet everyHostel={everyHostel(user?.role)} onClose={() => setNoticing(false)} />
+      ) : null}
     </Screen>
   );
 }
@@ -617,6 +624,9 @@ function Out({
       </View>
 
       <PhaseStrip outing={outing} overdue={overdue} />
+
+      {/* Who to call while out or late, and Help (confirmed first). */}
+      <OutOffice office={outing.office} />
 
       {/* Tapping in is the Scan button beside the dock; this is the no-scan way back. */}
       <Button

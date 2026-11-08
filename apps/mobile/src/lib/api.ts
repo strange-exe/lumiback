@@ -67,6 +67,12 @@ interface Options {
    * service sending for the phone's own share (a read-only view would refuse it).
    */
   self?: boolean;
+  /**
+   * The session (sessionGeneration()) this request belongs to, when the caller read it
+   * earlier: Help reads it before waiting for a location fix, so a sign-in as someone else
+   * (or a sign-out) during the wait refuses the request instead of sending it as them.
+   */
+  session?: number;
 }
 
 async function send(
@@ -102,7 +108,9 @@ async function renewing(get: () => Promise<string | null>): Promise<string | nul
 /** Calls the API; on a 401 it refreshes once and retries, then signs out if still refused. */
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const auth = options.auth ?? true;
-  const began = sessionGeneration(); // a refusal only ends the session this request began in
+  // A refusal only ends the session this request began in.
+  const began = options.session ?? sessionGeneration();
+  if (sessionGeneration() !== began) throw new ApiError(401, "Please sign in again.");
   let token = auth ? await renewing(accessToken) : null;
   if (auth && !token) throw new ApiError(401, "Please sign in again.");
   // Viewing as a role (developers): every signed-in request names it.

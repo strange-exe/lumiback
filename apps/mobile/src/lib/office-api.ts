@@ -7,12 +7,15 @@ import type {
   AccountEdit,
   AccountFilter,
   AdminUser,
+  CallOutcome,
   Correction,
   CorrectionBody,
   CorrectionQueue,
   Escalation,
+  EscalationCall,
   Gate,
   GateCreated,
+  HelpRequest,
   Holiday,
   OfficeHostel,
   OfficeOuting,
@@ -46,6 +49,25 @@ export const office = {
       method: "POST",
       body: { note },
     }),
+  /** "I'm on it": the re-alerts stop while someone has it (409 when someone else does). */
+  claim: (id: string) =>
+    api<void>(`/admin/escalations/${encodeURIComponent(id)}/claim`, { method: "POST" }),
+  /** Give it back (whoever claimed it, or a head warden or admin). */
+  release: (id: string) =>
+    api<void>(`/admin/escalations/${encodeURIComponent(id)}/claim`, { method: "DELETE" }),
+  /** A call made while following up; claims it if nobody has. */
+  logCall: (id: string, outcome: CallOutcome, note: string | null) =>
+    api<EscalationCall>(`/admin/escalations/${encodeURIComponent(id)}/calls`, {
+      method: "POST",
+      body: { outcome, note },
+    }),
+  /** Students who pressed Help, newest first: open ones only, or all. */
+  help: (state: "open" | "all" = "open") => api<HelpRequest[]>(`/admin/help?state=${state}`),
+  handleHelp: (id: string, note: string | null) =>
+    api<void>(`/admin/help/${encodeURIComponent(id)}/handle`, { method: "POST", body: { note } }),
+  /** A one-line notice (or "come back now") to the students out now in this office's hostels. */
+  notice: (message: string, recall: boolean) =>
+    api<{ sent: number }>("/admin/notices", { method: "POST", body: { message, recall } }),
   outings: () => api<OfficeOuting[]>("/admin/outings"),
   /** Outings that ended today (IST), latest first: to correct a return time or a mistaken tap. */
   backToday: () => api<OfficeOuting[]>("/admin/outings?state=back"),

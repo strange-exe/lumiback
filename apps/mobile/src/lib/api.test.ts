@@ -76,6 +76,29 @@ describe("api errors", () => {
   });
 });
 
+describe("a request pinned to the session it began in", () => {
+  beforeEach(() => fetchMock.mockReset());
+
+  it("is never sent once another sign-in (or a sign-out) has happened", async () => {
+    // Help reads the session before waiting for a location fix: a switch meanwhile mustn't
+    // send the alert as the next account.
+    const failure = (await api("/outings/current/help", {
+      method: "POST",
+      body: {},
+      session: 0, // sessionGeneration() is 1 now
+    }).catch((e: unknown) => e)) as ApiError;
+    expect(failure.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("is sent as usual while the same session is signed in", async () => {
+    fetchMock.mockResolvedValueOnce(reply(201, { office_told: 1 }));
+    await expect(
+      api("/outings/current/help", { method: "POST", body: {}, session: 1 }),
+    ).resolves.toEqual({ office_told: 1 });
+  });
+});
+
 describe("a turned-off account", () => {
   const session = jest.requireMock<{ refresh: jest.Mock; clearTokens: jest.Mock }>("@/lib/session");
   const OFF = "This account has been turned off. Ask your hostel office to turn it back on.";

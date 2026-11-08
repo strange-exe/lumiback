@@ -2,13 +2,15 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, type ReactNode } from "react";
 import { RefreshControl, View } from "react-native";
 
+import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { everyHostel } from "@/lib/office";
 import { office } from "@/lib/office-api";
-import type { Escalation, OfficeOuting, OfficeRequest } from "@/lib/types";
+import type { Escalation, HelpRequest, OfficeOuting, OfficeRequest } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { BackList } from "@/screens/office/BackList";
 import { EscalationCard } from "@/screens/office/EscalationCard";
+import { HelpList } from "@/screens/office/HelpList";
 import { OutList } from "@/screens/office/OutList";
 import { RequestCard } from "@/screens/office/RequestCard";
 import { Heading, Screen, Segmented, T } from "@/ui/kit";
@@ -24,7 +26,13 @@ const POLL_MS = 30_000;
 
 type Loaded =
   | { section: "requests"; items: OfficeRequest[] }
-  | { section: "escalations"; items: Escalation[] }
+  | {
+      section: "escalations";
+      items: Escalation[];
+      /** Students who pressed Help; null when that list failed (said so, never "nobody"). */
+      help: HelpRequest[] | null;
+      helpError: string | null;
+    }
   | { section: "out"; items: OfficeOuting[]; back: OfficeOuting[] };
 
 function sectionOf(value: unknown): SectionName {
@@ -35,8 +43,19 @@ async function load(section: SectionName): Promise<Loaded> {
   switch (section) {
     case "requests":
       return { section, items: await office.requests() };
-    case "escalations":
-      return { section, items: await office.escalations() };
+    case "escalations": {
+      const [items, help] = await Promise.all([
+        office.escalations(),
+        office.help("open").then(
+          (list) => ({ list, error: null }),
+          (e: unknown) => ({
+            list: null,
+            error: e instanceof ApiError ? e.detail : "Something went wrong.",
+          }),
+        ),
+      ]);
+      return { section, items, help: help.list, helpError: help.error };
+    }
     case "out": {
       const [items, back] = await Promise.all([office.outings(), office.backToday()]);
       return { section, items, back };
@@ -98,7 +117,7 @@ export default function OfficeScreen(): ReactNode {
         <Heading
           title="Escalations"
           tone="danger"
-          lede={`Late students who didn't answer the "are you OK?" alert within 10 minutes, or answered but still aren't back an hour later. Call them, their emergency contact or their warden. ${scope}`}
+          lede={`Students who pressed Help, then late students who didn't answer the "are you OK?" alert within 10 minutes, or answered but still aren't back an hour later. Call them, their emergency contact or their warden. ${scope}`}
         />
       ) : (
         <Heading title="Who's out" lede={`Late first. ${scope}`} />
@@ -121,15 +140,27 @@ export default function OfficeScreen(): ReactNode {
           </View>
         )
       ) : current?.section === "escalations" ? (
-        current.items.length === 0 ? (
-          <Empty text="Nothing to follow up. Late students who don't answer appear here." />
-        ) : (
-          <View style={{ gap: space(4) }}>
-            {current.items.map((e) => (
-              <EscalationCard key={e.id} escalation={e} onResolved={() => void refetch()} />
-            ))}
+        <View style={{ gap: space(8) }}>
+          <HelpList
+            items={current.help}
+            error={current.helpError}
+            onChanged={() => void refetch()}
+          />
+          <View style={{ gap: space(3) }}>
+            <T tone="headline" accessibilityRole="header">
+              Late students
+            </T>
+            {current.items.length === 0 ? (
+              <Empty text="Nothing to follow up. Late students who don't answer appear here." />
+            ) : (
+              <View style={{ gap: space(4) }}>
+                {current.items.map((e) => (
+                  <EscalationCard key={e.id} escalation={e} onChanged={() => void refetch()} />
+                ))}
+              </View>
+            )}
           </View>
-        )
+        </View>
       ) : current?.section === "out" ? (
         <View style={{ gap: space(8) }}>
           <OutList outings={current.items} onChanged={() => void refetch()} />

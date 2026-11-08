@@ -54,6 +54,37 @@ export interface Outing {
   safe_return_session_id?: string | null;
   /** The latest correction (asked by the student or made by the office), if any. */
   correction?: Correction | null;
+  /** Only on the current outing: who to call while out or late (null: no hostel known). */
+  office?: OfficeContact | null;
+}
+
+// ---------- calling the office and Help (a student who is out) ----------
+
+/** The outing's hostel and its office number. `phone` null: no number yet, so the student
+ * can ask the office to call them instead. */
+export interface OfficeContact {
+  hostel: string | null;
+  name: string | null;
+  phone: string | null;
+}
+
+/** The one location fix sent with a help alert. */
+export interface HelpFix {
+  lat: number;
+  lng: number;
+  accuracy_m: number;
+  mocked: boolean;
+}
+
+/** POST /outings/current/help */
+export interface HelpSent {
+  office: OfficeContact | null;
+  /** Wardens and head wardens told. */
+  office_told: number;
+  /** People the student shares their location with. */
+  followers_told: number;
+  /** The emergency contact was emailed. */
+  contact_told: boolean;
 }
 
 /** How a return was recorded. staff: the hostel office recorded or corrected it. unrecorded:
@@ -259,6 +290,8 @@ export interface OfficeOverview {
   open_escalations: number;
   /** Students' correction asks plus unrecorded returns to fix. */
   corrections: number;
+  /** Students who pressed Help, not yet handled (absent from an older server). */
+  open_help?: number;
 }
 
 export interface OfficeOuting {
@@ -346,6 +379,47 @@ export interface Escalation {
   last_seen: LastSeen | null;
   resolved_by: string | null;
   resolved_at: string | null;
+  note: string | null;
+  /** Who said "I'm on it" (null: nobody yet). Optional: an older server leaves these out. */
+  claimed_by?: string | null;
+  claimed_by_me?: boolean;
+  claimed_at?: string | null;
+  /** When nobody took it in time and it went to the head wardens. */
+  handed_over_at?: string | null;
+  /** Re-alerts sent while nobody had it. */
+  realerts?: number;
+  /** The office's calls, oldest first. */
+  calls?: EscalationCall[];
+}
+
+export type CallOutcome = "reached_student" | "reached_contact" | "no_answer" | "left_message";
+
+export interface EscalationCall {
+  at: string;
+  /** The staff member's name (null: their account is gone). */
+  by: string | null;
+  outcome: CallOutcome;
+  note: string | null;
+}
+
+/** GET /admin/help: a student who pressed Help while out. */
+export interface HelpRequest {
+  id: string;
+  created_at: string;
+  student_id: string;
+  name: string;
+  roll_no: string | null;
+  phone: string | null;
+  hostel: string | null;
+  /** The fix sent with it; null if the phone gave none, or a day later (cleared). */
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  mocked: boolean;
+  /** The outing it was sent from has ended. */
+  returned: boolean;
+  handled_by: string | null;
+  handled_at: string | null;
   note: string | null;
 }
 

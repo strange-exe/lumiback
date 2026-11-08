@@ -110,7 +110,8 @@ export type NotificationRoute =
   | "/office/requests"
   | "/office/escalations"
   | "/office/out"
-  | "/office/corrections";
+  | "/office/corrections"
+  | `/office/student/${string}`;
 const ROUTES: readonly string[] = [
   "/live",
   "/live?view=follow",
@@ -122,15 +123,23 @@ const ROUTES: readonly string[] = [
   "/office/corrections",
 ] satisfies NotificationRoute[];
 
+// "Ask the office to call me" opens that student's history: exactly one UUID, nothing after it,
+// so a push can't steer the app anywhere else (the history screen checks the id again).
+const STUDENT_ROUTE =
+  /^\/office\/student\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
 /**
  * Where a tapped notification goes. A push without a known `url` opens Today rather than doing
- * nothing. The hostel office's pushes (new request, escalation, correction asked) open its
- * screens; the office screen itself sends a student who isn't staff back to Today. A student's
- * correction answered opens History, where the trip shows it.
+ * nothing. The hostel office's pushes (new request, escalation, correction asked, a student
+ * asking for a call) open its screens; the office screens themselves send a student who isn't
+ * staff back to Today. A student's correction answered opens History, where the trip shows it.
  */
 export function notificationRoute(data: unknown): NotificationRoute {
   const url = data && typeof data === "object" ? (data as { url?: unknown }).url : undefined;
-  return typeof url === "string" && ROUTES.includes(url) ? (url as NotificationRoute) : "/today";
+  if (typeof url !== "string") return "/today";
+  if (ROUTES.includes(url)) return url as NotificationRoute;
+  const student = STUDENT_ROUTE.exec(url);
+  return student?.[1] ? `/office/student/${student[1].toLowerCase()}` : "/today";
 }
 
 /** Server push channels (match the Android channels and backend PushMessage.channel). */

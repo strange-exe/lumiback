@@ -49,7 +49,12 @@ function words(tree: ReactTestRenderer): string[] {
   });
 }
 
-const base = { role: "warden" as const, refreshing: false, onRetry: () => Promise.resolve() };
+const base = {
+  role: "warden" as const,
+  refreshing: false,
+  onRetry: () => Promise.resolve(),
+  onSendNotice: () => undefined,
+};
 
 describe("OfficeHome", () => {
   it("shows the error and a retry when the overview didn't load, never zero counts", () => {
@@ -100,6 +105,35 @@ describe("OfficeHome", () => {
     );
     expect(shown).toContain("Students' asks and return times to fix");
     expect(shown).not.toContain("0");
+  });
+
+  it("puts students who pressed Help first, only while someone is waiting", () => {
+    const waiting = words(
+      render({ ...base, overview: { ...OVERVIEW, open_help: 2 }, loading: false, error: null }),
+    );
+    expect(waiting).toContain("Asked for help");
+    expect(waiting).toContain("2 students pressed Help");
+    expect(waiting.indexOf("Asked for help")).toBeLessThan(waiting.indexOf("Escalations"));
+    for (const help of [0, undefined]) {
+      const none = words(
+        render({
+          ...base,
+          overview: { ...OVERVIEW, open_help: help },
+          loading: false,
+          error: null,
+        }),
+      );
+      expect(none).not.toContain("Asked for help");
+    }
+    const failed = words(
+      render({ ...base, overview: undefined, loading: false, error: "You're offline." }),
+    );
+    expect(failed).not.toContain("Asked for help");
+  });
+
+  it("offers a notice to the students who are out", () => {
+    const shown = words(render({ ...base, overview: OVERVIEW, loading: false, error: null }));
+    expect(shown).toContain("Send a notice");
   });
 
   it("keeps the last real counts and says a refresh failed", () => {

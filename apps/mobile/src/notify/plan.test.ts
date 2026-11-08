@@ -91,6 +91,35 @@ describe("notificationRoute", () => {
     expect(notificationRoute({ url: "/history" })).toBe("/history");
   });
 
+  it("opens a student's history for an 'ask the office to call me' alert", () => {
+    const id = "5f0c2a1e-0000-4000-8000-000000000001";
+    expect(notificationRoute({ url: `/office/student/${id}` })).toBe(`/office/student/${id}`);
+    // Lowercased, like the history screen reads it.
+    expect(notificationRoute({ url: `/office/student/${id.toUpperCase()}` })).toBe(
+      `/office/student/${id}`,
+    );
+  });
+
+  it("refuses an office/student url that isn't exactly one UUID", () => {
+    const id = "5f0c2a1e-0000-4000-8000-000000000001";
+    for (const url of [
+      "/office/student/",
+      "/office/student/abc",
+      `/office/student/${id}/`,
+      `/office/student/${id}?x=1`,
+      `/office/student/${id}#x`,
+      `/office/student/${id}/../../admin`,
+      `/office/student/../${id}`,
+      `/office/student/%2e%2e%2f${id}`,
+      `/office/student/${id}0`,
+      ` /office/student/${id}`,
+      `https://evil.example/office/student/${id}`,
+      `/office/students/${id}`,
+    ]) {
+      expect(notificationRoute({ url })).toBe("/today");
+    }
+  });
+
   it("opens Today when the url is missing or unknown", () => {
     for (const data of [undefined, null, {}, { url: null }, { url: "/admin" }, { url: 3 }, "x"]) {
       expect(notificationRoute(data)).toBe("/today");
