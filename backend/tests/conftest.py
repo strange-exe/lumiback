@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -19,6 +20,18 @@ from app.security.rate_limit import RateLimiter
 
 BACKEND = Path(__file__).resolve().parents[1]
 FAKE_SECRET = "t3st-only-" + "x7Kq9Zp2" * 5
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """On GitHub Actions, each failure also becomes a check annotation: the job log needs a
+    sign-in, annotations don't. Only test data and the CI-only database appear in them."""
+    if not os.environ.get("GITHUB_ACTIONS") or not report.failed:
+        return
+    path, line, _ = report.location
+    tail = "\n".join(report.longreprtext.splitlines()[-40:])[-3000:]
+    message = tail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    title = report.nodeid.replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
+    print(f"\n::error file=backend/{path},line={(line or 0) + 1},title={title}::{message}")
 
 
 def alembic_config(url: str) -> Config:
