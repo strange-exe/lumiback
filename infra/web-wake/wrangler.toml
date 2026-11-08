@@ -1,0 +1,20 @@
+# Worker in front of the website: shows Lumiback's own "Starting Lumiback" page while the free
+# Render service wakes, instead of Render's loading page or Cloudflare's error 524 (worker.js).
+# Deploy (from this folder): npx wrangler deploy
+# It has no secrets and no variables. Every request to the site passes through it, so it counts
+# against the Workers free plan's daily request allowance (100,000 a day at the time of writing,
+# https://developers.cloudflare.com/workers/platform/limits/); assets are passed straight on.
+# Set the route's request limit failure mode to "Fail open" in the dashboard (Workers Routes):
+# past the daily limit the site then works as if this Worker didn't exist, instead of error 1027.
+name = "lumiback-web-wake"
+main = "worker.js"
+compatibility_date = "2026-10-09"
+preview_urls = false
+workers_dev = false
+
+routes = [
+  { pattern = "lumiback.abhinesh.codes/*", zone_name = "abhinesh.codes" },
+]
+
+[observability]
+enabled = true
