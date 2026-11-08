@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.18.0",
+    "date": "2026-11-09",
+    "title": "Running late, and your trip without a connection",
+    "points": [
+      "Running late? Tell the hostel office you'll be back 15, 30 or 60 minutes later, once per outing, with a reason if you like. Your late alert moves to the new time.",
+      "The people you share your location with see when you're due back, and hear when you're back, running late or 30 minutes late. If a share with them times out while you're out, they're told it timed out, nothing more. Stopping a share yourself tells nobody.",
+      "Today shows your current trip and the hostel office's number even when you have no connection.",
+      "The hostel office can see Late today and the hostel's details in the app, as on the website.",
+      "Opening the app or the gate scanner wakes the server sooner, so there's less waiting."
+    ]
+  },
+  {
     "version": "1.17.0",
     "date": "2026-11-08",
     "title": "Help while you're out, and a new starting screen",
