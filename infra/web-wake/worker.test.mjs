@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import worker, {
+  HANDOFF,
   LINES,
+  WORD,
   UP_CHECK_PATH,
   WOKE_COOKIE,
   isWaking,
@@ -65,7 +67,7 @@ test("a waking site gets the starting page, and the request keeps running", asyn
   const slow = new Promise((resolve) => (release = resolve));
   const { response, waited } = await run(page(), () => slow, 20);
   assert.equal(response.status, 503);
-  assert.match(await response.text(), /<h1[^>]*>Waking up<\/h1>/);
+  assert.match(await response.text(), /<h1[^>]*>Waking the server<\/h1>/);
   assert.equal(waited.length, 1, "the origin request is kept alive");
   release(new Response("late", { status: 200 }));
   await waited[0];
@@ -99,16 +101,25 @@ test("the starting page is self-contained, never cached, and locked down", async
   assert.match(html, /role="status"/);
   assert.match(html, /prefers-reduced-motion: no-preference/);
   assert.doesNotMatch(html, /\sstyle=/, "inline style attributes would be blocked by the CSP");
-  assert.equal((html.match(/<svg [^>]*aria-hidden="true"/g) ?? []).length, 2, "mark and lantern");
+  assert.equal((html.match(/<svg [^>]*aria-hidden="true"/g) ?? []).length, 1, "the mark");
 });
 
-test("the dot-matrix lantern is in the HTML itself, so it shows without JavaScript", async () => {
+test("the name is in the HTML itself, one letter per span, rising one after another", async () => {
   const html = await startingPage().text();
-  const count = (kind) => (html.match(new RegExp(`<circle class="${kind}[ "]`, "g")) ?? []).length;
-  assert.equal(count("b") + count("w") + count("o"), 13 * 13, "a full 13 by 13 grid");
-  assert.equal(count("w"), 30, "the lit window");
-  assert.ok(count("b") > 40, "the lantern's body");
-  assert.match(html, /\.r12\{--d:200ms\}/, "the bottom row lights first");
+  const word = html.match(/<p class="word" aria-hidden="true">(.*?)<\/p>/)[1];
+  assert.equal(word.replace(/<[^>]+>/g, ""), WORD, "shows without JavaScript");
+  assert.equal((word.match(/<span class="l\d">/g) ?? []).length, WORD.length);
+  assert.match(html, /\.l0\{animation-delay:200ms\}/, "the first letter starts first");
+  assert.match(html, /\.l7\{animation-delay:515ms\}/, "45 ms apart");
+});
+
+test("once the site is up it says so, then opens: every line true, the whole hand-off short", () => {
+  assert.deepEqual(
+    HANDOFF.map(([line]) => line),
+    ["Server started", "Opening Lumiback"],
+  );
+  const total = HANDOFF.reduce((t, [, ms]) => t + ms, 0);
+  assert.ok(total > 0 && total < 1_500, `the reload waits ${total} ms`);
 });
 
 test("once the page saw the site up, a slow page is waited for instead of looping back", async () => {
