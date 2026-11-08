@@ -20,7 +20,8 @@ caused (help, a notice), straight away as a background task:
 - Time budget: a pass stops claiming once BUDGET_SECONDS have passed, and a push still
   waiting for the push service when the budget runs out is cut off (and counts as failed).
 - The recipient is checked again when sending, not only when queued: an account turned off
-  (or no longer staff, for the office's alerts; no longer following, for a follower's) gets
+  (or no longer staff, for the office's alerts; no longer following, for a follower's; no
+  longer a granted viewer of the share, for "sharing timed out") gets
   nothing, and the row is given up with its payload emptied. Emails go to the account's
   address now, not the one it had when queued.
 - Sent: `sent_at` set and the payload emptied (it can hold an address or a location).
@@ -94,11 +95,13 @@ async def enqueue(
     email: Email | None = None,
     staff_only: bool = False,
     follows: uuid.UUID | None = None,
+    viewer_of: uuid.UUID | None = None,
 ) -> int | None:
     """Adds an alert to the caller's transaction (sent once that commits). Returns its id, or
     None if an alert with this key was already queued. `staff_only`: the office's alert, sent
     only while the recipient is still staff. `follows`: a follower's alert, sent only while
-    the recipient still follows this student's live share."""
+    the recipient still follows this student's live share. `viewer_of`: about that share (a
+    share that just ended), sent only while the recipient is still a granted viewer of it."""
     payload: dict[str, Any] = {}
     if push is not None:
         payload["push"] = asdict(push)
@@ -113,11 +116,13 @@ async def enqueue(
         payload["staff_only"] = True
     if follows is not None:
         payload["follows"] = str(follows)
+    if viewer_of is not None:
+        payload["viewer_of"] = str(viewer_of)
     if mode is not OutboxMode.EMAIL and (user_id is None or push is None):
         raise ValueError("a push alert needs a user and a message")
     if mode is not OutboxMode.PUSH and email is None:
         raise ValueError("an email alert needs an email")
-    if (staff_only or follows is not None) and user_id is None:
+    if (staff_only or follows is not None or viewer_of is not None) and user_id is None:
         raise ValueError("a recipient check needs the recipient")
     return await session.scalar(
         insert(AlertOutbox)
@@ -257,6 +262,19 @@ async def _recipient(sessionmaker: async_sessionmaker[AsyncSession], row: _Claim
                 )
             )
             if not still:
+                raise _GiveUp
+        viewer_of = row.payload.get("viewer_of")
+        if viewer_of is not None:
+            granted = await session.scalar(
+                select(
+                    exists().where(
+                        ShareViewer.viewer_user_id == user.id,
+                        ShareViewer.session_id == uuid.UUID(viewer_of),
+                        ShareViewer.status == ViewerStatus.GRANTED,
+                    )
+                )
+            )
+            if not granted:
                 raise _GiveUp
         has_app = await session.scalar(select(exists().where(PushToken.user_id == user.id)))
         return _Recipient(user.email, bool(has_app))

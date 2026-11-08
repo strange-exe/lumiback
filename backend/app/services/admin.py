@@ -81,6 +81,7 @@ def audit(session: AsyncSession, actor: User, action: str, target: str) -> None:
 # viewer filters by. A new kind of action gets its area added here (and a label on the web).
 AUDIT_AREAS = (
     "account",
+    "announce",
     "correction",
     "escalation",
     "gate",
@@ -315,6 +316,10 @@ def _register_row(
         hostel=hostel,
         late_reply=o.late_reply.value if o.late_reply else None,
         on_request=o.request_id is not None,
+        original_return_at=o.original_return_at,
+        running_late_minutes=o.running_late_minutes,
+        running_late_reason=o.running_late_reason,
+        running_late_at=o.running_late_at,
     )
 
 

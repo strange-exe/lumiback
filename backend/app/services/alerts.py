@@ -6,8 +6,9 @@ follow-ups of escalations nobody has claimed (re-alerts, then the hand-over to t
 wardens), and reminders for outing requests left waiting (the hostel's wardens, then the head
 wardens as backup approvers).
 
-Alerts a person causes: a student who is out asks the office to call them, the office sends a
-notice to its students who are out, and a student who is out presses Help.
+Alerts a person causes: a student who is out asks the office to call them, says they're
+running late, or presses Help, and the office sends a notice to its students who are out.
+Followers' notices are in services/followers.py.
 
 Pushes to the hostel office name the student (they open the app behind its sign-in); emails
 to the office never do (names and numbers stay behind the sign-in, as in the escalation
@@ -33,6 +34,7 @@ from app.email_templates import (
     late_alert_email,
     office_notice_email,
     request_waiting_email,
+    running_late_office_email,
 )
 from app.models import (
     CampusSettings,
@@ -42,16 +44,14 @@ from app.models import (
     Outing,
     OutingRequest,
     RequestStatus,
-    SessionStatus,
-    ShareSession,
-    ShareViewer,
     User,
-    ViewerStatus,
 )
 from app.push import PushMessage
 from app.schemas import OfficeContact
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.services import escalations, outbox
+from app.services import followers as follower_alerts
+from app.services.followers import followers
 from app.services.rules import IST, ist_date
 from app.services.safe_return import canonical_address
 from app.services.staff import Staff, head_office, hostel_wardens, office_for
@@ -132,10 +132,18 @@ async def late_alerts(session: AsyncSession, now: datetime, web_url: str) -> int
             select(User).where(User.id.in_([x.student_id for x in late]))
         )
     }
+    trips = {
+        o.id: o
+        for o in await session.scalars(
+            select(Outing).where(Outing.id.in_([x.outing_id for x in late]))
+        )
+    }
     for x in late:
         student = users.get(x.student_id)
         if student is None:
             continue
+        if (trip := trips.get(x.outing_id)) is not None:  # the people they share with, too
+            await follower_alerts.late(session, student, trip, now, web_url)
         # The real lateness, in case the sweep ran late (e.g. right after a restart).
         minutes = max(
             int(escalations.ALERT_AFTER.total_seconds() // 60), int((now - x.due) // MINUTE)
@@ -376,25 +384,33 @@ async def notice(
     return len(students), ids
 
 
-async def followers(session: AsyncSession, student: User, now: datetime) -> list[User]:
-    """The people the student shares their location with right now: signed-up viewers they
-    granted on a live share (code guests have no account to tell)."""
-    return list(
-        await session.scalars(
-            select(User)
-            .join(ShareViewer, ShareViewer.viewer_user_id == User.id)
-            .join(ShareSession, ShareSession.id == ShareViewer.session_id)
-            .where(
-                ShareSession.sharer_id == student.id,
-                ShareSession.status == SessionStatus.ACTIVE,
-                ShareSession.ends_at > now,
-                ShareViewer.status == ViewerStatus.GRANTED,
-                User.id != student.id,
-                User.deactivated_at.is_(None),
-                User.email_verified_at.is_not(None),
-            )
-            .distinct()
-        )
+async def running_late(
+    session: AsyncSession, student: User, outing: Outing, web_url: str
+) -> list[int]:
+    """The student said they're running late (services/running_late.py): the hostel's wardens
+    (the head wardens or admins if it has none). Not urgent: the student is fine and said so.
+    The push names them and gives the reason; the email, as every office email, does not."""
+    assert outing.original_return_at is not None and outing.running_late_minutes is not None
+    new, was = _hhmm(outing.expected_return_at), _hhmm(outing.original_return_at)
+    reason = f' Reason: "{outing.running_late_reason}"' if outing.running_late_reason else ""
+    return await _staff_alert(
+        session,
+        f"running-late:{outing.id}",
+        "running_late",
+        await office_for(session, outing.hostel_id),
+        PushMessage(
+            title=f"{student.name} is running late",
+            body=f"Now due back at {new} (was {was}).{reason}",
+            url=f"/office/student/{student.id}",
+            channel=REQUESTS,
+        ),
+        lambda to: running_late_office_email(
+            to=to,
+            minutes=outing.running_late_minutes or 0,
+            due_at=outing.expected_return_at,
+            was=outing.original_return_at or outing.expected_return_at,
+            web_url=web_url,
+        ),
     )
 
 

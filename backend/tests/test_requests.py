@@ -113,6 +113,17 @@ def test_one_live_request_per_day_and_cancelling(client, riya, form_day):
     assert send(client, riya).status_code == 201
 
 
+def test_asking_and_cancelling_cant_loop(client, riya, form_day, clock):
+    """Each request pushes the hostel office (audit run-8): 10 an hour, then a pause."""
+    for _ in range(10):
+        r = send(client, riya)
+        assert r.status_code == 201, r.text
+        assert client.delete(f"/outings/request/{r.json()['id']}", headers=riya).status_code == 204
+    assert send(client, riya).status_code == 429
+    clock.advance(3601)
+    assert send(client, riya).status_code == 201
+
+
 def test_decided_requests_cant_be_decided_again(client, riya, warden, form_day):
     request = send(client, riya).json()
     assert decide(client, warden, request["id"]).status_code == 200

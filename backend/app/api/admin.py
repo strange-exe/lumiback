@@ -1,15 +1,25 @@
 """Admin area (wardens / security): the live register, gate scans, gates, settings, roles."""
 
 import uuid
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response, status
-from sqlalchemy import select
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     AdminUser,
+    CurrentUser,
     HubDep,
     LimiterDep,
     MailerDep,
@@ -18,7 +28,8 @@ from app.api.deps import (
     StaffUser,
     enforce,
 )
-from app.models import CampusSettings, Gate, Hostel, ScanResult, User, UserRole
+from app.models import AdminAudit, CampusSettings, Gate, Hostel, ScanResult, User, UserRole
+from app.push import PushMessage, count_everyone, push_everyone
 from app.realtime import AccessChanged
 from app.schemas import (
     AccountEditIn,
@@ -26,6 +37,9 @@ from app.schemas import (
     AdminOuting,
     AdminOverview,
     AdminScanPage,
+    AnnouncementIn,
+    AnnouncementSent,
+    AnnouncementStatus,
     AuditPage,
     CampusSettingsIO,
     GateCreated,
@@ -46,8 +60,9 @@ from app.schemas import (
 )
 from app.security.gate_codes import new_kiosk_token
 from app.security.rate_limit import Limit
-from app.services import account_links, accounts, student_import
+from app.services import account_links, accounts, rules, student_import
 from app.services import admin as svc
+from app.services.followers import hhmm
 from app.services.gates import (
     QuietHours,
     campus_settings,
@@ -366,6 +381,87 @@ async def audit_log(
     return await svc.audit_log(
         session, before=before, limit=limit, area=area, q=q, days=day_range(start, end)
     )
+
+
+# ---------- update announcements (developers) ----------
+#
+# Owner, 2026-11-08: "add an option on dev roles which allows them to send the notification
+# of the released update don't send it directly". So this request is the only way one goes
+# out: a developer types it and confirms it. Nothing sends it on its own (no release, deploy,
+# start-up, sweep or script), at most one a day (checked here under a lock), audited, never
+# emailed.
+
+UPDATES_CHANNEL = "app-updates"  # the app's "App updates" Android channel (mutable)
+ANNOUNCE_EVERY = timedelta(hours=24)
+ANNOUNCE_ACTION = "announce:update"
+ANNOUNCE_LOCK = 7_316_011  # pg_advisory_xact_lock key: one announcement checked at a time
+
+
+async def get_developer(user: CurrentUser) -> User:
+    if user.role != UserRole.DEVELOPER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Developers only")
+    return user
+
+
+DeveloperUser = Annotated[User, Depends(get_developer)]
+
+
+async def _announced(session: SessionDep) -> tuple[datetime | None, datetime]:
+    """(the last announcement, the database's now)."""
+    last = await session.scalar(
+        select(func.max(AdminAudit.at)).where(AdminAudit.action == ANNOUNCE_ACTION)
+    )
+    now = await session.scalar(select(func.now()))
+    assert now is not None
+    return last, now
+
+
+@router.get("/announcements")
+async def announcements(_: DeveloperUser, session: SessionDep) -> AnnouncementStatus:
+    last, now = await _announced(session)
+    soonest = last + ANNOUNCE_EVERY if last else None
+    return AnnouncementStatus(last_at=last, next_at=soonest if soonest and soonest > now else None)
+
+
+# 200, not 202: the clients read the body (how many phones), and both treat 202 as empty.
+@router.post("/announcements")
+async def announce(
+    body: AnnouncementIn,
+    me: DeveloperUser,
+    session: SessionDep,
+    request: Request,
+    tasks: BackgroundTasks,
+) -> AnnouncementSent:
+    """One push to every phone with the app, on the "App updates" channel, tapped to fetch the
+    update. Sent after the response, in Expo's batches. A server without push refuses before
+    the day's one announcement is used up."""
+    sender = request.app.state.push
+    if sender is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Push notifications aren't set up on this server, so nothing was sent.",
+        )
+    await session.execute(select(func.pg_advisory_xact_lock(ANNOUNCE_LOCK)))
+    last, now = await _announced(session)
+    if last is not None and last + ANNOUNCE_EVERY > now:
+        soonest = (last + ANNOUNCE_EVERY).astimezone(rules.IST)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                "An update was already announced in the last 24 hours. You can announce again "
+                f"after {hhmm(soonest)} IST on {soonest:%a} {soonest.day} {soonest:%b}."
+            ),
+        )
+    svc.audit(session, me, ANNOUNCE_ACTION, body.title)
+    devices = await count_everyone(session, UPDATES_CHANNEL)
+    await session.commit()
+    tasks.add_task(
+        push_everyone,
+        request.app.state.sessionmaker,
+        sender,
+        PushMessage(title=body.title, body=body.body, channel=UPDATES_CHANNEL, kind="app-update"),
+    )
+    return AnnouncementSent(devices=devices, next_at=now + ANNOUNCE_EVERY)
 
 
 # ---------- people ----------

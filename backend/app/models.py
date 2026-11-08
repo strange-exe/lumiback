@@ -237,6 +237,17 @@ class Outing(Base):
             "student_id IS NOT NULL OR (detached_at IS NOT NULL AND student_name IS NOT NULL)",
             name="owned_or_detached",
         ),
+        # Running late: once per outing, 15, 30 or 60 minutes, and the due time is exactly the
+        # original plus that (services/running_late.py; migration 0031).
+        CheckConstraint(
+            "(running_late_minutes IS NULL AND running_late_at IS NULL "
+            "AND original_return_at IS NULL AND running_late_reason IS NULL) "
+            "OR (running_late_minutes IN (15, 30, 60) AND running_late_at IS NOT NULL "
+            "AND original_return_at IS NOT NULL "
+            "AND expected_return_at = original_return_at "
+            "+ running_late_minutes * interval '1 minute')",
+            name="running_late_once_within_cap",
+        ),
         # At most one open outing per student, enforced by the database (no double check-out,
         # even with two simultaneous requests).
         Index(
@@ -304,6 +315,13 @@ class Outing(Base):
         ForeignKey("share_sessions.id", ondelete="SET NULL")
     )
     safe_return_email: Mapped[str | None] = mapped_column(String(254))
+    # Running late (told the office before the late alert): the due time before the move, how
+    # many minutes it moved, the student's optional reason (the office sees it, followers only
+    # the new time), and when. expected_return_at is the moved time.
+    original_return_at: Mapped[datetime | None]
+    running_late_minutes: Mapped[int | None]
+    running_late_reason: Mapped[str | None] = mapped_column(String(120))
+    running_late_at: Mapped[datetime | None]
     # Set when the student deleted their account: who it was (name and roll no. then), and when.
     # The sweep purges the outing once the campus retention period has passed since then.
     student_name: Mapped[str | None] = mapped_column(String(100))

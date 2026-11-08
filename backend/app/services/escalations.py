@@ -47,6 +47,7 @@ from app.models import (
 )
 from app.schemas import EscalationCallOut, EscalationOut, LastSeenOut
 from app.services.admin import student_name, student_roll_no
+from app.services.rules import LATE_ALERT_AFTER
 from app.services.staff import (
     EVERY_HOSTEL,
     Staff,
@@ -56,7 +57,7 @@ from app.services.staff import (
     staff_of,
 )
 
-ALERT_AFTER = timedelta(minutes=30)  # past the return time
+ALERT_AFTER = LATE_ALERT_AFTER  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
 # An answer ("on my way", "I'm safe") holds the escalation off for this long. A student who
 # answered and still isn't back after it is escalated all the same: one reply mustn't silence the

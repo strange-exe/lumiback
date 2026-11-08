@@ -11,6 +11,7 @@ from app.api.deps import (
     HubDep,
     LimiterDep,
     MailerDep,
+    OutboxDep,
     SessionDep,
     SettingsDep,
     client_ip,
@@ -73,6 +74,7 @@ async def scan(
     hub: HubDep,
     mailer: MailerDep,
     tasks: BackgroundTasks,
+    sender: OutboxDep,
 ) -> GateScanOut:
     """Tap out (no open outing) or tap in (open outing) by scanning the gate's QR."""
     await enforce(limiter, "scan:user", str(me.id), SCANS_PER_USER)
@@ -84,6 +86,7 @@ async def scan(
             body,
             settings.code_pepper.get_secret_value(),
             start_safe_return=slot is not None,
+            web_url=sender.web_url,
         )
     except svc.ScanRejected as e:
         await release_unused(limiter, slot, None)
@@ -121,6 +124,7 @@ async def scan(
     # A tap-in starts nothing (the outing it closes may have a share of its own).
     started = outcome.outing if outcome.direction is ScanDirection.OUT else None
     await release_unused(limiter, slot, started)
+    sender.send_now(outcome.alerts)
     # Ended first: going out again can close an earlier day's outing (and its share).
     await safe_return_ended(outcome.back, hub=hub, mailer=mailer, tasks=tasks)
     if outcome.direction is ScanDirection.OUT:

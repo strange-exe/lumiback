@@ -24,6 +24,7 @@ from app.api.deps import (
 )
 from app.models import (
     AccessChannel,
+    Outing,
     SessionStatus,
     ShareSession,
     ShareViewer,
@@ -58,6 +59,7 @@ AWAITING_APPROVAL = HTTPException(
 )
 SESSION_ENDED = HTTPException(status.HTTP_409_CONFLICT, detail="This session has ended")
 CODES_PER_SHARER = Limit(max_hits=10, window_seconds=3600)
+SHARES_PER_SHARER = Limit(max_hits=30, window_seconds=3600)
 RECENT = timedelta(hours=24)
 
 
@@ -73,7 +75,11 @@ OwnSession = Annotated[ShareSession, Depends(own_session)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_session(body: SessionCreateIn, me: CurrentUser, session: SessionDep) -> SessionOut:
+async def create_session(
+    body: SessionCreateIn, me: CurrentUser, session: SessionDep, limiter: LimiterDep
+) -> SessionOut:
+    # Each share can end in a "sharing timed out" notice to its viewers (audit run-8).
+    await enforce(limiter, "sessions:create", str(me.id), SHARES_PER_SHARER)
     try:
         share = await svc.create(session, me, body)
     except svc.NotYourContacts:
@@ -105,27 +111,48 @@ async def my_sessions(me: CurrentUser, session: SessionDep) -> list[SessionOut]:
 
 @router.get("/watching")
 async def watching(me: CurrentUser, session: SessionDep) -> list[WatchingOut]:
-    rows = await session.execute(
-        select(ShareSession, User)
-        .join(ShareViewer, ShareViewer.session_id == ShareSession.id)
-        .join(User, User.id == ShareSession.sharer_id)
-        .where(
-            ShareViewer.viewer_user_id == me.id,
-            ShareViewer.status == ViewerStatus.GRANTED,
-            ShareSession.status == SessionStatus.ACTIVE,
-            ShareSession.ends_at > datetime.now(UTC),
+    rows = (
+        await session.execute(
+            select(ShareSession, User)
+            .join(ShareViewer, ShareViewer.session_id == ShareSession.id)
+            .join(User, User.id == ShareSession.sharer_id)
+            .where(
+                ShareViewer.viewer_user_id == me.id,
+                ShareViewer.status == ViewerStatus.GRANTED,
+                ShareSession.status == SessionStatus.ACTIVE,
+                ShareSession.ends_at > datetime.now(UTC),
+            )
+            .order_by(ShareSession.ends_at)
         )
-        .order_by(ShareSession.ends_at)
+    ).all()
+    due = await _due_back(session, {sharer.id for _, sharer in rows})
+    return [_watching(share, sharer, due.get(sharer.id)) for share, sharer in rows]
+
+
+Due = tuple[datetime, datetime | None]  # (due back, the time before a running-late move)
+
+
+async def _due_back(session: SessionDep, sharer_ids: set[uuid.UUID]) -> dict[uuid.UUID, Due]:
+    """Each sharer's due-back time while they're out on an outing (wave 3 #15): their
+    followers see when they should be back, never why it moved."""
+    if not sharer_ids:
+        return {}
+    rows = await session.execute(
+        select(Outing.student_id, Outing.expected_return_at, Outing.original_return_at).where(
+            Outing.student_id.in_(sharer_ids), Outing.returned_at.is_(None)
+        )
     )
-    return [_watching(share, sharer) for share, sharer in rows]
+    return {student: (due, was) for student, due, was in rows if student is not None}
 
 
-def _watching(share: ShareSession, sharer: User) -> WatchingOut:
+def _watching(share: ShareSession, sharer: User, due: Due | None) -> WatchingOut:
     return WatchingOut(
         id=share.id,
         sharer=SharerRef(id=sharer.id, name=sharer.name),
         source=share.source.value,
         ends_at=share.ends_at,
+        due_back_at=due[0] if due else None,
+        original_due_at=due[1] if due else None,
     )
 
 
@@ -142,7 +169,8 @@ async def get_session(
             assert access.share is not None
             sharer = await session.get(User, access.share.sharer_id)
             assert sharer is not None
-            return _watching(access.share, sharer)
+            due = await _due_back(session, {sharer.id})
+            return _watching(access.share, sharer, due.get(sharer.id))
         case Role.PENDING:
             raise AWAITING_APPROVAL
         case Role.FORMER_VIEWER:
@@ -153,9 +181,15 @@ async def get_session(
 
 @router.post("/{session_id}/stop")
 async def stop_session(
-    share: OwnSession, session: SessionDep, hub: HubDep, body: StopIn | None = None
+    share: OwnSession,
+    me: CurrentUser,
+    session: SessionDep,
+    hub: HubDep,
+    body: StopIn | None = None,
 ) -> SessionOut:
-    """One-tap stop: ends the session, deletes the location, cuts off every viewer."""
+    """One-tap stop: ends the session, deletes the location, cuts off every viewer. Nobody is
+    notified: stopping is the sharer's own choice, often to cut someone off (owner,
+    2026-11-09). A share that ends on its own is told by the sweep instead."""
     reason = (body or StopIn()).reason
     if await svc.end(session, share.id, status=SessionStatus.REVOKED, reason=reason):
         await hub.publish(AccessChanged(share.id))

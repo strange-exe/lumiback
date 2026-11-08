@@ -38,9 +38,19 @@ from app.schemas import (
     OutingRequestIn,
     OutingRequestOut,
     OutingSummary,
+    RunningLateIn,
 )
 from app.security.rate_limit import Limit, RateLimiter
-from app.services import alerts, corrections, escalations, requests, rules, safe_return, staff
+from app.services import (
+    alerts,
+    corrections,
+    escalations,
+    requests,
+    rules,
+    running_late,
+    safe_return,
+    staff,
+)
 from app.services import outings as svc
 
 router = APIRouter(prefix="/outings", tags=["outings"])
@@ -52,6 +62,11 @@ CALL_ME = Limit(max_hits=3, window_seconds=3600)
 # Help reaches the office, the student's followers and their contact; a second press must
 # still work (they may doubt the first went), but not an endless stream.
 HELP_ASKS = Limit(max_hits=5, window_seconds=3600)
+# Each check-out (and the "I'm back" that ends it) notifies the student's followers, and a
+# running-late move the office: far above any real evening, but not an endless loop (audit
+# run-8). A request pushes the office each time it's made.
+CHECK_OUTS = Limit(max_hits=20, window_seconds=3600)
+REQUESTS_MADE = Limit(max_hits=10, window_seconds=3600)
 
 NOT_OUT = HTTPException(status.HTTP_404_NOT_FOUND, detail="You are not on an outing")
 
@@ -130,6 +145,7 @@ async def check_out(
     mailer: MailerDep,
     tasks: BackgroundTasks,
 ) -> OutingOut:
+    await enforce(limiter, "check-out:user", str(me.id), CHECK_OUTS)
     slot = await safe_return_slot(body.safe_return, me, limiter, settings)
     try:
         outing = await svc.check_out(
@@ -220,6 +236,26 @@ async def ask_for_help(
     )
 
 
+@router.post("/current/running-late")
+async def say_running_late(
+    body: RunningLateIn, me: CurrentUser, session: SessionDep, sender: OutboxDep
+) -> OutingOut:
+    """ "I'm running late": moves the due time 15, 30 or 60 minutes, once per outing, until
+    the late alert has gone (services/running_late.py). The hostel office and the people the
+    student shares their location with are told."""
+    try:
+        moved = await running_late.tell(session, me, body.minutes, body.reason, sender.web_url)
+    except running_late.NotOut:
+        raise NOT_OUT from None
+    except running_late.Refused as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=e.message) from None
+    await session.commit()
+    sender.send_now(moved.alerts)
+    out = (await _with_corrections(session, [svc.to_out(moved.outing, datetime.now(UTC))]))[0]
+    out.office = await alerts.office_contact(session, moved.outing)
+    return out
+
+
 @router.post("/{outing_id}/correction", status_code=status.HTTP_201_CREATED)
 async def ask_correction(
     outing_id: uuid.UUID,
@@ -254,8 +290,9 @@ async def ask_correction(
 
 @router.patch("/current", deprecated=True)
 async def extend(_me: CurrentUser) -> OutingOut:
-    """Return times are fixed by the hostel's rules; kept so older apps get a clear answer.
-    Whatever body an older app sends is ignored (never read, so never a validation error)."""
+    """Return times are fixed by the hostel's rules (POST /current/running-late moves one once,
+    within a cap); kept so older apps get a clear answer. Whatever body an older app sends is
+    ignored (never read, so never a validation error)."""
     raise HTTPException(
         status.HTTP_403_FORBIDDEN,
         detail="Return times can't be extended. If you'll be late, tell your warden.",
@@ -270,10 +307,14 @@ async def mark_return(
     hub: HubDep,
     mailer: MailerDep,
     tasks: BackgroundTasks,
+    sender: OutboxDep,
 ) -> OutingOut:
-    returned = await svc.mark_return(session, me.id, pepper=settings.code_pepper.get_secret_value())
+    returned = await svc.mark_return(
+        session, me.id, pepper=settings.code_pepper.get_secret_value(), web_url=sender.web_url
+    )
     if returned is None:
         raise NOT_OUT
+    sender.send_now(returned.alerts)
     await safe_return_ended(returned.back, hub=hub, mailer=mailer, tasks=tasks)
     return svc.to_out(returned.outing, datetime.now(UTC))
 
@@ -325,8 +366,13 @@ async def todays_request(me: CurrentUser, session: SessionDep) -> OutingRequestO
 
 @router.post("/request", status_code=status.HTTP_201_CREATED)
 async def send_request(
-    body: OutingRequestIn, me: CurrentUser, session: SessionDep, push: PushDep
+    body: OutingRequestIn,
+    me: CurrentUser,
+    session: SessionDep,
+    push: PushDep,
+    limiter: LimiterDep,
 ) -> OutingRequestOut:
+    await enforce(limiter, "request:user", str(me.id), REQUESTS_MADE)
     name, hostel_id = me.name, me.hostel_id  # readable even if create() rolls back
     try:
         r = await requests.create(session, me, body)

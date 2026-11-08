@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 import httpx
-from sqlalchemy import delete, exists, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -68,6 +68,8 @@ class PushMessage:
     # Safety messages (late alerts, escalations) reach every device, even where the student
     # muted that channel's everyday reminders.
     urgent: bool = False
+    # What the app does on tap besides opening `url`: "app-update" checks for the update.
+    kind: str | None = None
 
 
 @dataclass
@@ -183,7 +185,7 @@ class ExpoPushSender:
                         "to": token,
                         "title": message.title,
                         "body": message.body,
-                        "data": {"url": message.url} if message.url else {},
+                        "data": _data(message),
                         "sound": "default",
                         "priority": "high",
                         "channelId": message.channel,
@@ -220,6 +222,15 @@ class ExpoPushSender:
                 payload = await self._post(client, EXPO_RECEIPTS_URL, {"ids": ids})
                 found.update(payload.get("data") or {})
         return found
+
+
+def _data(message: PushMessage) -> dict[str, str]:
+    data = {}
+    if message.url:
+        data["url"] = message.url
+    if message.kind:
+        data["kind"] = message.kind
+    return data
 
 
 def _retry_after(response: httpx.Response, default: float) -> float:
@@ -287,6 +298,58 @@ async def notify_user(
     except Exception:
         logger.exception("push to user %s failed", user_id)
         return 0
+
+
+TICKET_INSERT_BATCH = 1000
+
+
+async def push_everyone(
+    sessionmaker: async_sessionmaker[AsyncSession], sender: PushSender, message: PushMessage
+) -> PushOutcome:
+    """One message to every phone with the app (accounts that are on; phones that muted the
+    channel skipped), in Expo's batches. Only the developer's "Announce update" calls this
+    (api/admin.py): nothing sends it on its own. Safe as a background task: failures are
+    logged, not raised."""
+    try:
+        async with sessionmaker() as session:
+            tokens = list(
+                await session.scalars(
+                    select(PushToken.token)
+                    .join(User, User.id == PushToken.user_id)
+                    .where(
+                        User.deactivated_at.is_(None),
+                        ~PushToken.muted.contains([message.channel]),
+                    )
+                )
+            )
+            if not tokens:
+                return PushOutcome()
+            result = await sender.send(tokens, message)
+            if result.dead:
+                await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
+            tickets = [{"id": i, "token": t} for i, t in result.tickets.items()]
+            for start in range(0, len(tickets), TICKET_INSERT_BATCH):
+                await session.execute(
+                    insert(PushTicket)
+                    .values(tickets[start : start + TICKET_INSERT_BATCH])
+                    .on_conflict_do_nothing()
+                )
+            await session.commit()
+            return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
+    except Exception:
+        logger.exception("push to every device failed")
+        return PushOutcome()
+
+
+async def count_everyone(session: AsyncSession, channel: str) -> int:
+    """How many phones push_everyone would send to now."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(PushToken)
+        .join(User, User.id == PushToken.user_id)
+        .where(User.deactivated_at.is_(None), ~PushToken.muted.contains([channel]))
+    )
+    return count or 0
 
 
 @dataclass(frozen=True)

@@ -120,6 +120,11 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             "request_id": o.request_id,
             # Kept only while their emergency contact follows this outing (safe return).
             "safe_return_email": o.safe_return_email,
+            # Running late: the time before the move, by how much, why, and when they said so.
+            "original_return_at": o.original_return_at,
+            "running_late_minutes": o.running_late_minutes,
+            "running_late_reason": o.running_late_reason,
+            "running_late_at": o.running_late_at,
             "late_alert_sent_at": o.overdue_notified_at,
             "late_reply": o.late_reply.value if o.late_reply else None,
             "late_replied_at": o.late_replied_at,

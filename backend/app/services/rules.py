@@ -28,6 +28,9 @@ from app.models import CampusSettings, DayRule, DayType, Holiday, Hostel, RuleSe
 
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
 MIN_AHEAD = timedelta(minutes=1)
+# The student's late "are you OK?" alert, this long past the due time (escalations.py). Here so
+# outings.py can read it without importing escalations (which imports outings).
+LATE_ALERT_AFTER = timedelta(minutes=30)
 LABEL = {
     DayType.WEEKDAY: "Weekday",
     DayType.SATURDAY: "Saturday",

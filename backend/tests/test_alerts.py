@@ -276,6 +276,9 @@ def test_a_failed_push_is_retried_with_backoff_not_lost(client, db, push, office
     ).all()
     assert all(error == "push failed" and later for error, later in waits)
     assert run_sweep(client).alerts.sent == 0  # still down: nothing went
+    # A down sender still records each failed try, and which row a pass tries first among
+    # equals isn't fixed: forget the failed tries so only real sends are counted.
+    push.outbox.clear()
     push.down = False
     db.execute(text("UPDATE alert_outbox SET next_attempt_at = now()"))
     db.commit()

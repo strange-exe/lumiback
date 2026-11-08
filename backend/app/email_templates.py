@@ -800,6 +800,54 @@ def office_notice_email(*, to: str, name: str, message: str, recall: bool, web_u
     )
 
 
+def running_late_office_email(
+    *, to: str, minutes: int, due_at: datetime, was: datetime, web_url: str
+) -> Email:
+    """A student who is out said they'll be late: no name or reason (both are on the
+    register, behind the sign-in)."""
+    return notice_email(
+        Notice(
+            kind="running_late_office",
+            to=to,
+            subject=f"Lumiback: a student who is out is running late ({minutes} min)",
+            greeting="Hello,",
+            label="Running late",
+            tone="neutral",
+            heading="A student told you they're running late",
+            paragraphs=(
+                f"They're now due back at {_hhmm(due_at)} IST instead of {_hhmm(was)} IST. "
+                "The late alert and any follow-up run from the new time.",
+                "Who it is and their reason are on the register.",
+            ),
+            action=("Open the register", f"{web_url}/admin"),
+            note=None,
+            reason=OFFICE_REASON,
+            link="text",
+        )
+    )
+
+
+def follower_email(*, to: str, student: str, heading: str, paragraph: str, web_url: str) -> Email:
+    """To someone the student shares their location with who doesn't use the app: back,
+    late, running late, or sharing timed out. No location."""
+    return notice_email(
+        Notice(
+            kind="follower",
+            to=to,
+            subject=f"Lumiback: {heading}",
+            greeting="Hello,",
+            label="Following",
+            tone="neutral",
+            heading=heading,
+            paragraphs=(paragraph,),
+            action=("See who you follow", f"{web_url}/share"),
+            note=None,
+            reason=f"{student} shares their location with you in Lumiback",
+            link="text",
+        )
+    )
+
+
 @dataclass(frozen=True)
 class Fix:
     """One location fix sent with a help alert."""

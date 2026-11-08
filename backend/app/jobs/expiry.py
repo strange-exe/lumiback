@@ -34,6 +34,7 @@ from app.models import (
     ShareCode,
     ShareSession,
     ShareSource,
+    User,
 )
 from app.push import PushSender, ReceiptCheck, check_receipts
 from app.realtime import AccessChanged, Hub
@@ -42,6 +43,7 @@ from app.services import (
     account_links,
     alerts,
     escalations,
+    followers,
     outbox,
     password_reset,
     safe_return,
@@ -177,6 +179,19 @@ async def sweep(
             await session.execute(delete(Location).where(Location.session_id.in_(ended)))
             # An expired safe-return share: its contact gets nothing more, so forget them.
             await safe_return.forget_address(session, ended)
+            # Shares that ended on their own while the sharer is still out: their followers
+            # are told "sharing timed out" (queued here, sent after the commit).
+            out = await session.execute(
+                select(ShareSession.id, User)
+                .join(User, User.id == ShareSession.sharer_id)
+                .join(
+                    Outing,
+                    and_(Outing.student_id == ShareSession.sharer_id, Outing.returned_at.is_(None)),
+                )
+                .where(ShareSession.id.in_(ended))
+            )
+            for share_id, sharer in out.all():
+                await followers.timed_out(session, sharer, share_id, now, web_url)
         codes = await session.execute(
             delete(ShareCode).where(ShareCode.expires_at < now - KEEP_SPENT_CODES)
         )

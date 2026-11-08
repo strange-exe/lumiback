@@ -17,6 +17,7 @@ database only.
 import argparse
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,11 +25,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import uvicorn  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 
+from app.api import auth as auth_api  # noqa: E402
 from app.config import TestDbSettings  # noqa: E402
 from app.models import Base  # noqa: E402
+from app.security import tokens  # noqa: E402
 from app.security.gate_codes import hash_kiosk_token  # noqa: E402
 from app.security.passwords import hash_password  # noqa: E402
 
+E2E_ACCESS_TTL = timedelta(hours=1)  # see main(): longer than any full run
 E2E_EMAIL = "e2e@geu.ac.in"
 DELETABLE_EMAIL = "e2e-delete@geu.ac.in"  # the account-deletion test may erase this one
 # Test-only, local *_test database; apps/web/e2e/helpers.ts signs in with the same value.
@@ -312,6 +316,12 @@ def main() -> None:
     os.environ["DATABASE_URL"] = url
     os.environ["APP_ENV"] = "development"
     os.environ["EMAIL_BACKEND"] = "console"
+    os.environ["PUSH_BACKEND"] = "log"  # no push ever leaves a test run (announce is tested)
+    # The suite signs each role in once and every test reuses that session (auth.setup.ts).
+    # A run longer than the 15-min access token then refreshed in one context and revoked the
+    # family for every other (refresh reuse), signing tests out mid-run. Test runs only: an
+    # hour, with the stored access cookie kept for the whole context.
+    tokens.ACCESS_TTL = auth_api.ACCESS_TTL = E2E_ACCESS_TTL
     os.environ["BREACH_CHECK"] = "off"  # no calls to Have I Been Pwned from test runs
     loop = "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
     uvicorn.run("app.main:create_app", factory=True, host="127.0.0.1", port=args.port, loop=loop)

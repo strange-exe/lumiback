@@ -16,6 +16,7 @@ from pydantic import (
     Field,
     StringConstraints,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
@@ -256,6 +257,10 @@ class WatchingOut(BaseModel):
     sharer: SharerRef
     source: str
     ends_at: datetime
+    # While the sharer is out on an outing: when they're due back, and the earlier time if they
+    # told the hostel office they're running late (never the reason: that's the office's).
+    due_back_at: datetime | None = None
+    original_due_at: datetime | None = None
 
 
 class LocationIn(Input):
@@ -466,10 +471,40 @@ class OutingOut(BaseModel):
     correction: CorrectionOut | None = None  # the latest one, if any
     # Only on the current outing (GET /outings/current): who to call while out or late.
     office: "OfficeContact | None" = None
+    # Running late (told the office once, before the late alert): expected_return_at is the
+    # moved time; these are the time before it, the move, the reason and when.
+    original_return_at: datetime | None = None
+    running_late_minutes: Literal[15, 30, 60] | None = None
+    running_late_reason: str | None = None
+    running_late_at: datetime | None = None
+    # What the student may choose now ([] once used, after the late alert, or once back).
+    running_late_choices: list[int] = []
 
-    @field_serializer("left_at", "expected_return_at", "returned_at")
+    @field_serializer(
+        "left_at", "expected_return_at", "returned_at", "original_return_at", "running_late_at"
+    )
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
+
+
+class RunningLateIn(Input):
+    """ "I'm running late": 15, 30 or 60 minutes, once per outing, with an optional reason
+    the hostel office reads (one line, no control or invisible characters; blank = none)."""
+
+    minutes: Literal[15, 30, 60]
+    reason: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, max_length=120),
+            BeforeValidator(_no_control_characters),
+        ]
+        | None
+    ) = None
+
+    @field_validator("reason")
+    @classmethod
+    def _blank_is_none(cls, value: str | None) -> str | None:
+        return value or None
 
 
 class OutingPage(BaseModel):
@@ -776,8 +811,15 @@ class AdminOuting(BaseModel):
     hostel: str | None = None
     late_reply: Literal["on_my_way", "safe"] | None = None  # answer to the late alert
     on_request: bool = False  # a weekend/holiday outing an admin approved
+    # The student said they're running late: expected_return_at is the moved time.
+    original_return_at: datetime | None = None
+    running_late_minutes: int | None = None
+    running_late_reason: str | None = None
+    running_late_at: datetime | None = None
 
-    @field_serializer("left_at", "expected_return_at", "returned_at")
+    @field_serializer(
+        "left_at", "expected_return_at", "returned_at", "original_return_at", "running_late_at"
+    )
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
 
@@ -1326,3 +1368,31 @@ class HelpRequestOut(BaseModel):
 
 class HelpHandleIn(Input):
     note: ShortText | None = None
+
+
+# ---------- wave 3: update announcements (developers) ----------
+
+
+class AnnouncementIn(Input):
+    """A short push about a released update: plain text, one line each."""
+
+    title: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=50),
+        BeforeValidator(_no_control_characters),
+    ]
+    body: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=140),
+        BeforeValidator(_no_control_characters),
+    ]
+
+
+class AnnouncementSent(BaseModel):
+    devices: int  # phones it is going to
+    next_at: datetime  # when the next announcement is allowed
+
+
+class AnnouncementStatus(BaseModel):
+    last_at: datetime | None
+    next_at: datetime | None  # None: allowed now

@@ -1,13 +1,14 @@
 """Outings: check out, return, history, summary.
 
 The outing rules (app/services/rules.py) decide whether a student may go out and when they must
-be back; the return time never changes afterwards (no extensions). Leaving and returning use the
+be back; afterwards the return time changes only once, by at most an hour, when the student
+says they're running late (app/services/running_late.py). Leaving and returning use the
 database clock (a client cannot backdate them). Status is derived: returned if returned_at is
 set, overdue if now is past expected_return_at, otherwise out.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select, update
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import InVia, Outing, OutingRequest, RequestStatus, ShareSession, User, Via
 from app.schemas import OutingCreateIn, OutingOut, OutingPage, OutingSummary
-from app.services import requests, rules, safe_return
+from app.services import followers, requests, rules, safe_return
 
 MIN_AHEAD = rules.MIN_AHEAD
 
@@ -53,7 +54,33 @@ def to_out(outing: Outing, now: datetime) -> OutingOut:
         in_via=outing.in_via.value if outing.in_via else None,
         late_reply=outing.late_reply.value if outing.late_reply else None,
         safe_return_session_id=outing.safe_return_session_id,
+        original_return_at=outing.original_return_at,
+        running_late_minutes=outing.running_late_minutes,  # type: ignore[arg-type]
+        running_late_reason=outing.running_late_reason,
+        running_late_at=outing.running_late_at,
+        running_late_choices=running_late_choices(outing, now),
     )
+
+
+# Running late (services/running_late.py): how much later a student may say they'll be.
+RUNNING_LATE_CHOICES = (15, 30, 60)
+
+
+def running_late_choices(outing: Outing, now: datetime) -> list[int]:
+    """What the student may choose now: nothing once back, once used (once per outing), or
+    once the late alert is due (by the clock, not only once the sweep has sent it: a sweep
+    that is behind must not let the due time move after the alert's moment); and only a move
+    that still lands in the future."""
+    if (
+        outing.returned_at is not None
+        or outing.running_late_at is not None
+        or outing.overdue_notified_at is not None
+        or now >= outing.expected_return_at + rules.LATE_ALERT_AFTER
+    ):
+        return []
+    return [
+        m for m in RUNNING_LATE_CHOICES if outing.expected_return_at + timedelta(minutes=m) > now
+    ]
 
 
 async def _no_request(session: AsyncSession, student_id: uuid.UUID, window: rules.Window) -> str:
@@ -170,6 +197,7 @@ async def rules_in_use(session: AsyncSession, user: User) -> bool:
 class Returned:
     outing: Outing
     back: safe_return.Back | None  # the safe-return share it ended, if any
+    alerts: list[int] = field(default_factory=list)  # followers told (send after the commit)
 
 
 async def mark_return(
@@ -181,13 +209,16 @@ async def mark_return(
     commit: bool = True,
     at: datetime | None = None,
     via: InVia | None = None,
+    web_url: str | None = None,
 ) -> Returned | None:
     """Atomic: two simultaneous 'I'm back' taps (or scans) close the outing once. Ends its
     safe-return share in the same transaction (`pepper`: the code pepper, which identifies
     the contact's viewer row).
 
     `at` and `via` are for the hostel office's corrections (app/services/corrections.py) and
-    an unrecorded return; students and gates always get the database clock.
+    an unrecorded return; students and gates always get the database clock. `web_url`: a
+    return happening now (the student's tap or scan): the people they share their location
+    with are told they're back (services/followers.py), in the same transaction.
 
     Lock order: the safe-return share before the outing, as stopping a share and the sweep's
     expiry take them (share, then forget_address on the outing); the opposite order would
@@ -220,10 +251,26 @@ async def mark_return(
             .returning(Outing)
         )
     ).scalar_one_or_none()
-    back = await safe_return.finish(session, returned, pepper) if returned is not None else None
+    if returned is None:
+        if commit:
+            await session.commit()
+        return None
+    told: list[int] = []
+    if web_url is not None and at is None and via is None:
+        student = await session.get(User, student_id)
+        if student is not None:  # before finish() forgets the safe-return contact's address
+            told = await followers.back(
+                session,
+                student,
+                returned,
+                datetime.now(UTC),
+                web_url,
+                contact=returned.safe_return_email,
+            )
+    back = await safe_return.finish(session, returned, pepper)
     if commit:
         await session.commit()
-    return Returned(returned, back) if returned is not None else None
+    return Returned(returned, back, told)
 
 
 async def history(

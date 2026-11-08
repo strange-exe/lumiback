@@ -12,7 +12,7 @@ the coordinates), so admins can see rejected attempts too.
 
 import math
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import select
@@ -71,6 +71,7 @@ class ScanOutcome:
     # A safe-return share this scan ended: a tap-in's, or (going out again) the share of the
     # earlier day's outing closed as an unrecorded return.
     back: Back | None = None
+    alerts: list[int] = field(default_factory=list)  # a tap-in's followers told (send them)
 
 
 def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -231,8 +232,10 @@ async def scan(
     pepper: str,
     *,
     start_safe_return: bool = False,
+    web_url: str | None = None,
 ) -> ScanOutcome:
-    """`start_safe_return`: on a tap-out, start safe return (the caller checked its limits)."""
+    """`start_safe_return`: on a tap-out, start safe return (the caller checked its limits).
+    `web_url`: on a tap-in, tell the student's followers they're back (outings.mark_return)."""
     now = datetime.now(UTC)
     open_outing = await outings.current(session, user_id)
     direction = ScanDirection.IN if open_outing else ScanDirection.OUT
@@ -281,13 +284,14 @@ async def scan(
             back = closed.back
             direction = ScanDirection.OUT
 
+    told: list[int] = []
     if direction is ScanDirection.IN:
         returned = await outings.mark_return(
-            session, user_id, pepper=pepper, gate_id=gate.id, commit=False
+            session, user_id, pepper=pepper, gate_id=gate.id, commit=False, web_url=web_url
         )
         if returned is None:  # closed by a simultaneous request; treat as a double scan
             raise AlreadyScanned
-        outing, back = returned.outing, returned.back
+        outing, back, told = returned.outing, returned.back, returned.alerts
     else:
         student = await session.get(User, user_id)
         assert student is not None  # the caller is signed in as this user
@@ -309,7 +313,7 @@ async def scan(
     await _record(session, user_id, gate, direction, ScanResult.ACCEPTED, body, outing.id)
     await session.commit()
     await session.refresh(outing)
-    return ScanOutcome(direction, gate, outing, back)
+    return ScanOutcome(direction, gate, outing, back, told)
 
 
 async def used_gate_ids(session: AsyncSession, gate_id: uuid.UUID | None = None) -> set[uuid.UUID]:
