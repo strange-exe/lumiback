@@ -291,7 +291,20 @@ def _settings_out(row: CampusSettings) -> CampusSettingsIO:
         scan_retention_days=row.scan_retention_days,
         kiosk_quiet_from=_hhmm(row.kiosk_quiet_from),
         kiosk_quiet_until=_hhmm(row.kiosk_quiet_until),
+        request_remind_minutes=row.request_remind_minutes,
+        request_backup_minutes=row.request_backup_minutes,
+        escalation_realert_minutes=row.escalation_realert_minutes,
+        escalation_takeover_minutes=row.escalation_takeover_minutes,
     )
+
+
+# The follow-up timings (services/alerts.py) and how the audit log names each.
+TIMINGS = {
+    "request_remind_minutes": "remind",
+    "request_backup_minutes": "backup",
+    "escalation_realert_minutes": "re-alert",
+    "escalation_takeover_minutes": "hand over",
+}
 
 
 @router.get("/settings")
@@ -320,6 +333,14 @@ async def put_settings(
             if body.kiosk_quiet_from
             else ", kiosks always on"
         )
+    changed = []
+    for field, label in TIMINGS.items():
+        value = getattr(body, field)
+        if value is not None and value != getattr(row, field):
+            setattr(row, field, value)
+            changed.append(f"{label} {value} min")
+    if changed:
+        what += ", " + ", ".join(changed)
     row.updated_at = datetime.now(UTC)
     svc.audit(session, me, "settings", what)
     await session.commit()
@@ -603,8 +624,10 @@ async def edit_account(
     staff: StaffUser,
     session: SessionDep,
     settings: SettingsDep,
+    mailer: MailerDep,
 ) -> AdminUserOut:
-    """Corrects someone's name, roll no., phone or (admins only) email."""
+    """Corrects someone's name, roll no., phone or (admins only) email. A new email address
+    ends the password and gets a set-password link (see services/accounts.py)."""
     sent = body.model_fields_set
     if "name" in sent and body.name is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="A name is needed")
@@ -619,9 +642,31 @@ async def edit_account(
         phone_sent="phone" in sent,
     )
     try:
-        target = await accounts.edit(session, staff, user_id, changes, settings)
+        target, link = await accounts.edit(session, staff, user_id, changes, settings)
     except accounts.Refused as e:
         raise HTTPException(e.status, detail=str(e)) from None
+    if link is not None:
+        purpose, token = link
+        try:
+            await account_links.send(
+                session,
+                mailer,
+                user_id=target.id,
+                to=target.email,
+                name=target.name,
+                purpose=purpose,
+                token=token,
+                web_url=settings.web_url,
+                pepper=settings.code_pepper.get_secret_value(),
+            )
+        except account_links.EmailNotSent:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "The email address was changed, but the set-password email couldn't be "
+                    "sent. Send it again from their page in a minute."
+                ),
+            ) from None
     return await svc.person(session, target)
 
 

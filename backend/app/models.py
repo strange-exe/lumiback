@@ -27,7 +27,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 HASH_BYTES = 32  # SHA-256 / HMAC-SHA256 digest size
@@ -481,6 +481,10 @@ class OutingRequest(Base):
     # the one-live-request index can let the student ask for another outing afterwards.
     used_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = created_at()
+    # Still pending after the campus's reminder time: the hostel's wardens were reminded
+    # (once). After the backup time: the head wardens were told they may decide it (once).
+    reminded_at: Mapped[datetime | None]
+    backup_notified_at: Mapped[datetime | None]
 
 
 class Escalation(Base):
@@ -498,6 +502,122 @@ class Escalation(Base):
     )
     resolved_at: Mapped[datetime | None]
     note: Mapped[str | None] = mapped_column(String(200))
+    # Follow-up (services/escalations.py): who said "I'm on it", when the office was last
+    # re-alerted while nobody had, how many times, and when it went to the head wardens.
+    claimed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    claimed_at: Mapped[datetime | None]
+    realerted_at: Mapped[datetime | None]
+    realerts: Mapped[int] = mapped_column(server_default=text("0"))
+    handed_over_at: Mapped[datetime | None]
+
+
+class CallOutcome(enum.StrEnum):
+    REACHED_STUDENT = "reached_student"
+    REACHED_CONTACT = "reached_contact"  # the emergency contact (the guardian was told)
+    NO_ANSWER = "no_answer"
+    LEFT_MESSAGE = "left_message"
+
+
+class EscalationCall(Base):
+    """One call the office logged while following up an escalation. Deleted with it."""
+
+    __tablename__ = "escalation_calls"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    escalation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("escalations.id", ondelete="CASCADE"), index=True
+    )
+    by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    outcome: Mapped[CallOutcome] = mapped_column(str_enum(CallOutcome, "call_outcome"))
+    note: Mapped[str | None] = mapped_column(String(200))
+    at: Mapped[datetime] = created_at()
+
+
+class HelpRequest(Base):
+    """A student out on an outing pressed Help. One location fix, if the phone gave one (never
+    tracking); the sweep clears the coordinates a day later and deletes the row with the
+    campus retention period, like a handled escalation."""
+
+    __tablename__ = "help_requests"
+    __table_args__ = (
+        CheckConstraint("lat BETWEEN -90 AND 90", name="lat_range"),
+        CheckConstraint("lng BETWEEN -180 AND 180", name="lng_range"),
+        CheckConstraint("accuracy_m >= 0", name="accuracy_non_negative"),
+        CheckConstraint(
+            "(lat IS NULL) = (lng IS NULL) AND (lat IS NULL) = (accuracy_m IS NULL)",
+            name="fix_complete",
+        ),
+        Index("ix_help_requests_hostel_created", "hostel_id", "created_at"),
+        Index("ix_help_requests_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    outing_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("outings.id", ondelete="SET NULL"), index=True
+    )
+    # The outing's hostel (the student's when they went out): its office answers.
+    hostel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("hostels.id", ondelete="SET NULL")
+    )
+    lat: Mapped[float | None] = mapped_column(Float)
+    lng: Mapped[float | None] = mapped_column(Float)
+    accuracy_m: Mapped[float | None] = mapped_column(Float)
+    mocked: Mapped[bool] = mapped_column(server_default=text("false"))
+    created_at: Mapped[datetime] = created_at()
+    handled_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    handled_at: Mapped[datetime | None]
+    note: Mapped[str | None] = mapped_column(String(200))
+
+
+class OutboxMode(enum.StrEnum):
+    PUSH = "push"  # the user's phones (nothing if they have none)
+    EMAIL = "email"  # one address
+    # Push; a user with no app on any phone is emailed instead, and so is an urgent message
+    # that reached no phone (see push.notify_or_email).
+    PUSH_OR_EMAIL = "push_or_email"
+
+
+class AlertOutbox(Base):
+    """Alerts waiting to be sent: late alerts, escalation messages, request reminders, office
+    notices, help alerts. Written in the same transaction as the change that causes them, so a
+    crash or a failed send never loses one; services/outbox.py sends them after the commit and
+    retries with backoff. `key` makes each alert idempotent: enqueuing it twice is a no-op."""
+
+    __tablename__ = "alert_outbox"
+    __table_args__ = (
+        CheckConstraint("user_id IS NOT NULL OR mode = 'email'", name="push_has_user"),
+        CheckConstraint("attempts >= 0", name="attempts_non_negative"),
+        Index(
+            "ix_alert_outbox_due",
+            "next_attempt_at",
+            postgresql_where=text("sent_at IS NULL AND failed_at IS NULL"),
+        ),
+        Index("ix_alert_outbox_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    key: Mapped[str] = mapped_column(String(200), unique=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    mode: Mapped[OutboxMode] = mapped_column(str_enum(OutboxMode, "outbox_mode"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    # {"push": {title, body, url, channel, urgent}, "email": {to, subject, body, html}};
+    # emptied once sent or given up on (it may hold an address or a location).
+    payload: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    attempts: Mapped[int] = mapped_column(server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    sent_at: Mapped[datetime | None]
+    failed_at: Mapped[datetime | None]  # gave up after outbox.MAX_ATTEMPTS
+    last_error: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = created_at()
 
 
 class CampusSettings(Base):
@@ -512,6 +632,12 @@ class CampusSettings(Base):
             "(kiosk_quiet_from IS NULL) = (kiosk_quiet_until IS NULL) "
             "AND (kiosk_quiet_from IS NULL OR kiosk_quiet_from <> kiosk_quiet_until)",
             name="kiosk_quiet_pair",
+        ),
+        CheckConstraint(
+            "request_remind_minutes BETWEEN 5 AND 240 AND request_backup_minutes BETWEEN 5 AND 240 "
+            "AND escalation_realert_minutes BETWEEN 5 AND 240 "
+            "AND escalation_takeover_minutes BETWEEN 5 AND 240",
+            name="alert_timings_range",
         ),
     )
 
@@ -528,6 +654,13 @@ class CampusSettings(Base):
     # late returns tap in at night. The window may cross midnight (23:00 to 05:00).
     kiosk_quiet_from: Mapped[time | None] = mapped_column(Time)
     kiosk_quiet_until: Mapped[time | None] = mapped_column(Time)
+    # Follow-up timings, in minutes (owner's defaults, 2026-11-07): remind the hostel's wardens
+    # of a pending request, then tell the head wardens they may decide it; re-alert the office
+    # while nobody has claimed an escalation, then hand it to the head wardens.
+    request_remind_minutes: Mapped[int] = mapped_column(server_default=text("15"))
+    request_backup_minutes: Mapped[int] = mapped_column(server_default=text("30"))
+    escalation_realert_minutes: Mapped[int] = mapped_column(server_default=text("15"))
+    escalation_takeover_minutes: Mapped[int] = mapped_column(server_default=text("30"))
     updated_at: Mapped[datetime] = created_at()
 
 

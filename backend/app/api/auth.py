@@ -522,8 +522,8 @@ async def delete_account(
     (and the hostel) as they were, until the sweep purges them once the campus retention
     period has passed since the deletion (app/services/accounts.py, app/jobs/expiry.py).
 
-    Refused (409) while the student is out or a late escalation is still open, and for the
-    last admin who can sign in, like turning an account off."""
+    Refused (409) while the student is out or a late escalation or Help request is still
+    open, and for the last admin who can sign in, like turning an account off."""
     # Every try is counted before verifying, atomically, like login: a burst can't all pass
     # the check before any is recorded. A right password deletes the account, count and all.
     try:

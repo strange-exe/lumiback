@@ -21,7 +21,7 @@ from app.security.breached import BreachChecker
 from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
-from app.services import refresh_tokens
+from app.services import outbox, refresh_tokens
 from app.services.authz import Principal
 from app.services.staff import Staff, staff_of
 
@@ -76,12 +76,31 @@ class Pusher:
         )
 
 
+class Outbox:
+    """Sends alerts a request just queued (services/outbox.py) after the response, instead of
+    waiting for the next sweep; the sweep is the fallback if this fails."""
+
+    def __init__(self, request: Request, tasks: BackgroundTasks) -> None:
+        self._sessionmaker = request.app.state.sessionmaker
+        self._sender = request.app.state.push
+        self._mailer = request.app.state.mailer
+        self._tasks = tasks
+        self.web_url: str = request.app.state.settings.web_url
+
+    def send_now(self, ids: list[int]) -> None:
+        if ids:
+            self._tasks.add_task(
+                outbox.deliver, self._sessionmaker, self._sender, self._mailer, ids
+            )
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 HubDep = Annotated[Hub, Depends(get_hub)]
 MailerDep = Annotated[Mailer, Depends(get_mailer)]
 BreachesDep = Annotated[BreachChecker, Depends(get_breach_checker)]
 PushDep = Annotated[Pusher, Depends(Pusher)]
+OutboxDep = Annotated[Outbox, Depends(Outbox)]
 
 
 CLIENT_IP_HEADER = "X-Client-IP"

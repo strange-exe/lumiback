@@ -23,6 +23,9 @@ class Email:
     subject: str
     body: str  # plain text: always sent, and what tests and the console read
     html: str | None = None  # optional rich version, sent as multipart/alternative
+    # Resend sends a message with the same key at most once in 24 hours, so a retried alert
+    # (services/outbox.py) can't arrive twice. Not part of the message itself.
+    idempotency_key: str | None = None
 
 
 def build_message(email: Email, sender: str, reply_to: str | None = None) -> EmailMessage:
@@ -112,6 +115,10 @@ class ResendMailer:
         if self._reply_to:
             payload["reply_to"] = self._reply_to
         headers = {"Authorization": f"Bearer {self._key.get_secret_value()}"}
+        if email.idempotency_key:
+            # https://resend.com/docs/dashboard/emails/idempotency-keys: 1-256 characters,
+            # kept 24 hours; the same key and payload again is answered without sending.
+            headers["Idempotency-Key"] = email.idempotency_key[:256]
         if self._client is not None:
             response = await self._client.post(self.URL, json=payload, headers=headers)
         else:

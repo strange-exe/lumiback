@@ -18,8 +18,10 @@ from app.models import (
     AccessLog,
     Contact,
     Escalation,
+    EscalationCall,
     Gate,
     GateScan,
+    HelpRequest,
     Hostel,
     Location,
     Outing,
@@ -71,6 +73,37 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             )
         )
     }
+    # The calls the office logged following up a late return: when and what came of it. Who
+    # called and their note stay with the office, like the escalation's own note.
+    calls: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for outing_id, c in await session.execute(
+        select(Escalation.outing_id, EscalationCall)
+        .join(EscalationCall, EscalationCall.escalation_id == Escalation.id)
+        .join(Outing, Outing.id == Escalation.outing_id)
+        .where(Outing.student_id == user.id)
+        .order_by(EscalationCall.at)
+    ):
+        calls.setdefault(outing_id, []).append({"at": c.at, "outcome": c.outcome.value})
+    # Help presses: when, where (the one fix, kept a day) and when the office handled it; the
+    # handler and their note stay with the office.
+    help_requests = [
+        {
+            "id": h.id,
+            "created_at": h.created_at,
+            "outing_id": h.outing_id,
+            "hostel": hostel(h.hostel_id),
+            "lat": h.lat,
+            "lng": h.lng,
+            "accuracy_m": h.accuracy_m,
+            "mocked": h.mocked,
+            "handled_at": h.handled_at,
+        }
+        for h in await session.scalars(
+            select(HelpRequest)
+            .where(HelpRequest.student_id == user.id)
+            .order_by(HelpRequest.created_at)
+        )
+    ]
     outings = [
         {
             "id": o.id,
@@ -95,6 +128,7 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             "escalation_resolved_at": (
                 escalations[o.id].resolved_at if o.id in escalations else None
             ),
+            "escalation_calls": calls.get(o.id, []),
         }
         for o in await session.scalars(
             select(Outing).where(Outing.student_id == user.id).order_by(Outing.left_at)
@@ -279,6 +313,7 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
         "contacts": contacts,
         "outings": outings,
         "outing_requests": requests,
+        "help_requests": help_requests,
         "share_sessions": share_sessions,
         "shares_watched": watching,
         "gate_scans": scans,

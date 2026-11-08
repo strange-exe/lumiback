@@ -440,7 +440,9 @@ def make_late(db, by: str) -> None:
 
 
 def run_sweep(client, push):
-    return client.portal.call(sweep, client.app.state.sessionmaker, client.app.state.hub, push)
+    # Alerts go through the outbox, which needs the mailer too (the app always has one).
+    state = client.app.state
+    return client.portal.call(sweep, state.sessionmaker, state.hub, push, state.mailer)
 
 
 def test_overdue_students_are_pushed_once(client, db, push):

@@ -13,6 +13,7 @@ from app.api.deps import (
     HubDep,
     LimiterDep,
     MailerDep,
+    OutboxDep,
     PushDep,
     SessionDep,
     SettingsDep,
@@ -20,12 +21,16 @@ from app.api.deps import (
 )
 from app.config import Settings
 from app.email import Mailer
+from app.email_templates import Fix
 from app.models import LateReply, Outing, User
 from app.push import PushMessage
 from app.realtime import AccessChanged, Hub
 from app.schemas import (
+    CallMeOut,
     CorrectionIn,
     CorrectionOut,
+    HelpIn,
+    HelpOut,
     LateReplyIn,
     OutingCreateIn,
     OutingOut,
@@ -35,13 +40,18 @@ from app.schemas import (
     OutingSummary,
 )
 from app.security.rate_limit import Limit, RateLimiter
-from app.services import corrections, escalations, requests, rules, safe_return, staff
+from app.services import alerts, corrections, escalations, requests, rules, safe_return, staff
 from app.services import outings as svc
 
 router = APIRouter(prefix="/outings", tags=["outings"])
 
 # Asking the office to correct an outing: a few a day is plenty.
 CORRECTION_ASKS = Limit(max_hits=10, window_seconds=86_400)
+# Each one wakes the hostel's wardens (urgent: muted phones too), so a few an hour at most.
+CALL_ME = Limit(max_hits=3, window_seconds=3600)
+# Help reaches the office, the student's followers and their contact; a second press must
+# still work (they may doubt the first went), but not an endless stream.
+HELP_ASKS = Limit(max_hits=5, window_seconds=3600)
 
 NOT_OUT = HTTPException(status.HTTP_404_NOT_FOUND, detail="You are not on an outing")
 
@@ -156,7 +166,58 @@ async def current(me: CurrentUser, session: SessionDep) -> OutingOut | None:
     outing = await svc.current(session, me.id)
     if outing is None:
         return None
-    return (await _with_corrections(session, [svc.to_out(outing, datetime.now(UTC))]))[0]
+    out = (await _with_corrections(session, [svc.to_out(outing, datetime.now(UTC))]))[0]
+    out.office = await alerts.office_contact(session, outing)
+    return out
+
+
+async def _out_now(session: SessionDep, me: User) -> Outing:
+    """The student's open outing: calling the office and Help are for students who are out."""
+    outing = await svc.current(session, me.id)
+    if outing is None:
+        raise NOT_OUT
+    return outing
+
+
+@router.post("/current/call-me", status_code=status.HTTP_202_ACCEPTED)
+async def ask_for_a_call(
+    me: CurrentUser, session: SessionDep, limiter: LimiterDep, sender: OutboxDep
+) -> CallMeOut:
+    """ "Ask the office to call me", for a hostel with no office number: tells its wardens (or
+    the head wardens or admins if it has none)."""
+    outing = await _out_now(session, me)
+    await enforce(limiter, "call-me:user", str(me.id), CALL_ME)
+    ids = await alerts.call_me(session, me, outing, sender.web_url)
+    await session.commit()
+    sender.send_now(ids)
+    return CallMeOut(notified=len(ids))
+
+
+@router.post("/current/help", status_code=status.HTTP_201_CREATED)
+async def ask_for_help(
+    body: HelpIn, me: CurrentUser, session: SessionDep, limiter: LimiterDep, sender: OutboxDep
+) -> HelpOut:
+    """The Help button (the app and website confirm first): an urgent alert to the hostel
+    office with one location fix, and to the people the student shares their location with
+    and their emergency contact. Answers with the office number to call."""
+    outing = await _out_now(session, me)
+    await enforce(limiter, "help:user", str(me.id), HELP_ASKS)
+    fix = Fix(**body.location.model_dump()) if body.location else None
+
+    async def contact_ok(address: str) -> bool:
+        return await alerts.help_contact_allowed(limiter, me.id, address)
+
+    sent = await alerts.help_alert(
+        session, me, outing, fix, datetime.now(UTC), sender.web_url, contact_ok
+    )
+    await session.commit()
+    sender.send_now(sent.ids)
+    return HelpOut(
+        office=sent.office,
+        office_told=sent.office_told,
+        followers_told=sent.followers_told,
+        contact_told=sent.contact_told,
+    )
 
 
 @router.post("/{outing_id}/correction", status_code=status.HTTP_201_CREATED)

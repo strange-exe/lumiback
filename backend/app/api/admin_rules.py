@@ -12,17 +12,21 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import (
     HubDep,
+    LimiterDep,
     MailerDep,
+    OutboxDep,
     PushDep,
     RulesUser,
     SessionDep,
     SettingsDep,
     StaffUser,
     ViewingAsDep,
+    enforce,
 )
 from app.api.outings import safe_return_ended
 from app.email_templates import request_decision_email
 from app.models import (
+    CallOutcome,
     CampusSettings,
     DayRule,
     DayType,
@@ -42,19 +46,28 @@ from app.schemas import (
     CorrectionOut,
     CorrectionQueue,
     DayRuleIO,
+    EscalationCallIn,
+    EscalationCallOut,
     EscalationOut,
     EscalationResolveIn,
+    HelpHandleIn,
+    HelpRequestOut,
     HolidayIO,
     HostelContactIn,
     HostelIn,
     HostelOut,
+    NoticeIn,
+    NoticeOut,
     RequestDecisionIn,
     RuleSetIn,
     RuleSetOut,
 )
+from app.security.rate_limit import Limit
 from app.services import admin as audit_svc
-from app.services import corrections, escalations, requests, rules
+from app.services import alerts, corrections, escalations, requests, rules
+from app.services import help_requests as help_svc
 from app.services.gates import campus_settings
+from app.services.staff import clear_lapsed_claims
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -460,6 +473,8 @@ async def delete_hostel(
                 detail="Wardens look after this hostel. Ask an admin to move them first.",
             )
     await session.delete(hostel)
+    # Its wardens no longer look after its students' escalations: their claims lapse.
+    await clear_lapsed_claims(session)
     audit_svc.audit(session, me, "hostel:delete", hostel.name)
     await session.commit()
     return await _hostels_out(session)
@@ -542,6 +557,127 @@ async def resolve_escalation(
         raise NOT_FOUND from None
     audit_svc.audit(session, staff.user, "escalation:resolve", str(escalation_id))
     await session.commit()
+
+
+ALREADY_HANDLED = HTTPException(status.HTTP_409_CONFLICT, detail="This was already handled")
+
+
+def _claimed_by_other(e: escalations.ClaimedByOther) -> HTTPException:
+    return HTTPException(status.HTTP_409_CONFLICT, detail=f"{e.name} is already on it")
+
+
+@router.post("/escalations/{escalation_id}/claim", status_code=status.HTTP_204_NO_CONTENT)
+async def claim_escalation(escalation_id: uuid.UUID, staff: StaffUser, session: SessionDep) -> None:
+    """ "I'm on it": the re-alerts stop while someone has it."""
+    try:
+        changed = await escalations.claim(session, staff, escalation_id)
+    except escalations.NotFound:
+        raise NOT_FOUND from None
+    except escalations.Resolved:
+        raise ALREADY_HANDLED from None
+    except escalations.ClaimedByOther as e:
+        raise _claimed_by_other(e) from None
+    if changed:
+        audit_svc.audit(session, staff.user, "escalation:claim", str(escalation_id))
+    await session.commit()
+
+
+@router.delete("/escalations/{escalation_id}/claim", status_code=status.HTTP_204_NO_CONTENT)
+async def release_escalation(
+    escalation_id: uuid.UUID, staff: StaffUser, session: SessionDep
+) -> None:
+    """Gives the claim back (whoever claimed it, or a head warden or admin)."""
+    try:
+        await escalations.release(session, staff, escalation_id)
+    except escalations.NotFound:
+        raise NOT_FOUND from None
+    except escalations.Resolved:
+        raise ALREADY_HANDLED from None
+    except escalations.ClaimedByOther as e:
+        raise _claimed_by_other(e) from None
+    audit_svc.audit(session, staff.user, "escalation:release", str(escalation_id))
+    await session.commit()
+
+
+@router.post("/escalations/{escalation_id}/calls", status_code=status.HTTP_201_CREATED)
+async def log_call(
+    escalation_id: uuid.UUID, body: EscalationCallIn, staff: StaffUser, session: SessionDep
+) -> EscalationCallOut:
+    """A call the office made while following up (claims it if nobody has)."""
+    try:
+        call = await escalations.log_call(
+            session, staff, escalation_id, CallOutcome(body.outcome), body.note
+        )
+    except escalations.NotFound:
+        raise NOT_FOUND from None
+    except escalations.Resolved:
+        raise ALREADY_HANDLED from None
+    audit_svc.audit(session, staff.user, "escalation:call", f"{escalation_id} {body.outcome}")
+    await session.commit()
+    await session.refresh(call)
+    return EscalationCallOut(
+        at=call.at, by=staff.user.name, outcome=call.outcome.value, note=call.note
+    )
+
+
+# ---------- help requests (students who pressed Help while out) ----------
+
+
+@router.get("/help")
+async def list_help(
+    staff: StaffUser, session: SessionDep, state: Literal["open", "all"] = "open"
+) -> list[HelpRequestOut]:
+    """Newest first, in this office's hostels (by the outing's hostel)."""
+    return await help_svc.listing(session, staff, open_only=state == "open")
+
+
+@router.post("/help/{help_id}/handle", status_code=status.HTTP_204_NO_CONTENT)
+async def handle_help(
+    help_id: uuid.UUID, body: HelpHandleIn, staff: StaffUser, session: SessionDep
+) -> None:
+    try:
+        changed = await help_svc.handle(session, staff, help_id, body.note)
+    except help_svc.NotFound:
+        raise NOT_FOUND from None
+    if changed:
+        audit_svc.audit(session, staff.user, "help:handle", str(help_id))
+    await session.commit()
+
+
+# ---------- notices to students who are out ----------
+
+NOTICES = Limit(max_hits=10, window_seconds=3600)
+
+
+@router.post("/notices")
+async def send_notice(
+    body: NoticeIn,
+    staff: StaffUser,
+    session: SessionDep,
+    limiter: LimiterDep,
+    sender: OutboxDep,
+) -> NoticeOut:
+    """A short notice, or a recall ("come back now"), to the students out now in this
+    office's hostels (or one of them). The audit log records who sent it, to how many and
+    where; not its text, which (up to 200 characters, with the count and hostel) wouldn't fit
+    the log's 160 and went to the students themselves."""
+    hostel = None
+    if body.hostel_id is not None:
+        hostel = await session.get(Hostel, body.hostel_id)
+        if hostel is None or not staff.covers_hostel(body.hostel_id):
+            raise NOT_FOUND  # another office's hostel: as if it didn't exist
+    await enforce(limiter, "notice:staff", str(staff.user.id), NOTICES)
+    sent, ids = await alerts.notice(
+        session, staff, body.hostel_id, body.message, body.recall, sender.web_url
+    )
+    if sent:
+        where = hostel.name if hostel else "all their hostels"
+        kind = "recall" if body.recall else "send"
+        # At most ~80 characters (a hostel name is 60): never cut by the log's 160.
+        audit_svc.audit(session, staff.user, f"notice:{kind}", f"{sent} out, {where}")
+    await session.commit()
+    sender.send_now(ids)
+    return NoticeOut(sent=sent)
 
 
 # ---------- outing corrections ----------

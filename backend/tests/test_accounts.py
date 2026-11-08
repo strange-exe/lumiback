@@ -7,7 +7,7 @@ from sqlalchemy import text
 from app.push import MemoryPushSender
 from app.services import student_import
 from tests.helpers import PASSWORD, befriend, login, make_admin, share_with, signup
-from tests.test_student_import import HEADER, link_token, set_password, upload
+from tests.test_student_import import HEADER, NEW_PASSWORD, link_token, set_password, upload
 from tests.test_wardens import set_role, student, user_id
 
 ANNA = "anna@geu.ac.in"
@@ -258,16 +258,26 @@ def test_first_only_still_sends_a_first_link(client, admin):
 
 
 def test_an_admin_corrects_a_typo_in_an_email(client, db, admin, anna):
+    """The new address gets a set-password link and the old password stops working: whoever
+    set it may have done so through the old (mistyped, or someone else's) inbox."""
     uid = user_id(client, admin, ANNA)
     r = edit(client, admin, uid, email="Anna.Rawat@geu.ac.in", phone="98765 43210")
     assert r.status_code == 200, r.text
     assert r.json()["email"] == "anna.rawat@geu.ac.in"
+    for address in (ANNA, "anna.rawat@geu.ac.in"):
+        old = client.post("/auth/login", json={"email": address, "password": PASSWORD})
+        assert old.status_code == 401, old.text
+    assert not [
+        m for m in client.app.state.mailer.outbox if m.to == ANNA and "set-password" in m.body
+    ]
+    assert set_password(client, link_token(client, "anna.rawat@geu.ac.in")).status_code == 200
     assert (
         client.post(
-            "/auth/login", json={"email": "anna.rawat@geu.ac.in", "password": PASSWORD}
+            "/auth/login", json={"email": "anna.rawat@geu.ac.in", "password": NEW_PASSWORD}
         ).status_code
         == 200
     )
+    assert ("password:reset", "anna.rawat@geu.ac.in") in audit_rows(db)
     phone = db.execute(text("SELECT phone FROM users WHERE id = :id"), {"id": uid}).scalar()
     assert phone == "+919876543210"
     assert (

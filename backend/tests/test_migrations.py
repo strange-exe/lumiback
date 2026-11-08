@@ -42,6 +42,68 @@ def test_downgrade_to_base_and_back(migrated_engine, test_db_url):
     assert set(Base.metadata.tables) <= set(inspect(migrated_engine).get_table_names())
 
 
+def test_0030_quiets_open_escalations_and_moves_staff_out_of_hostels(migrated_engine, test_db_url):
+    """Escalations open before the follow-up existed don't all re-alert or hand over in the
+    first sweep; staff live in no hostel (promotion clears it, owner 2026-11-08)."""
+    cfg = alembic_config(test_db_url)
+    command.downgrade(cfg, "0029")
+    try:
+        with migrated_engine.begin() as conn:
+            rule_set = conn.execute(
+                text("INSERT INTO rule_sets (name) VALUES ('0030 test') RETURNING id")
+            ).scalar_one()
+            hostel = conn.execute(
+                text("INSERT INTO hostels (name, rule_set_id) VALUES ('0030 H', :r) RETURNING id"),
+                {"r": rule_set},
+            ).scalar_one()
+            users = {
+                role: conn.execute(
+                    text(
+                        "INSERT INTO users (role, name, email, password_hash, hostel_id) "
+                        "VALUES (:role, 'X', :email, 'x', :h) RETURNING id"
+                    ),
+                    {"role": role, "email": f"{role}.0030@example.com", "h": hostel},
+                ).scalar_one()
+                for role in ("student", "warden", "admin")
+            }
+            outing = conn.execute(
+                text(
+                    "INSERT INTO outings (student_id, left_at, expected_return_at, hostel_id) "
+                    "VALUES (:s, now() - interval '5 hours', now() - interval '3 hours', :h) "
+                    "RETURNING id"
+                ),
+                {"s": users["student"], "h": hostel},
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO escalations (outing_id, created_at) "
+                    "VALUES (:o, now() - interval '2 hours')"
+                ),
+                {"o": outing},
+            )
+        command.upgrade(cfg, "head")
+        with migrated_engine.connect() as conn:
+            realerted, handed_over = conn.execute(
+                text("SELECT realerted_at, handed_over_at FROM escalations WHERE outing_id = :o"),
+                {"o": outing},
+            ).one()
+            homes = dict(
+                conn.execute(
+                    text("SELECT role, hostel_id FROM users WHERE email LIKE '%.0030@example.com'")
+                ).all()
+            )
+        assert realerted is not None and handed_over is not None
+        assert homes == {"student": hostel, "warden": None, "admin": None}
+    finally:
+        command.upgrade(cfg, "head")
+        with migrated_engine.begin() as conn:
+            mine = "SELECT id FROM users WHERE email LIKE '%.0030@example.com'"
+            conn.execute(text(f"DELETE FROM outings WHERE student_id IN ({mine})"))
+            conn.execute(text("DELETE FROM users WHERE email LIKE '%.0030@example.com'"))
+            conn.execute(text("DELETE FROM hostels WHERE name = '0030 H'"))
+            conn.execute(text("DELETE FROM rule_sets WHERE name = '0030 test'"))
+
+
 def test_outing_rules_are_seeded_from_hostel_practice(migrated_engine, test_db_url):
     # The per-test reset replaces the seeds, so rebuild the schema to read them fresh.
     cfg = alembic_config(test_db_url)

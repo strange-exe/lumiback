@@ -464,6 +464,8 @@ class OutingOut(BaseModel):
     # location to. None: not chosen, or it couldn't start (e.g. today's email limit).
     safe_return_session_id: uuid.UUID | None = None
     correction: CorrectionOut | None = None  # the latest one, if any
+    # Only on the current outing (GET /outings/current): who to call while out or late.
+    office: "OfficeContact | None" = None
 
     @field_serializer("left_at", "expected_return_at", "returned_at")
     def _in_ist(self, value: datetime | None) -> str | None:
@@ -728,6 +730,11 @@ class CampusSettingsIO(Input):
     # midnight. Leaving both out of a PUT keeps them as they are.
     kiosk_quiet_from: ClockTime | None = None
     kiosk_quiet_until: ClockTime | None = None
+    # Follow-up timings in minutes (always answered; a PUT that leaves one out keeps it).
+    request_remind_minutes: int | None = Field(default=None, ge=5, le=240)
+    request_backup_minutes: int | None = Field(default=None, ge=5, le=240)
+    escalation_realert_minutes: int | None = Field(default=None, ge=5, le=240)
+    escalation_takeover_minutes: int | None = Field(default=None, ge=5, le=240)
 
     @model_validator(mode="after")
     def _quiet_pair(self) -> "CampusSettingsIO":
@@ -747,6 +754,7 @@ class AdminOverview(BaseModel):
     pending_requests: int = 0  # today's weekend/holiday requests waiting for a decision
     open_escalations: int = 0  # late students who didn't answer, not yet handled
     corrections: int = 0  # students' correction asks plus unrecorded returns to fix
+    open_help: int = 0  # students who pressed Help, not yet handled
 
 
 class AdminOuting(BaseModel):
@@ -1188,6 +1196,15 @@ class EscalationOut(BaseModel):
     resolved_at: datetime | None
     note: str | None
 
+    # Follow-up: who said "I'm on it" (None: nobody yet), the office's calls (oldest first),
+    # how many re-alerts went out while nobody had, and when it went to the head wardens.
+    claimed_by: str | None = None
+    claimed_by_me: bool = False
+    claimed_at: datetime | None = None
+    handed_over_at: datetime | None = None
+    realerts: int = 0
+    calls: list["EscalationCallOut"] = []
+
     @field_serializer(
         "created_at",
         "left_at",
@@ -1196,6 +1213,8 @@ class EscalationOut(BaseModel):
         "alert_at",
         "late_replied_at",
         "resolved_at",
+        "claimed_at",
+        "handed_over_at",
     )
     def _in_ist(self, value: datetime | None) -> str | None:
         return value.astimezone(IST).isoformat() if value else None
@@ -1203,3 +1222,107 @@ class EscalationOut(BaseModel):
 
 class EscalationResolveIn(Input):
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+
+
+# Short text one person writes for another to read (a call note, an office notice): one line,
+# no control or invisible formatting characters.
+ShortText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    BeforeValidator(_no_control_characters),
+]
+
+CallOutcomeName = Literal["reached_student", "reached_contact", "no_answer", "left_message"]
+
+
+class EscalationCallIn(Input):
+    outcome: CallOutcomeName
+    note: ShortText | None = None
+
+
+class EscalationCallOut(BaseModel):
+    at: datetime
+    by: str | None  # the staff member's name (None: their account is gone)
+    outcome: CallOutcomeName
+    note: str | None
+
+    @field_serializer("at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+# ---------- wave 2: call the office, notices, help ----------
+
+
+class OfficeContact(BaseModel):
+    """Who a student who is out can call: their outing's hostel and its office number (the
+    warden contact on the Hostel page). `phone` None: the hostel has no number yet, so the
+    student can ask the office to call them instead."""
+
+    hostel: str | None
+    name: str | None
+    phone: str | None
+
+
+class CallMeOut(BaseModel):
+    notified: int  # office members told
+
+
+class NoticeIn(Input):
+    """A short notice from the hostel office to its students who are out. `recall`: "come
+    back now". `hostel_id`: one of the sender's hostels (else all of them)."""
+
+    message: ShortText
+    recall: bool = False
+    hostel_id: uuid.UUID | None = None
+
+
+class NoticeOut(BaseModel):
+    sent: int  # students it went to
+
+
+class HelpFixIn(Input):
+    """The one location fix sent with a help alert (none if the phone gave none)."""
+
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(ge=0, le=100_000)
+    mocked: bool = False
+
+
+class HelpIn(Input):
+    location: HelpFixIn | None = None
+
+
+class HelpOut(BaseModel):
+    office: OfficeContact | None
+    office_told: int  # wardens and head wardens
+    followers_told: int  # people the student shares their location with
+    contact_told: bool  # the emergency contact was emailed
+
+
+class HelpRequestOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    student_id: uuid.UUID
+    name: str
+    roll_no: str | None
+    phone: str | None
+    hostel: str | None
+    # The fix sent with it; cleared a day later (null then, or if the phone gave none).
+    lat: float | None
+    lng: float | None
+    accuracy_m: float | None
+    mocked: bool
+    returned: bool  # the outing it was sent from has ended
+    handled_by: str | None
+    handled_at: datetime | None
+    note: str | None
+
+    @field_serializer("created_at", "handled_at")
+    def _in_ist(self, value: datetime | None) -> str | None:
+        return value.astimezone(IST).isoformat() if value else None
+
+
+class HelpHandleIn(Input):
+    note: ShortText | None = None

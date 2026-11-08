@@ -18,13 +18,13 @@ from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.email import Mailer
-from app.email_templates import escalation_email, late_alert_email
 from app.models import (
     AccessLog,
     AdminAudit,
     CampusSettings,
     Escalation,
     GateScan,
+    HelpRequest,
     Location,
     Outing,
     OutingRequest,
@@ -35,17 +35,19 @@ from app.models import (
     ShareSession,
     ShareSource,
 )
-from app.push import (
-    PushMessage,
-    PushSender,
-    ReceiptCheck,
-    check_receipts,
-    notify_or_email,
-    notify_user,
-)
+from app.push import PushSender, ReceiptCheck, check_receipts
 from app.realtime import AccessChanged, Hub
 from app.security.rate_limit import delete_old_hits
-from app.services import account_links, escalations, password_reset, safe_return, verification
+from app.services import (
+    account_links,
+    alerts,
+    escalations,
+    outbox,
+    password_reset,
+    safe_return,
+    verification,
+)
+from app.services.outbox import Delivery
 from app.services.rules import IST
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,8 @@ KEEP_ADMIN_AUDIT = timedelta(days=365)
 # The app re-registers its push token on every start, so a token unseen this long belongs to a
 # phone that no longer runs Lumiback (uninstalled, reset, or replaced).
 KEEP_UNSEEN_PUSH_TOKENS = timedelta(days=90)
-MINUTE = timedelta(minutes=1)
+# A help request's location fix is for the night it was sent, not for the record.
+KEEP_HELP_FIX = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,11 @@ class SweepResult:
     deleted_audit: int = 0
     deleted_push_tokens: int = 0
     push_receipts: ReceiptCheck = ReceiptCheck()
+    followed_up: int = 0  # unclaimed escalations re-alerted or handed to the head wardens
+    reminded_requests: int = 0  # pending requests reminded or sent to a backup approver
+    alerts: Delivery = Delivery()  # what the outbox sent this sweep
+    deleted_alerts: int = 0
+    deleted_help: int = 0
 
 
 class SweepHealth:
@@ -179,15 +187,21 @@ async def sweep(
         pending = await verification.delete_expired(session, now)  # unverified sign-ups
         resets = await password_reset.delete_expired(session, now)  # unused reset codes
         await account_links.delete_expired(session, now)  # unused set-password links
-        late = await escalations.send_alerts(session, now)
-        # The contacts following these students (safe return), told at the same moment.
+        # Alerts go into the outbox in this transaction and are sent after the commit, so a
+        # failed send or a crash can't lose one (services/outbox.py).
+        late = await alerts.late_alerts(session, now, web_url)
+        # The contacts following these students (safe return), told at the same moment. Not
+        # queued: the email carries the watch link, which is never stored.
         contacts_told = (
             await safe_return.overdue_emails(session, now, web_url, pepper)
             if late and pepper is not None
             else []
         )
-        opened = await escalations.open_escalations(session, now)  # each one's hostel
-        office = await escalations.recipients(session, opened)
+        opened = await escalations.open_escalations(session, now)
+        await alerts.escalation_opened(session, opened, web_url)
+        timings = await alerts.timings(session)
+        followed_up = await alerts.escalation_follow_ups(session, now, timings, web_url)
+        reminded = await alerts.request_reminders(session, now, timings, web_url)
         # One retention period (Admin > Settings) for the campus records: gate scans, who
         # viewed a share, outing requests, and handled late escalations. Open escalations
         # stay until an admin resolves them: deleting one would hide a late student.
@@ -226,58 +240,31 @@ async def sweep(
         stale_devices = await session.execute(
             delete(PushToken).where(PushToken.last_seen_at < now - KEEP_UNSEEN_PUSH_TOKENS)
         )
+        # Help requests: the one location fix is kept a day, the request itself like a
+        # handled escalation (open ones stay until someone handles them).
+        await session.execute(
+            update(HelpRequest)
+            .where(HelpRequest.created_at < now - KEEP_HELP_FIX, HelpRequest.lat.is_not(None))
+            .values(lat=None, lng=None, accuracy_m=None)
+        )
+        old_help = await session.execute(
+            delete(HelpRequest).where(
+                HelpRequest.handled_at.is_not(None), HelpRequest.created_at < cutoff
+            )
+        )
+        old_alerts = await outbox.delete_old(session)
         await session.commit()
 
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
-    for student_id, due in late:
-        # The real lateness, in case the sweep ran late (e.g. right after a restart).
-        minutes = max(
-            int(escalations.ALERT_AFTER.total_seconds() // 60), int((now - due) // MINUTE)
-        )
-        # Students without the app (website only) are emailed instead.
-        await notify_or_email(
-            sessionmaker,
-            push,
-            mailer,
-            student_id,
-            PushMessage(
-                title=f"You're {minutes} min late. Are you OK?",
-                body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
-                "is told.",
-                url="/today",
-                channel="return-reminders",
-                urgent=True,
-            ),
-            lambda user, due=due: late_alert_email(
-                to=user.email, name=user.name, due_at=due, web_url=web_url
-            ),
-        )
     if mailer is not None:
         for email in contacts_told:
             await safe_return.send(mailer, email)
-    if push is not None:
-        for person in office:
-            await notify_user(
-                sessionmaker,
-                push,
-                person.user_id,
-                PushMessage(
-                    title="A late student needs follow-up",
-                    body="Open Escalations in Lumiback to follow up.",
-                    url="/office/escalations",
-                    channel="return-reminders",
-                    urgent=True,
-                ),
-            )
-    if mailer is not None:
-        for person in office:
-            try:
-                await mailer.send(
-                    escalation_email(to=person.email, count=person.count, web_url=web_url)
-                )
-            except Exception:
-                logger.exception("escalation email failed")
+    try:  # this sweep's alerts, and earlier ones waiting for a retry
+        delivered = await outbox.deliver(sessionmaker, push, mailer)
+    except Exception:
+        logger.exception("alert delivery failed")  # the rows stay for the next sweep
+        delivered = outbox.Delivery()
     receipts = ReceiptCheck()
     if push is not None:
         try:  # last: the alerts above matter more than confirming earlier pushes
@@ -291,8 +278,13 @@ async def sweep(
         tokens.rowcount,
         hits,
         pending,
-        overdue_notified=len(late),
+        overdue_notified=late,
         escalated=len(opened),
+        followed_up=followed_up,
+        reminded_requests=reminded,
+        alerts=delivered,
+        deleted_alerts=old_alerts,
+        deleted_help=old_help.rowcount,
         deleted_scans=scans.rowcount,
         deleted_views=views.rowcount,
         deleted_requests=old_requests.rowcount,

@@ -6,6 +6,8 @@ Who may do what:
   on/off state, and deleting one, are never changed here (scripts/make_developer.py).
 - A warden or head warden: the students in hostels they look after, and never their email
   address (changing it would let them take the account over with "Forgot password").
+- An admin changing an email address also ends the password: the new address gets a
+  set-password link (whoever set the old password may have read the old inbox).
 - Cancelling an invite deletes the account, so it's admins only, like adding people.
 
 Turning an account off keeps everything it has done (outings, scans, requests). It signs the
@@ -28,6 +30,8 @@ from app.config import Settings
 from app.models import (
     AccountLink,
     Escalation,
+    HelpRequest,
+    LinkPurpose,
     Outing,
     OutingCorrection,
     OutingRequest,
@@ -39,10 +43,11 @@ from app.models import (
     User,
     UserRole,
 )
+from app.services import account_links, outbox
 from app.services import sessions as shares
 from app.services.admin import DEVELOPER_LOCKED, account_state, audit
 from app.services.refresh_tokens import sign_out_everywhere
-from app.services.staff import Staff
+from app.services.staff import Staff, clear_lapsed_claims
 from app.services.verification import email_allowed
 
 
@@ -103,6 +108,8 @@ async def deactivate(session: AsyncSession, staff: Staff, user_id: uuid.UUID) ->
         raise Refused(409, "They're out right now. Record their return first, then turn it off.")
     now = datetime.now(UTC)
     target.deactivated_at = now
+    # Escalations they said "I'm on it" to: nobody is any more, so the follow-up goes on.
+    await clear_lapsed_claims(session)
     await sign_out_everywhere(session, target.id, now)  # tokens and push tokens
     # And no way back in: a set-password link or reset code already out dies too.
     await session.execute(delete(AccountLink).where(AccountLink.user_id == target.id))
@@ -144,9 +151,12 @@ class Changes:
 
 async def edit(
     session: AsyncSession, staff: Staff, user_id: uuid.UUID, changes: Changes, settings: Settings
-) -> User:
+) -> tuple[User, tuple[LinkPurpose, str] | None]:
+    """The edited account, and the set-password link to email to its new address (when the
+    email changed)."""
     target = await _target(session, staff, user_id)
     changed: list[str] = []
+    link: tuple[LinkPurpose, str] | None = None
     if changes.name is not None and changes.name != target.name:
         target.name = changes.name
         changed.append("name")
@@ -167,11 +177,24 @@ async def edit(
         if taken is not None:
             raise Refused(409, "Someone else already has that email address")
         changed.append(f"email {target.email} -> {changes.email}")
+        # Signed out everywhere (first: it takes the user lock before any link row): a session
+        # opened under the old address must not outlive it.
+        await sign_out_everywhere(session, target.id)
         target.email = changes.email
         # A set-password link (or reset code) went to the old address, and whoever reads that
-        # inbox could still use it: they die with it. The office sends a new link if needed.
+        # inbox could still use it: they die with it.
         await session.execute(delete(AccountLink).where(AccountLink.user_id == target.id))
         await session.execute(delete(PasswordReset).where(PasswordReset.user_id == target.id))
+        # So does the password: whoever set it may have done so through the old inbox (a
+        # mistyped or someone else's address). The new address gets a set-password link
+        # (the caller emails it after the commit), as an admin reset does (owner, 2026-11-08).
+        purpose = LinkPurpose.RESET if target.email_verified else LinkPurpose.INVITE
+        target.password_hash = account_links.NO_PASSWORD
+        token = await account_links.issue(
+            session, target.id, purpose, settings.code_pepper.get_secret_value(), staff.user.id
+        )
+        link = (purpose, token)
+        audit(session, staff.user, f"password:{purpose.value}", changes.email)
         # A half-finished self sign-up for the new address can never become an account now
         # (as with imports): it goes, so its code fails cleanly instead of clashing later.
         await session.execute(
@@ -185,7 +208,7 @@ async def edit(
         await session.rollback()
         raise Refused(409, "Someone else already has that email address") from None
     await session.refresh(target)
-    return target
+    return target, link
 
 
 # ---------- a student (or anyone) deleting their own account ----------
@@ -196,13 +219,17 @@ ESCALATED = (
     "Ask them to close it, then delete your account."
 )
 LAST_ADMIN = "Make someone else an admin first"
+HELP_OPEN = (
+    "The hostel office hasn't closed your Help request yet. Ask them to, then delete your account."
+)
 
 
 async def deletion_refused(session: AsyncSession, user: User) -> str | None:
     """Why this account can't delete itself now (None: it can), as `deactivate` refuses: while
-    out, while a late escalation is open (the office is following it up), or as the last admin
-    who can sign in. Locks the account row until the caller commits: a tap-out at the same
-    moment waits (its outing row references this one) and then finds the account gone."""
+    out, while a late escalation or a Help request is open (the office is following it up), or
+    as the last admin who can sign in. Locks the account row until the caller commits: a
+    tap-out at the same moment waits (its outing row references this one) and then finds the
+    account gone."""
     await session.execute(select(User.id).where(User.id == user.id).with_for_update())
     out = await session.scalar(
         select(Outing.id).where(Outing.student_id == user.id, Outing.returned_at.is_(None))
@@ -217,6 +244,15 @@ async def deletion_refused(session: AsyncSession, user: User) -> str | None:
     )
     if escalated is not None:
         return ESCALATED
+    # Its row goes with the account (ON DELETE CASCADE): the office would lose the request
+    # it's answering, so it's closed first, like an escalation.
+    help_open = await session.scalar(
+        select(HelpRequest.id)
+        .where(HelpRequest.student_id == user.id, HelpRequest.handled_at.is_(None))
+        .limit(1)
+    )
+    if help_open is not None:
+        return HELP_OPEN
     if user.role == UserRole.ADMIN and not await _another_admin_left(session, user):
         return LAST_ADMIN
     return None
@@ -230,7 +266,11 @@ async def detach_records(session: AsyncSession, user: User, now: datetime) -> No
     then sets student_id to NULL on those rows. Everything else tied to the account goes with
     it through the cascades: shares and locations, contacts, devices, tokens, push tokens,
     codes, gate scans (each accepted scan's gate and time are already on its outing), and the
-    requests no outing used (the student's forms, with their family's phone numbers)."""
+    requests no outing used (the student's forms, with their family's phone numbers), and
+    their (handled) Help requests. Help alerts still queued for those are given up and emptied
+    (they go to other people, so no cascade reaches them)."""
+    helps = await session.scalars(select(HelpRequest.id).where(HelpRequest.student_id == user.id))
+    await outbox.cancel(session, [f"help:{h}:" for h in helps])
     used = select(Outing.request_id).where(
         Outing.student_id == user.id, Outing.request_id.is_not(None)
     )

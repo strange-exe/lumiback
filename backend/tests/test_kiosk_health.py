@@ -196,7 +196,14 @@ def test_outside_quiet_hours_the_codes_flow(client, admin, gate):
 
 def test_quiet_hours_round_trip_and_are_audited(client, db, admin):
     on = {"scan_retention_days": 90, "kiosk_quiet_from": "23:00", "kiosk_quiet_until": "05:30"}
-    assert client.put("/admin/settings", json=on, headers=admin).json() == {"curfew": "21:30", **on}
+    timings = {  # alert timings (wave 2), unchanged here
+        "request_remind_minutes": 15,
+        "request_backup_minutes": 30,
+        "escalation_realert_minutes": 15,
+        "escalation_takeover_minutes": 30,
+    }
+    saved = client.put("/admin/settings", json=on, headers=admin).json()
+    assert saved == {"curfew": "21:30", **on, **timings}
     # A page that doesn't send them leaves them as they are.
     r = client.put("/admin/settings", json={"scan_retention_days": 60}, headers=admin)
     assert (r.json()["kiosk_quiet_from"], r.json()["kiosk_quiet_until"]) == ("23:00", "05:30")

@@ -97,7 +97,8 @@ class LogPushSender:
     """Development: log instead of sending."""
 
     async def send(self, tokens: list[str], message: PushMessage) -> SendResult:
-        logger.info("push to %d device(s): %s", len(tokens), message.title)
+        # Counts only: a title or body can name a student or where they are.
+        logger.info("push to %d device(s)", len(tokens))
         return SendResult()
 
     async def receipts(self, ticket_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -236,6 +237,42 @@ def make_push_sender(settings: Settings) -> PushSender:
     return LogPushSender()
 
 
+@dataclass(frozen=True)
+class PushOutcome:
+    devices: int = 0  # phones it was for (not muted, or urgent)
+    accepted: int = 0  # Expo took it
+    failed: int = 0  # any error but DeviceNotRegistered (worth trying again later)
+
+
+async def push_devices(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    sender: PushSender,
+    user_id: uuid.UUID,
+    message: PushMessage,
+) -> PushOutcome:
+    """Send to every device the user is signed in on; raises if the database can't be read
+    (the outbox then tries again). Dead tokens are deleted, accepted tickets kept for the
+    receipt check."""
+    query = select(PushToken.token).where(PushToken.user_id == user_id)
+    if not message.urgent:  # muted on that phone (urgent safety messages still go through)
+        query = query.where(~PushToken.muted.contains([message.channel]))
+    async with sessionmaker() as session:
+        tokens = list(await session.scalars(query))
+        if not tokens:
+            return PushOutcome()
+        result = await sender.send(tokens, message)
+        if result.dead:
+            await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
+        if result.tickets:  # the sweep fetches their receipts later
+            await session.execute(
+                insert(PushTicket)
+                .values([{"id": i, "token": t} for i, t in result.tickets.items()])
+                .on_conflict_do_nothing()
+            )
+        await session.commit()
+        return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
+
+
 async def notify_user(
     sessionmaker: async_sessionmaker[AsyncSession],
     sender: PushSender,
@@ -245,25 +282,8 @@ async def notify_user(
     """Send to every device the user is signed in on. Safe to run as a background task.
     Returns how many devices Expo accepted it for (0 if none were eligible, all were dead, or
     the send failed)."""
-    query = select(PushToken.token).where(PushToken.user_id == user_id)
-    if not message.urgent:  # muted on that phone (urgent safety messages still go through)
-        query = query.where(~PushToken.muted.contains([message.channel]))
     try:
-        async with sessionmaker() as session:
-            tokens = list(await session.scalars(query))
-            if not tokens:
-                return 0
-            result = await sender.send(tokens, message)
-            if result.dead:
-                await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
-            if result.tickets:  # the sweep fetches their receipts later
-                await session.execute(
-                    insert(PushTicket)
-                    .values([{"id": i, "token": t} for i, t in result.tickets.items()])
-                    .on_conflict_do_nothing()
-                )
-            await session.commit()
-            return len(result.accepted)
+        return (await push_devices(sessionmaker, sender, user_id, message)).accepted
     except Exception:
         logger.exception("push to user %s failed", user_id)
         return 0

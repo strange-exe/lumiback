@@ -21,6 +21,7 @@ from app.models import (
     Escalation,
     Gate,
     GateScan,
+    HelpRequest,
     Hostel,
     InVia,
     Outing,
@@ -46,7 +47,7 @@ from app.schemas import (
 from app.services.account_links import has_password
 from app.services.outings import rules_in_use, status_of
 from app.services.rules import ist_date
-from app.services.staff import Staff, warden_hostel_ids
+from app.services.staff import Staff, clear_lapsed_claims, warden_hostel_ids
 
 IST = timedelta(hours=5, minutes=30)
 MAX_EXPORT_DAYS = 92
@@ -83,9 +84,11 @@ AUDIT_AREAS = (
     "correction",
     "escalation",
     "gate",
+    "help",
     "holiday",
     "hostel",
     "invite",
+    "notice",
     "outing",
     "password",
     "people",
@@ -224,6 +227,14 @@ async def overview(session: AsyncSession, staff: Staff) -> AdminOverview:
         pending_requests=pending or 0,
         open_escalations=escalated or 0,
         corrections=to_fix or 0,
+        open_help=(
+            await session.scalar(
+                select(func.count())
+                .select_from(HelpRequest)
+                .where(HelpRequest.handled_at.is_(None), staff.covers(HelpRequest.hostel_id))
+            )
+        )
+        or 0,
     )
 
 
@@ -505,27 +516,34 @@ async def outings_csv(session: AsyncSession, staff: Staff, start: date, end: dat
     return buffer.getvalue()
 
 
-FORMULA_STARTS = ("=", "+", "-", "@", "|", "%", "\t", "\r")
+FORMULA_STARTS = ("=", "+", "-", "@", "|", "%")
+BREAKS = ("\t", "\r", "\n")
 
 
 def _safe(cell: str) -> str:
-    """A leading quote makes spreadsheets show the cell as text instead of running it."""
-    return f"'{cell}" if cell[:1] in FORMULA_STARTS else cell
+    """A leading quote makes spreadsheets show the cell as text instead of running it. Some
+    spreadsheets skip leading spaces, tabs and line breaks (in any mix) before reading a
+    formula, so those count too, and a cell that starts with a break is quoted anyway."""
+    risky = cell[:1] in BREAKS or cell.lstrip()[:1] in FORMULA_STARTS
+    return f"'{cell}" if risky else cell
+
+
+def _anyone_matching(q: str):  # noqa: ANN202 - a SQL expression
+    """Name, email or roll number contains `q` (any case); `q`'s own % and _ are letters."""
+    pattern = _like(q)
+    return or_(
+        func.lower(User.name).like(pattern, escape="\\"),
+        User.email.like(pattern, escape="\\"),
+        func.lower(func.coalesce(User.roll_no, "")).like(pattern, escape="\\"),
+    )
 
 
 async def search_users(session: AsyncSession, q: str) -> list[AdminUser]:
-    pattern = f"%{q.strip().lower()}%"
     rows = await session.scalars(
         select(User)
-        .where(
-            # Unverified users are imported students who haven't set up yet: found too, so an
-            # admin can send their link again.
-            or_(
-                func.lower(User.name).like(pattern),
-                User.email.like(pattern),
-                func.lower(func.coalesce(User.roll_no, "")).like(pattern),
-            ),
-        )
+        # Unverified users are imported students who haven't set up yet: found too, so an
+        # admin can send their link again.
+        .where(_anyone_matching(q))
         .order_by(User.role.desc(), User.name)
         .limit(20)
     )
@@ -582,14 +600,7 @@ async def students(
     if hostel_id is not None:
         query = query.where(User.hostel_id == hostel_id)
     if q:
-        pattern = f"%{q.strip().lower()}%"
-        query = query.where(
-            or_(
-                func.lower(User.name).like(pattern),
-                User.email.like(pattern),
-                func.lower(func.coalesce(User.roll_no, "")).like(pattern),
-            )
-        )
+        query = query.where(_anyone_matching(q))
     elif hostel_id is None and staff.every_hostel and account is None:
         query = query.where(User.hostel_id.is_not(None))  # no filter: everyone in a hostel
     if account == "invited":
@@ -706,7 +717,12 @@ async def set_role(
         if not wanted or found != wanted:
             raise NoHostels
     current = await warden_hostel_ids(session, target.id)
-    if target.role == role and current == wanted:
+    # Staff live in no hostel (a warden's hostels are warden_hostels): a promoted student leaves
+    # their hostel's student list, gate scans list and counts (all by users.hostel_id). Their
+    # past outings stay on the register and in the CSV under the hostel they were in then
+    # (outings.hostel_id). Owner decision, 2026-11-08.
+    leaves_hostel = role != UserRole.STUDENT and target.hostel_id is not None
+    if target.role == role and current == wanted and not leaves_hostel:
         return target
     if target.role == UserRole.ADMIN and role != UserRole.ADMIN:
         # Lock the admin rows while counting: two admins demoting each other at the same moment
@@ -718,8 +734,12 @@ async def set_role(
         if sum(1 for a in admins if a.id != target.id and _can_sign_in(a)) < 1:
             raise LastAdmin
     target.role = role
+    if leaves_hostel:
+        target.hostel_id = None
     await session.execute(delete(WardenHostel).where(WardenHostel.user_id == target.id))
     session.add_all(WardenHostel(user_id=target.id, hostel_id=h) for h in wanted)
+    # Escalations they claimed in a hostel they no longer look after: the claim lapses.
+    await clear_lapsed_claims(session)
     names = (
         sorted(await session.scalars(select(Hostel.name).where(Hostel.id.in_(wanted))))
         if wanted

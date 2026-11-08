@@ -86,7 +86,10 @@ async def export_my_data(me: CurrentUser, session: SessionDep, limiter: LimiterD
 async def update_profile(
     body: ProfileIn, me: CurrentUser, session: SessionDep, settings: SettingsDep, hub: HubDep
 ) -> ProfileOut:
-    if "hostel_id" in body.model_fields_set and body.hostel_id != me.hostel_id:
+    # Staff live in no hostel (a warden's are warden_hostels, set by an admin): a hostel sent by
+    # anyone but a student is ignored, as promotion clears it (services/admin.py set_role).
+    hostel_sent = "hostel_id" in body.model_fields_set and me.role == UserRole.STUDENT
+    if hostel_sent and body.hostel_id != me.hostel_id:
         if hostel_locked(me):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,

@@ -28,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     AccessChannel,
     AccessLog,
+    CallOutcome,
     Escalation,
+    EscalationCall,
     Gate,
     GateScan,
     Hostel,
@@ -43,9 +45,16 @@ from app.models import (
     UserRole,
     WardenHostel,
 )
-from app.schemas import EscalationOut, LastSeenOut
+from app.schemas import EscalationCallOut, EscalationOut, LastSeenOut
 from app.services.admin import student_name, student_roll_no
-from app.services.staff import EVERY_HOSTEL, Staff
+from app.services.staff import (
+    EVERY_HOSTEL,
+    Staff,
+    claim_is_live,
+    head_office,
+    office_for,
+    staff_of,
+)
 
 ALERT_AFTER = timedelta(minutes=30)  # past the return time
 ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
@@ -55,6 +64,12 @@ ESCALATE_AFTER = timedelta(minutes=10)  # after the alert, with no answer
 REPLY_COVERS = timedelta(minutes=60)
 # One access-log entry per admin and share in this time: reopening the page isn't a new look.
 ADMIN_VIEW_GAP = timedelta(minutes=10)
+# Re-alerts of an unclaimed escalation stop after this many (the hand-over to the head wardens
+# is never skipped): two hours of nudges at the default 15 min. One still open after that stays
+# on the Escalations page and the office's badge, but stops waking phones: a student "late"
+# that long has nearly always just not tapped in, and an alarm every 15 min all night would
+# teach the office to ignore the urgent channel.
+MAX_REALERTS = 8
 
 
 class NotOut(Exception):
@@ -69,8 +84,15 @@ class NotFound(Exception):
     pass
 
 
-async def send_alerts(session: AsyncSession, now: datetime) -> list[tuple[uuid.UUID, datetime]]:
-    """Marks outings that just became 30 min late; returns (student, due time) to alert."""
+@dataclass(frozen=True)
+class Late:
+    outing_id: uuid.UUID
+    student_id: uuid.UUID
+    due: datetime
+
+
+async def send_alerts(session: AsyncSession, now: datetime) -> list[Late]:
+    """Marks outings that just became 30 min late; returns each one to alert."""
     rows = await session.execute(
         update(Outing)
         .where(
@@ -79,15 +101,17 @@ async def send_alerts(session: AsyncSession, now: datetime) -> list[tuple[uuid.U
             Outing.expected_return_at < now - ALERT_AFTER,
         )
         .values(overdue_notified_at=now)
-        .returning(Outing.student_id, Outing.expected_return_at)
+        .returning(Outing.id, Outing.student_id, Outing.expected_return_at)
     )
-    return [(student_id, due) for student_id, due in rows.all()]
+    return [Late(o, s, due) for o, s, due in rows.all() if s is not None]
 
 
-async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UUID | None]:
+async def open_escalations(
+    session: AsyncSession, now: datetime
+) -> list[tuple[uuid.UUID, uuid.UUID | None]]:
     """Opens an escalation (once per outing) for each alert left unanswered, and for each
-    student who answered but still isn't back an hour later; returns the student's hostel for
-    each one opened (None: no hostel chosen)."""
+    student who answered but still isn't back an hour later; returns each one opened with the
+    student's hostel (None: no hostel chosen)."""
     unanswered = and_(
         Outing.late_reply.is_(None), Outing.overdue_notified_at < now - ESCALATE_AFTER
     )
@@ -101,14 +125,18 @@ async def open_escalations(session: AsyncSession, now: datetime) -> list[uuid.UU
         ~select(Escalation.id).where(Escalation.outing_id == Outing.id).exists(),
     )
     rows = await session.execute(
-        insert(Escalation).from_select(["outing_id"], due).returning(Escalation.outing_id)
+        insert(Escalation)
+        .from_select(["outing_id"], due)
+        .returning(Escalation.id, Escalation.outing_id)
     )
-    outing_ids = list(rows.scalars())
-    if not outing_ids:
+    opened = dict((outing_id, e_id) for e_id, outing_id in rows.all())
+    if not opened:
         return []
     # The hostel the student was in when they went out: its wardens are the ones to tell.
-    hostels = await session.scalars(select(Outing.hostel_id).where(Outing.id.in_(outing_ids)))
-    return list(hostels)
+    hostels = await session.execute(
+        select(Outing.id, Outing.hostel_id).where(Outing.id.in_(list(opened)))
+    )
+    return [(opened[outing_id], hostel_id) for outing_id, hostel_id in hostels.all()]
 
 
 @dataclass(frozen=True)
@@ -266,6 +294,7 @@ async def _out(
     hostel = await session.get(Hostel, o.hostel_id) if o.hostel_id else None
     request = await session.get(OutingRequest, o.request_id) if o.request_id else None
     resolver = await session.get(User, e.resolved_by) if e.resolved_by else None
+    claimer = await session.get(User, e.claimed_by) if e.claimed_by else None
     now = datetime.now(UTC)
     end = o.returned_at or now
     return EscalationOut(
@@ -303,6 +332,20 @@ async def _out(
         resolved_by=resolver.name if resolver else None,
         resolved_at=e.resolved_at,
         note=e.note,
+        claimed_by=claimer.name if claimer else None,
+        claimed_by_me=admin is not None and e.claimed_by == admin.id,
+        claimed_at=e.claimed_at,
+        handed_over_at=e.handed_over_at,
+        realerts=e.realerts,
+        calls=[
+            EscalationCallOut(at=c.at, by=name, outcome=c.outcome.value, note=c.note)
+            for c, name in await session.execute(
+                select(EscalationCall, User.name)
+                .outerjoin(User, User.id == EscalationCall.by_id)
+                .where(EscalationCall.escalation_id == e.id)
+                .order_by(EscalationCall.at)
+            )
+        ],
     )
 
 
@@ -327,16 +370,156 @@ async def listing(
     return out
 
 
-async def resolve(
-    session: AsyncSession, staff: Staff, escalation_id: uuid.UUID, note: str | None
-) -> None:
+async def _covered(session: AsyncSession, staff: Staff, escalation_id: uuid.UUID) -> Escalation:
+    """The escalation, locked, if this staff member looks after its outing's hostel."""
     e = await session.get(Escalation, escalation_id, with_for_update=True)
     if e is None:
         raise NotFound
     outing = await session.get(Outing, e.outing_id)
     if outing is None or not staff.covers_hostel(outing.hostel_id):
         raise NotFound  # another hostel's outing: as if it didn't exist
+    return e
+
+
+async def resolve(
+    session: AsyncSession, staff: Staff, escalation_id: uuid.UUID, note: str | None
+) -> None:
+    e = await _covered(session, staff, escalation_id)
     if e.resolved_at is None:
         e.resolved_at = datetime.now(UTC)
         e.resolved_by = staff.user.id
         e.note = note
+
+
+# ---------- follow-up: claim, call log, re-alerts, hand-over ----------
+
+
+class Resolved(Exception):
+    """Already handled: nothing more to claim or log."""
+
+
+class ClaimedByOther(Exception):
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
+async def _claimer_name(session: AsyncSession, e: Escalation) -> str:
+    user = await session.get(User, e.claimed_by) if e.claimed_by else None
+    return user.name if user else "someone else"
+
+
+async def _held(session: AsyncSession, e: Escalation) -> bool:
+    """Whether someone holds a live claim on it: claimed by someone who can still act on it
+    (account on, still looking after the outing's hostel). A lapsed claim counts as none."""
+    if e.claimed_by is None:
+        return False
+    claimer = await session.get(User, e.claimed_by)
+    if claimer is None or claimer.deactivated_at is not None:
+        return False
+    office = await staff_of(session, claimer)
+    outing = await session.get(Outing, e.outing_id)
+    return office is not None and outing is not None and office.covers_hostel(outing.hostel_id)
+
+
+async def claim(session: AsyncSession, staff: Staff, escalation_id: uuid.UUID) -> bool:
+    """ "I'm on it": stops the re-alerts. Returns False if this person had it already (the
+    caller then audits nothing). Someone else's claim stays theirs while it's live (see
+    _held); a lapsed one is taken over."""
+    e = await _covered(session, staff, escalation_id)
+    if e.resolved_at is not None:
+        raise Resolved
+    if e.claimed_by == staff.user.id:
+        return False
+    if await _held(session, e):
+        raise ClaimedByOther(await _claimer_name(session, e))
+    e.claimed_by = staff.user.id
+    e.claimed_at = datetime.now(UTC)
+    return True
+
+
+async def release(session: AsyncSession, staff: Staff, escalation_id: uuid.UUID) -> None:
+    """Gives a claim back (re-alerts start again from now). Only the person who claimed it,
+    or a head warden or admin, may; anyone covering the hostel may give back a lapsed one."""
+    e = await _covered(session, staff, escalation_id)
+    if e.resolved_at is not None:
+        raise Resolved
+    if e.claimed_by is None:
+        return
+    if e.claimed_by != staff.user.id and not staff.every_hostel and await _held(session, e):
+        raise ClaimedByOther(await _claimer_name(session, e))
+    e.claimed_by = None
+    e.claimed_at = None
+    e.realerted_at = datetime.now(UTC)  # the next re-alert is a full interval away
+
+
+async def log_call(
+    session: AsyncSession,
+    staff: Staff,
+    escalation_id: uuid.UUID,
+    outcome: CallOutcome,
+    note: str | None,
+) -> EscalationCall:
+    """Someone logging a call is following up: an unclaimed escalation (or one whose claim
+    lapsed) becomes theirs."""
+    e = await _covered(session, staff, escalation_id)
+    if e.resolved_at is not None:
+        raise Resolved
+    if not await _held(session, e):
+        e.claimed_by = staff.user.id
+        e.claimed_at = datetime.now(UTC)
+    call = EscalationCall(escalation_id=e.id, by_id=staff.user.id, outcome=outcome, note=note)
+    session.add(call)
+    return call
+
+
+@dataclass(frozen=True)
+class FollowUp:
+    escalation_id: uuid.UUID
+    realerts: int  # this escalation's re-alert number (0 for the hand-over)
+    handed_over: bool  # True: the hand-over to the head wardens
+    recipients: list[User]
+
+
+async def follow_ups(
+    session: AsyncSession, now: datetime, realert_every: timedelta, hand_over_after: timedelta
+) -> list[FollowUp]:
+    """For open escalations nobody has claimed while the student is still out: hands each one
+    to the head wardens once `hand_over_after` has passed since it opened, and otherwise
+    re-alerts every `realert_every`, at most MAX_REALERTS times. Before the hand-over,
+    re-alerts go to the student's hostel's office first (its wardens; the head wardens or
+    admins if it has none); after it, to the head wardens (the admins if there are none). A
+    claim whose claimer can no longer act on it (turned off, or no longer looking after the
+    hostel) has lapsed: it's dropped and the follow-up goes on. Rows are locked (SKIP LOCKED),
+    so two sweeps at once can't both send one."""
+    rows = (
+        await session.execute(
+            select(Escalation, Outing.hostel_id)
+            .join(Outing, Outing.id == Escalation.outing_id)
+            .where(
+                Escalation.resolved_at.is_(None),
+                or_(Escalation.claimed_by.is_(None), ~claim_is_live(Outing.hostel_id)),
+                or_(Escalation.handed_over_at.is_(None), Escalation.realerts < MAX_REALERTS),
+                Outing.returned_at.is_(None),
+            )
+            .with_for_update(of=Escalation, skip_locked=True)
+        )
+    ).all()
+    if not rows:
+        return []
+    head = await head_office(session)
+    out: list[FollowUp] = []
+    for e, hostel_id in rows:
+        if e.claimed_by is not None:  # lapsed
+            e.claimed_by = None
+            e.claimed_at = None
+        if e.handed_over_at is None and e.created_at <= now - hand_over_after:
+            e.handed_over_at = now
+            e.realerted_at = now
+            out.append(FollowUp(e.id, 0, True, head))
+        elif e.realerts < MAX_REALERTS and (e.realerted_at or e.created_at) <= now - realert_every:
+            e.realerted_at = now
+            e.realerts += 1
+            who = head if e.handed_over_at else await office_for(session, hostel_id)
+            out.append(FollowUp(e.id, e.realerts, False, who))
+    return out

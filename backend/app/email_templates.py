@@ -686,3 +686,208 @@ def safe_return_back_email(
             reason=_contact_reason(student),
         )
     )
+
+
+# ---------- wave 2 alerts (plain text: these layouts haven't had an inbox test) ----------
+#
+# To the hostel office, names and numbers stay behind the sign-in, as in the escalation email.
+
+OFFICE_REASON = "you're on the Lumiback hostel office for this student"
+
+
+def escalation_follow_up_email(*, to: str, handed_over: bool, web_url: str) -> Email:
+    """Nobody has claimed an open escalation: a re-alert, or the hand-over to head wardens."""
+    if handed_over:
+        heading = "A late student's follow-up is now with you"
+        first = (
+            "Nobody in the student's hostel office has claimed it yet, so it has been handed "
+            "to the head wardens."
+        )
+    else:
+        heading = "A late student still has nobody following up"
+        first = "Nobody has claimed it on the Escalations page yet."
+    return notice_email(
+        Notice(
+            kind="escalation_follow_up",
+            to=to,
+            subject=f"Lumiback: {heading.lower()}",
+            greeting="Hello,",
+            label="Needs follow-up",
+            tone="alert",
+            heading=heading,
+            paragraphs=(
+                first,
+                'Open Escalations and choose "I\'m on it" so the office knows someone is '
+                "calling. Their phone numbers and emergency contact are there.",
+            ),
+            action=("Open Escalations", f"{web_url}/admin/escalations"),
+            note=None,
+            reason=OFFICE_REASON,
+            link="plain",
+        )
+    )
+
+
+def request_waiting_email(*, to: str, backup: bool, minutes: int, web_url: str) -> Email:
+    """A pending outing request: a reminder to the hostel's office, or the backup notice."""
+    heading = f"An outing request has waited {minutes} minutes"
+    return notice_email(
+        Notice(
+            kind="request_waiting",
+            to=to,
+            subject=f"Lumiback: {heading.lower()}",
+            greeting="Hello,",
+            label="Waiting",
+            tone="neutral",
+            heading=heading,
+            paragraphs=(
+                (
+                    "Its hostel's wardens haven't decided it yet. As a head warden, you can "
+                    "approve or decline it."
+                    if backup
+                    else "A student is waiting for the hostel office to approve or decline it."
+                ),
+            ),
+            action=("Open Requests", f"{web_url}/admin/requests"),
+            note=None,
+            reason=OFFICE_REASON,
+            link="text",
+        )
+    )
+
+
+def call_me_email(*, to: str, student_id: str, web_url: str) -> Email:
+    return notice_email(
+        Notice(
+            kind="call_me",
+            to=to,
+            subject="Lumiback: a student who is out asked the office to call them",
+            greeting="Hello,",
+            label="Call back",
+            tone="alert",
+            heading="A student asked you to call them",
+            paragraphs=(
+                "They're out on an outing and their hostel has no office number in Lumiback, "
+                "so they asked to be called.",
+                "Their phone number is on their record.",
+            ),
+            action=("Open their record", f"{web_url}/admin/people/{student_id}"),
+            note="Add the hostel's number on the Hostel page so students can call you.",
+            reason=OFFICE_REASON,
+            link="plain",
+        )
+    )
+
+
+def office_notice_email(*, to: str, name: str, message: str, recall: bool, web_url: str) -> Email:
+    """A notice from the hostel office to a student who is out (or a recall)."""
+    heading = "Please come back to the hostel now" if recall else "A notice from the hostel office"
+    return notice_email(
+        Notice(
+            kind="office_notice",
+            to=to,
+            subject=f"Lumiback: {heading.lower()}",
+            greeting=f"Hi {_first(name)},",
+            label="Recall" if recall else "Notice",
+            tone="alert" if recall else "neutral",
+            heading=heading,
+            paragraphs=(f"The hostel office says: {message}",),
+            action=("Open Lumiback", f"{web_url}/home"),
+            note=None,
+            reason="you're out on a Lumiback outing",
+            link="plain",
+        )
+    )
+
+
+@dataclass(frozen=True)
+class Fix:
+    """One location fix sent with a help alert."""
+
+    lat: float
+    lng: float
+    accuracy_m: float
+    mocked: bool = False
+
+    @property
+    def map_url(self) -> str:
+        return (
+            f"https://www.openstreetmap.org/?mlat={self.lat:.5f}&mlon={self.lng:.5f}"
+            f"#map=17/{self.lat:.5f}/{self.lng:.5f}"
+        )
+
+
+def help_office_email(*, to: str, at: datetime, fix: Fix | None, web_url: str) -> Email:
+    """To the hostel's wardens and the head wardens: one location fix, no name (who it is,
+    and their numbers, are on the Escalations page)."""
+    if fix is None:
+        where = "Their phone didn't give a location."
+    else:
+        where = (
+            f"Their phone's location then (within about {round(fix.accuracy_m)} m): {fix.map_url}"
+        )
+        if fix.mocked:
+            where += " The phone said this location came from a mock-location app."
+    return notice_email(
+        Notice(
+            kind="help_office",
+            to=to,
+            subject=f"Lumiback: a student asked for help at {_hhmm(at)} IST",
+            greeting="Hello,",
+            label="Help",
+            tone="alert",
+            heading="A student who is out asked for help",
+            paragraphs=(
+                f"They pressed Help in Lumiback at {_hhmm(at)} IST.",
+                where,
+                "Who they are and their phone number are on the Escalations page. This is one "
+                "location, not tracking.",
+            ),
+            action=("Open Escalations", f"{web_url}/admin/escalations"),
+            note=None,
+            reason=OFFICE_REASON,
+            link="plain",
+        )
+    )
+
+
+def help_contact_email(
+    *,
+    to: str,
+    contact_name: str | None,
+    student: str,
+    at: datetime,
+    phone: str | None,
+    office_phone: str | None,
+    follower: bool,
+) -> Email:
+    """To the student's emergency contact, or someone they share their location with who
+    doesn't use the app: no location (the office has the one fix)."""
+    first = _first(student)
+    call = [f"You can call {first} on {phone}." if phone else f"Try calling {first}."]
+    if office_phone:
+        call.append(f"The hostel office's number is {office_phone}.")
+    reason = (
+        f"{student} shares their location with you in Lumiback"
+        if follower
+        else f"{student} gave this address as their emergency contact in Lumiback"
+    )
+    return notice_email(
+        Notice(
+            kind="help_contact",
+            to=to,
+            subject=f"Lumiback: {student} asked for help",
+            greeting=f"Hi {_first(contact_name or '')},",
+            label="Help",
+            tone="alert",
+            heading=f"{first} asked for help",
+            paragraphs=(
+                f"{student} pressed Help in Lumiback at {_hhmm(at)} IST while out of the "
+                "hostel. The hostel office has been told.",
+                " ".join(call),
+            ),
+            action=None,
+            note=None,
+            reason=reason,
+        )
+    )

@@ -115,6 +115,7 @@ def test_overview_and_who_is_out(client, db, admin, riya):
         "pending_requests": 0,
         "open_escalations": 0,
         "corrections": 0,
+        "open_help": 0,
     }
 
     everyone = client.get("/admin/outings", headers=admin).json()
@@ -334,7 +335,15 @@ def test_only_an_unused_gate_can_be_removed(client, db, admin):
 
 
 def test_settings_round_trip(client, db, admin):
-    quiet_off = {"kiosk_quiet_from": None, "kiosk_quiet_until": None}
+    quiet_off = {
+        "kiosk_quiet_from": None,
+        "kiosk_quiet_until": None,
+        # Alert timings (wave 2): unchanged here, tested in test_alerts.py.
+        "request_remind_minutes": 15,
+        "request_backup_minutes": 30,
+        "escalation_realert_minutes": 15,
+        "escalation_takeover_minutes": 30,
+    }
     assert client.get("/admin/settings", headers=admin).json() == {
         "curfew": "21:30",
         "scan_retention_days": 180,
