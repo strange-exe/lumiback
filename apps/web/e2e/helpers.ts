@@ -129,18 +129,25 @@ export async function designMatrix(page: Page, name: string): Promise<void> {
       // fade across each other for ~150 ms, and a fast runner's axe pass sampled that crossing.
       // Judge the resting colours: wait for running CSS transitions (never infinite loops),
       // at most 2 s so a transition that never settles can't stall the test.
-      const settled = await page.evaluate(() =>
-        Promise.race([
-          Promise.all(
-            document
-              .getAnimations()
-              .filter((a) => a instanceof CSSTransition)
-              .map((a) => a.finished.catch(() => undefined)),
-          ).then(() => true),
-          new Promise<boolean>((done) => setTimeout(() => done(false), 2_000)),
-        ]),
-      );
-      expect(settled, `colour transitions settle (${name} ${label} ${scheme})`).toBe(true);
+      // Lists any still running, so a failure names the element and property.
+      const unsettled = await page.evaluate(async () => {
+        const running = document
+          .getAnimations()
+          .filter((a): a is CSSTransition => a instanceof CSSTransition);
+        await Promise.race([
+          Promise.all(running.map((a) => a.finished.catch(() => undefined))),
+          new Promise((done) => setTimeout(done, 2_000)),
+        ]);
+        return running
+          .filter((a) => a.playState !== "finished" && a.playState !== "idle")
+          .map((a) => {
+            const el = (a.effect as KeyframeEffect | null)?.target;
+            const where = el ? `${el.tagName.toLowerCase()}.${[...el.classList].join(".")}` : "?";
+            const t = a.effect?.getComputedTiming();
+            return `${where} ${a.transitionProperty} ${a.playState} at ${String(a.currentTime)} of ${String(t?.endTime)}`;
+          });
+      });
+      expect(unsettled, `colour transitions settle (${name} ${label} ${scheme})`).toEqual([]);
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
