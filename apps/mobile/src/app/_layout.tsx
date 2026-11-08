@@ -22,7 +22,11 @@ import { UpdatePrompt } from "@/updates/UpdatePrompt";
 void SplashScreen.preventAutoHideAsync();
 
 function Navigator(): ReactNode {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
+  // Once the starting screen has handed over (or the launch went offline), it never returns:
+  // signing out later goes straight to the sign-in form.
+  const [handedOff, setHandedOff] = useState(false);
+  if (status === "offline" && !handedOff) setHandedOff(true);
   const pathname = usePathname();
   const colors = useColors();
   const scheme = useColorScheme();
@@ -46,11 +50,18 @@ function Navigator(): ReactNode {
   }, [ready]);
 
   if (!ready) return null;
-  if (status === "loading") {
+  // The starting screen stays up past the check for its short hand-off ("Server started",
+  // "Welcome back"), then hands over once. Offline skips it: "Can't reach Lumiback" takes over.
+  if (!handedOff && status !== "offline") {
     return (
       <>
-        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-        <StartingScreen />
+        {/* The starting screen is the dark LED board in both modes. */}
+        <StatusBar style="light" />
+        <StartingScreen
+          outcome={status === "loading" ? null : status}
+          userName={user?.name ?? null}
+          onDone={() => setHandedOff(true)}
+        />
       </>
     );
   }
