@@ -65,6 +65,9 @@ test.describe("as an admin", () => {
     page,
     browser,
   }) => {
+    // Three Settings saves, the kiosk, Gates twice and two design matrices (8 axe scans), with
+    // first compiles of those routes on CI's dev server: 60 s ran out there, so triple it.
+    test.slow();
     const errors = watchForErrors(page);
     const kiosk = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     try {
