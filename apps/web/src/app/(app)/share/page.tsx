@@ -2,12 +2,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { dueLine } from "@/features/outings/running-late";
 import { formatTime } from "@/features/outings/time";
 import { shareApi } from "@/features/share/api";
 import { SharePanel } from "@/features/share/components/SharePanel";
 import { requireUser } from "@/lib/session";
+import type { Watching } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Share" };
+
+/** Their due-back time while they're out (never the running-late reason). */
+function DueBack({ share }: { share: Watching }): ReactNode {
+  const line = dueLine(share.due_back_at, share.original_due_at);
+  return line ? <span className="tabular-nums text-ink">{line}</span> : null;
+}
 
 export default async function SharePage(): Promise<ReactNode> {
   const { token } = await requireUser();
@@ -32,7 +40,10 @@ export default async function SharePage(): Promise<ReactNode> {
                   className="flex min-h-12 items-center justify-between gap-3 py-2 hover:text-accent"
                 >
                   <span className="font-bold text-ink">{share.sharer.name}</span>
-                  <span className="text-sm text-muted">until {formatTime(share.ends_at)}</span>
+                  <span className="flex flex-col items-end text-right text-sm text-muted">
+                    <span>until {formatTime(share.ends_at)}</span>
+                    <DueBack share={share} />
+                  </span>
                 </Link>
               </li>
             ))}

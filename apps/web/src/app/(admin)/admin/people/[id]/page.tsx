@@ -19,6 +19,7 @@ import {
 } from "@/features/admin/record";
 import { studentRecordOr404 } from "@/features/admin/record-data";
 import { inViaLabel } from "@/features/outings/corrections";
+import { officeLateNote } from "@/features/outings/running-late";
 import { formatDay, formatMinutes } from "@/features/outings/time";
 import { ApiError } from "@/lib/api-error";
 import { requireStaff } from "@/lib/session";
@@ -236,6 +237,7 @@ function OutingList({ outings }: { outings: RecordOuting[] }): ReactNode {
 
 function OutingCard({ outing: o }: { outing: RecordOuting }): ReactNode {
   const backLate = o.status === "returned" && o.late_minutes > 0;
+  const late = officeLateNote(o, formatWhen);
   return (
     <article className="flex flex-col gap-3 rounded-sheet border border-line bg-surface p-4 sm:p-5">
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -284,6 +286,13 @@ function OutingCard({ outing: o }: { outing: RecordOuting }): ReactNode {
           {inViaLabel(o.in_via) ? <dd className="text-muted">{inViaLabel(o.in_via)}</dd> : null}
         </div>
       </dl>
+
+      {late ? (
+        <div className="flex flex-col gap-0.5 text-sm">
+          <p className="text-ink">{late.moved}</p>
+          {late.reason ? <p className="break-words text-muted">Reason: {late.reason}</p> : null}
+        </div>
+      ) : null}
 
       {o.late_reply ? (
         <p className="text-sm text-ink">

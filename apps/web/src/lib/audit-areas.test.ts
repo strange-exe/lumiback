@@ -30,3 +30,8 @@ test("alerts' actions read in plain words", () => {
   assert.equal(actionLabel("escalation:claim"), "Late follow-ups: claim");
   assert.equal(actionLabel("escalation:call"), "Late follow-ups: call");
 });
+
+test("update announcements have their own area", () => {
+  assert.equal(isAuditArea("announce"), true);
+  assert.equal(actionLabel("announce:update"), "Announcements: update");
+});

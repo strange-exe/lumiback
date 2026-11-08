@@ -67,6 +67,37 @@ test("a developer sees the API, database and website status", async ({ browser }
   }
 });
 
+// The test API logs pushes instead of sending them (scripts/e2e_server.py): no phone is reached.
+test("a developer announces an update, confirmed first, once a day", async ({ browser }) => {
+  const page = await asDeveloper(browser);
+  const errors = watchForErrors(page);
+  try {
+    await page.goto("/admin/status");
+    const form = page.getByRole("region", { name: "Announce an update" });
+    await form.getByLabel("Title").fill("Lumiback has been updated");
+    await form.getByLabel("What's new").fill("Running late? Move your due-back time once.");
+    await form.getByRole("button", { name: "Announce" }).click();
+    const confirm = page.getByRole("dialog", { name: "Send this to every phone with Lumiback?" });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Send to every phone" }).click();
+    // The answer's body is read (a 202 used to arrive empty and the success showed as an error).
+    await expect(
+      form.getByText(/^(Sending to \d+ phones?|Announced, but no phones)/),
+    ).toBeVisible();
+    await expect(form.getByRole("alert")).toHaveText(""); // always there, empty: no error
+
+    // A sent announcement clears the form; a second one the same day is refused.
+    await form.getByLabel("Title").fill("Lumiback has been updated again");
+    await form.getByLabel("What's new").fill("One more thing.");
+    await form.getByRole("button", { name: "Announce" }).click();
+    await confirm.getByRole("button", { name: "Send to every phone" }).click();
+    await expect(form).toContainText("An update was already announced in the last 24 hours.");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+});
+
 test("while viewing as a role, Status is that role's: gone", async ({ browser }) => {
   const page = await asDeveloper(browser);
   try {

@@ -79,6 +79,13 @@ export interface Outing {
   correction?: Correction | null;
   /** Only on the current outing: the hostel office to call while out or late. */
   office?: OfficeContact | null;
+  /** "Running late?": the due time before the student moved it (expected_return_at is the new one). */
+  original_return_at?: string | null;
+  running_late_minutes?: number | null;
+  running_late_reason?: string | null;
+  running_late_at?: string | null;
+  /** What can be chosen now (a subset of 15, 30, 60); [] means the control isn't shown. */
+  running_late_choices?: number[];
 }
 
 /**
@@ -247,6 +254,10 @@ export interface Watching {
   sharer: { id: string; name: string };
   source: string;
   ends_at: string;
+  /** The sharer's due-back time while they're out on an outing; null otherwise. */
+  due_back_at?: string | null;
+  /** Set when they said they're running late: the earlier due time. */
+  original_due_at?: string | null;
 }
 
 export interface LiveLocation {
@@ -322,6 +333,11 @@ export interface AdminOuting {
   /** An outing on a day that needs approval, which an admin approved. */
   on_request?: boolean;
   in_via?: InVia | null;
+  /** "Running late?": the due time before the student moved it (expected_return_at is the new one). */
+  original_return_at?: string | null;
+  running_late_minutes?: number | null;
+  running_late_reason?: string | null;
+  running_late_at?: string | null;
 }
 
 /** GET /admin/corrections: a student's ask, with the outing as it stands. */

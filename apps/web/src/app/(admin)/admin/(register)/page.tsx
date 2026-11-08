@@ -13,6 +13,7 @@ import { exportDate, exportMessage } from "@/features/admin/export";
 import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
 import { inViaLabel } from "@/features/outings/corrections";
+import { officeLateNote } from "@/features/outings/running-late";
 import { formatMinutes } from "@/features/outings/time";
 import { recordHref } from "@/features/admin/record";
 import { extrasFrom, filterHref, MAX_Q, pageHref, resolveFilters } from "@/lib/filters";
@@ -210,6 +211,18 @@ function StudentName({ outing }: { outing: AdminOuting }): ReactNode {
   );
 }
 
+/** The student said they're running late: the time it moved from, and their reason (as text). */
+function RunningLateNote({ outing }: { outing: AdminOuting }): ReactNode {
+  const note = officeLateNote(outing, formatWhen);
+  if (!note) return null;
+  return (
+    <span className="mt-0.5 flex flex-col text-sm font-normal text-muted">
+      <span>{note.moved}</span>
+      {note.reason ? <span className="break-words">Reason: {note.reason}</span> : null}
+    </span>
+  );
+}
+
 /** Name or roll number search; the state and hostel chosen stay as they are. */
 function RegisterSearch({
   state,
@@ -301,6 +314,7 @@ function OutingsTable({ outings, nowIso }: { outings: AdminOuting[]; nowIso: str
             <td className="text-sm tabular-nums text-ink md:py-3.5 md:pr-4">
               <span className="text-muted md:hidden">Due </span>
               {formatWhen(o.expected_return_at)}
+              <RunningLateNote outing={o} />
             </td>
             <td className="text-sm font-bold md:py-3.5 md:pr-4">
               <span className="flex flex-wrap gap-1.5">
@@ -377,6 +391,7 @@ function LateToday({
                 {inViaLabel(o.in_via) ? (
                   <p className="text-sm text-muted">{inViaLabel(o.in_via)}</p>
                 ) : null}
+                <RunningLateNote outing={o} />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span

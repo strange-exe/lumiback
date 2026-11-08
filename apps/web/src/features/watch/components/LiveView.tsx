@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { Lantern } from "@/components/illustrations/Lantern";
 import { LiveMap } from "@/components/map/LiveMap";
+import { dueLine } from "@/features/outings/running-late";
 import { formatTime } from "@/features/outings/time";
 import type { ClaimResult } from "@/features/watch/access";
 import { claimWatchKey } from "@/features/watch/actions";
@@ -129,6 +130,9 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
   const first = share ? (share.sharer.name.split(" ")[0] ?? share.sharer.name) : null;
   const recordedAt = location ? Date.parse(location.recorded_at) : null;
   const paused = recordedAt !== null && now > 0 && now - recordedAt > STALE_MS;
+  // Their due-back time while they're out (and the earlier one if they're running late); never
+  // the reason, which only the hostel office sees.
+  const due = share ? dueLine(share.due_back_at, share.original_due_at) : null;
 
   if (phase === "connecting") {
     return <p className="text-muted">Connecting…</p>;
@@ -218,6 +222,7 @@ export function LiveView({ sessionId }: { sessionId: string }): ReactNode {
               : `Shared with you until ${formatTime(share.ends_at)}.`}
           </p>
         )}
+        {due && <p className="mt-1 font-bold tabular-nums text-ink">{due}.</p>}
       </div>
       <LiveMap
         point={location}

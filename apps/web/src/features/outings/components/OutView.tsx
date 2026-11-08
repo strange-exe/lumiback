@@ -5,6 +5,8 @@ import { LedStage } from "@/components/led/LedBoard";
 import { OfficeHelp } from "@/features/outings/components/OfficeHelp";
 import { OutBoard } from "@/features/outings/components/OutBoard";
 import { LateReply, ReturnButton } from "@/features/outings/components/OutingControls";
+import { RunningLate } from "@/features/outings/components/RunningLate";
+import { dueLine, lateChoices } from "@/features/outings/running-late";
 import { SafeReturnNote, type SafeReturnState } from "@/features/outings/components/SafeReturnNote";
 import { formatMinutes, formatTime } from "@/features/outings/time";
 import type { Outing } from "@/lib/types";
@@ -20,6 +22,10 @@ export function OutView({
   safeReturn?: SafeReturnState;
 }): ReactNode {
   const overdue = outing.status === "overdue";
+  const moved = outing.original_return_at
+    ? dueLine(outing.expected_return_at, outing.original_return_at)
+    : null;
+  const lateOptions = lateChoices(outing.running_late_choices);
 
   return (
     <section aria-labelledby="out-heading" className="flex flex-col gap-6">
@@ -45,6 +51,16 @@ export function OutView({
         />
       </LedStage>
 
+      {/* Always mounted, so the new time is announced when "Running late?" (which unmounts
+          once used) moves it. */}
+      <div aria-live="polite" className="empty:hidden">
+        {moved ? (
+          <p className="rounded-control bg-accent-soft px-4 py-3 text-ink">
+            <strong>{moved}.</strong> You told the hostel office you&apos;re running late.
+          </p>
+        ) : null}
+      </div>
+
       {overdue && (
         <p role="status" className="rounded-control bg-danger-soft px-4 py-3 text-danger">
           You&apos;re {formatMinutes(outing.late_minutes)} late.
@@ -60,6 +76,9 @@ export function OutView({
         ) : (
           <LateReply />
         )
+      ) : null}
+      {lateOptions.length > 0 ? (
+        <RunningLate dueAt={outing.expected_return_at} choices={lateOptions} />
       ) : null}
       <SafeReturnNote sessionId={outing.safe_return_session_id ?? null} state={safeReturn} />
       <ReturnButton />

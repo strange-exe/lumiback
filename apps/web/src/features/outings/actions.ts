@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { pathId } from "@/features/admin/form";
 import { CALL_ME_SENT, callMeError, helpError, helpFix } from "@/features/outings/alerts";
 import { correctionBody } from "@/features/outings/corrections";
+import { lateMinutes, lateReason, runningLateError } from "@/features/outings/running-late";
 import { safeReturnShareToSend } from "@/features/outings/safe-return";
 import { ApiError, callBackend } from "@/lib/backend";
 import { accessToken } from "@/lib/session";
@@ -103,6 +104,36 @@ export async function askOfficeToCall(_: FormState): Promise<FormState> {
     throw error;
   }
   return { error: null, notice: CALL_ME_SENT };
+}
+
+/**
+ * "Running late?", after the student confirmed: moves the due-back time by 15, 30 or 60
+ * minutes, once per outing, and tells the hostel office (with the optional reason) and the
+ * student's followers (only the new time). The server decides what is still allowed.
+ */
+export async function sayRunningLate(_: FormState, form: FormData): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  const fields = { minutes: text(form, "minutes"), reason: text(form, "reason") };
+  const minutes = lateMinutes(fields.minutes);
+  if (minutes === null) return { error: "Choose how much later you'll be.", fields };
+  const reason = lateReason(fields.reason);
+  if (!reason.ok) return { error: reason.error, fields };
+  try {
+    await callBackend<Outing>("/outings/current/running-late", {
+      method: "POST",
+      token,
+      body: { minutes, reason: reason.value },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401) redirect("/sign-in");
+      return { error: runningLateError(error.status, error.detail), fields };
+    }
+    throw error;
+  }
+  revalidatePath("/home");
+  revalidatePath("/history");
+  return { error: null, notice: "The hostel office has been told." };
 }
 
 /** What a help alert hands back: who was told, and the office number to call. */

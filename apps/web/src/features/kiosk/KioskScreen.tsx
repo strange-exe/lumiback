@@ -161,6 +161,9 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
       later(wait);
     }
 
+    // With a kiosk link, load() calls the API at once, which wakes it. Without one the page
+    // never calls it, so one cheap request wakes a sleeping API for the admin setting it up.
+    if (!token) void fetch(`${apiUrl}/health`, { cache: "no-store" }).catch(() => undefined);
     void load();
     const wake = (): void => {
       if (document.visibilityState === "visible" && timer !== undefined) {

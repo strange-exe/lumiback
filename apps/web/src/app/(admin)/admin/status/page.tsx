@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { formatWhen } from "@/features/admin/format";
+import { announceTiming, type AnnounceState } from "@/features/developer/announce";
+import { AnnounceForm } from "@/features/developer/components/AnnounceForm";
 import { ApiError, callBackend } from "@/lib/backend";
 import { CURRENT } from "@/lib/changelog";
 import { requireDeveloper } from "@/lib/session";
@@ -12,7 +14,8 @@ export const metadata: Metadata = { title: "Status" };
 /**
  * For developers: which API and website builds are running, and whether the database has every
  * migration. Only versions, commits and the migration: never settings, addresses or keys (the
- * API's /meta/status is as small on purpose). A 404 for everyone else (requireDeveloper).
+ * API's /meta/status is as small on purpose). Also where a release is announced to every phone.
+ * A 404 for everyone else (requireDeveloper).
  */
 export default async function StatusPage(): Promise<ReactNode> {
   const { token } = await requireDeveloper();
@@ -22,6 +25,12 @@ export default async function StatusPage(): Promise<ReactNode> {
   });
   // Render sets RENDER_GIT_COMMIT on each deploy; only a hex SHA is shown.
   const webCommit = commitOf(process.env.RENDER_GIT_COMMIT);
+  const announced = await callBackend<AnnounceState>("/admin/announcements", { token }).catch(
+    () => null,
+  );
+  // Rendered per request: the server's clock says whether the next one is allowed yet.
+  const now = new Date().getTime();
+  const timing = announced ? announceTiming(announced, now, formatWhen) : null;
 
   return (
     <div className="flex max-w-2xl flex-col gap-8">
@@ -59,6 +68,11 @@ export default async function StatusPage(): Promise<ReactNode> {
           <Fact term="Commit">{shortCommit(webCommit)}</Fact>
         </dl>
       </Facts>
+
+      <AnnounceForm
+        last={timing?.last ?? "Couldn't check when the last update was announced."}
+        next={timing?.next ?? "The API refuses a second one within a day."}
+      />
     </div>
   );
 }

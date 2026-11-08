@@ -25,10 +25,12 @@ const PARTS: Part[] = [
       "Your hostel (it decides your outing hours), and, if you add them, your phone number and an emergency contact's name, relation, phone number and email.",
       "Outing requests for days that need approval (the hostel office chooses which days, such as Sundays and holidays): where and why, how long, and the phone numbers on the form, with the hostel office's decision.",
       "If you're late: your answer to the “Are you OK?” alert, and whether the hostel office followed it up.",
+      "If you say you're running late: how much later (15, 30 or 60 minutes), when you said it, the due-back time before and after, and the optional reason you give.",
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
       "Who looked at your share and when, so you can see it. Guests who follow you give a name for you to recognise.",
       "When you tap out or in at a gate: which gate, the time, whether the scan was accepted, how far your phone was from the gate and how precise its GPS was. Never your coordinates.",
-      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, reminders before you're due back, and when you're 30 minutes past your return time. If you don't use the app, request decisions and the late alert are emailed to your university address instead.",
+      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, reminders before you're due back, when you're 30 minutes past your return time, news about someone you follow (back, late, running late, sharing timed out), and app update notices. If you don't use the app, request decisions and the late alert are emailed to your university address instead.",
+      "On your phone, while you're out: a copy of your current trip (destination, times and your hostel office's number) so the app can show it without a connection. The app drops it the next time it loads after you're back, and deletes it when you sign in or out.",
     ],
   },
   {
@@ -37,6 +39,9 @@ const PARTS: Part[] = [
       "Nobody sees your location unless you start sharing and approve them. That includes hostel admins, with one safety exception below.",
       "Hostel admins (wardens and security staff given admin access) see the outing register: your name, email, roll number, hostel, destination, when you left, when you're due and when you returned, and whether each was scanned at a gate or self-reported. They also see gate scans, including refused ones, and can download the register as a spreadsheet.",
       "Admins see your outing requests, including the phone numbers on them, so they can decide and call if needed.",
+      "Running late: the hostel office is told (your hostel's wardens; if it has none, the head wardens, or else the admins). Hostel admins see the new due-back time, the earlier one and your reason in the outing register, and the wardens' phone notification shows your name and reason (it passes through Expo and Google's push service, and may show on a locked screen). The people you share your location with see only the times, never the reason.",
+      "While you share your location and are out on an outing, the people following you see when you're due back (and the earlier time if you said you're running late). People who follow you with a Lumiback account are also notified, in the app or by email if they don't use it, when you're back, when you're 30 minutes late, when you say you're running late, and when a share with them times out while you're still out (its time ran out, or your phone or tab stopped sending your location). That last notice says only that it timed out, not that you're out or when you're due. If you stop sharing yourself, nobody is told.",
+      "App update notices: when a new version of Lumiback is released, the team may send one notification to every phone with the app. It contains no personal data and is sent at most once a day.",
       "If you're 30 minutes late and don't answer the alert within 10 minutes, admins are told and see your phone number, your emergency contact and your hostel warden's number. If you are sharing your location at that moment, they also see your latest shared position, and that look is listed in your share's viewer history. Otherwise they see only your last gate scan: which gate, and when. Nothing new is collected for this.",
       "Help: if you press Help while out, your phone takes one location fix and the hostel office is told at once (your hostel's wardens and the head wardens), with that position. The people you share your location with, your emergency contact and your safe-return contact are told you asked for help, with your phone number and the hostel office's, but not where you are. The position is deleted after a day; the office keeps the time it was pressed and when they handled it, with the outing.",
       "Safe return: only if you tick “Let my emergency contact follow until I'm back” when you check out, we email that contact a link. It says you chose to send it, shows your location while you share it from the app or website, and stops working when you're back or stop sharing. They're also emailed if you're 30 minutes late, and when you're back. Their views are listed in your share's viewer history like anyone else's. Their email address is kept with that outing only until you're back.",
@@ -98,7 +103,7 @@ export default function PrivacyPage(): ReactNode {
           <h1 className="font-display text-title text-ink">Privacy</h1>
           <p className="mt-2 max-w-[60ch] leading-relaxed text-muted">
             Lumiback exists to share your location with people you choose, so this page says exactly
-            what is kept, who can see it, and for how long. Last updated 7 November 2026.
+            what is kept, who can see it, and for how long. Last updated 8 November 2026.
           </p>
         </div>
         {PARTS.map((part) => (

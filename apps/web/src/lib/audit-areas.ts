@@ -6,6 +6,7 @@
 
 export const AUDIT_AREAS = [
   "account",
+  "announce",
   "correction",
   "escalation",
   "gate",
@@ -28,6 +29,7 @@ export type AuditArea = (typeof AUDIT_AREAS)[number];
 
 export const AUDIT_AREA_LABELS: Readonly<Record<AuditArea, string>> = {
   account: "Accounts",
+  announce: "Announcements",
   correction: "Corrections",
   escalation: "Late follow-ups",
   gate: "Gates",
