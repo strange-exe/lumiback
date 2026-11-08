@@ -46,7 +46,7 @@ async function setQuietHours(page: Page, on: boolean): Promise<void> {
   await expect(async () => {
     await box.setChecked(on);
     await expect(box).toBeChecked({ checked: on, timeout: 1_000 });
-  }).toPass();
+  }).toPass({ timeout: 15_000 });
   if (on) {
     await page.getByLabel("Off from").fill(istClock(-60));
     await page.getByLabel("Back on at").fill(istClock(60));
@@ -65,9 +65,6 @@ test.describe("as an admin", () => {
     page,
     browser,
   }) => {
-    // Three Settings saves, the kiosk, Gates twice and two design matrices (8 axe scans), with
-    // first compiles of those routes on CI's dev server: 60 s ran out there, so triple it.
-    test.slow();
     const errors = watchForErrors(page);
     const kiosk = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     try {

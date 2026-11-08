@@ -127,15 +127,20 @@ export async function designMatrix(page: Page, name: string): Promise<void> {
       );
       // A scheme flip starts colour transitions (the active nav link, buttons): fill and label
       // fade across each other for ~150 ms, and a fast runner's axe pass sampled that crossing.
-      // Judge the resting colours: wait for running CSS transitions (never infinite loops).
-      await page.evaluate(() =>
-        Promise.all(
-          document
-            .getAnimations()
-            .filter((a) => a instanceof CSSTransition)
-            .map((a) => a.finished.catch(() => undefined)),
-        ),
+      // Judge the resting colours: wait for running CSS transitions (never infinite loops),
+      // at most 2 s so a transition that never settles can't stall the test.
+      const settled = await page.evaluate(() =>
+        Promise.race([
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a instanceof CSSTransition)
+              .map((a) => a.finished.catch(() => undefined)),
+          ).then(() => true),
+          new Promise<boolean>((done) => setTimeout(() => done(false), 2_000)),
+        ]),
       );
+      expect(settled, `colour transitions settle (${name} ${label} ${scheme})`).toBe(true);
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
