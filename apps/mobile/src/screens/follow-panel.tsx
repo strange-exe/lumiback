@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, View } from "react-native";
 
 import { api, ApiError } from "@/lib/api";
 import { findJoinCode } from "@/lib/join-code";
+import { dueLine } from "@/lib/running-late";
 import { formatTime } from "@/lib/time";
 import type { Redeemed, Watching } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -114,6 +115,8 @@ function Join(): ReactNode {
 function SharerRow({ share }: { share: Watching }): ReactNode {
   const c = useColors();
   const initial = share.sharer.name.trim().charAt(0).toUpperCase() || "?";
+  // While they're out on an outing: when they're due back (and the earlier time, if moved).
+  const due = dueLine(share.due_back_at, share.original_due_at);
   return (
     <Pressable
       onPress={() => {
@@ -121,7 +124,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
         router.push({ pathname: "/live/[id]", params: { id: share.id } });
       }}
       accessibilityRole="button"
-      accessibilityLabel={`${share.sharer.name}, sharing until ${formatTime(share.ends_at)}. Open map.`}
+      accessibilityLabel={`${share.sharer.name}, sharing until ${formatTime(share.ends_at)}.${due ? ` ${due}.` : ""} Open map.`}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
@@ -151,6 +154,7 @@ function SharerRow({ share }: { share: Watching }): ReactNode {
       <View style={{ flex: 1 }}>
         <T tone="label">{share.sharer.name}</T>
         <T tone="small">Live until {formatTime(share.ends_at)}</T>
+        {due ? <T tone="small">{due}</T> : null}
       </View>
       <Ionicons name="chevron-forward" size={20} color={c.muted} />
     </Pressable>

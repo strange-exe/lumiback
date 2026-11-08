@@ -1,6 +1,6 @@
 import { SCAN_RESULT_LABEL } from "@/lib/office";
 import { parseOfficeFilters } from "@/lib/office-filters";
-import { correctionLines, recordPath } from "@/lib/record";
+import { correctionLines, lateTodayRow, recordPath } from "@/lib/record";
 import type { Correction } from "@/lib/types";
 
 const ID = "5f0c2a1e-0000-4000-8000-000000000001";
@@ -16,6 +16,29 @@ const base: Correction = {
   note: null,
   created_at: "2026-11-02T09:00:00+05:30",
 };
+
+describe("lateTodayRow (the office's Late today list)", () => {
+  const fmt = (iso: string): string => `<${iso.slice(11, 16)}>`;
+  const late = {
+    expected_return_at: "2026-11-08T22:00:00+05:30",
+    returned_at: null,
+    late_minutes: 25,
+  };
+
+  test("still out: how late, and not back yet", () => {
+    expect(lateTodayRow(late, fmt)).toEqual({
+      chip: "25 min late",
+      back: false,
+      detail: "due <22:00>, not back yet",
+    });
+  });
+
+  test("back late: when they came in", () => {
+    expect(
+      lateTodayRow({ ...late, returned_at: "2026-11-08T23:10:00+05:30", late_minutes: 70 }, fmt),
+    ).toEqual({ chip: "1 h 10 min late", back: true, detail: "due <22:00>, back <23:10>" });
+  });
+});
 
 test("history pages ask for a page at a time, older ones by cursor", () => {
   expect(recordPath(ID, "outings")).toBe(`/admin/students/${ID}/outings?limit=20`);

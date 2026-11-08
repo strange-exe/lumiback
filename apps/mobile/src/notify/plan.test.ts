@@ -1,6 +1,8 @@
 import {
+  APP_UPDATES_CHANNEL,
   endedMessage,
   followRequestNotice,
+  isAppUpdate,
   mutedChannels,
   notificationRoute,
   newRequests,
@@ -8,6 +10,39 @@ import {
   RETURN_SOON,
   returnReminders,
 } from "@/notify/plan";
+
+describe("app update announcements", () => {
+  test("a push with kind app-update is an update announcement", () => {
+    expect(isAppUpdate({ kind: "app-update" })).toBe(true);
+  });
+
+  test("anything else is not, so it opens its screen as before", () => {
+    for (const data of [
+      null,
+      undefined,
+      "app-update",
+      {},
+      { kind: "App-Update" },
+      { kind: ["app-update"] },
+      { url: "/today" },
+      { kind: "app-update-x" },
+    ]) {
+      expect(isAppUpdate(data)).toBe(false);
+    }
+  });
+
+  test("its own Android channel, apart from the student's in-app switches", () => {
+    expect(APP_UPDATES_CHANNEL).toBe("app-updates");
+    // The in-app mute switches stay as they are: app updates are muted in Android's settings.
+    expect(
+      mutedChannels({ followRequests: false, returnReminders: false, shareStatus: false }),
+    ).not.toContain(APP_UPDATES_CHANNEL);
+  });
+});
+
+test("the follower notices open the Follow view", () => {
+  expect(notificationRoute({ url: "/live?view=follow" })).toBe("/live?view=follow");
+});
 
 const due = "2026-10-07T20:30:00+05:30";
 const dueMs = new Date(due).getTime();

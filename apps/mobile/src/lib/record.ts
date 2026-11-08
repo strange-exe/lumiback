@@ -1,6 +1,7 @@
 /** A student's history in the office app: its lists, paging and wording. The API decides who
  * may see it (a warden: their hostels' students only). */
 import { correctionAsk } from "@/lib/corrections";
+import { formatMinutes } from "@/lib/time";
 import type { Correction, RequestStatus } from "@/lib/types";
 
 export const RECORD_TABS = [
@@ -25,6 +26,19 @@ const CORRECTION_STATUS: Record<RequestStatus, string> = {
   declined: "Declined",
   cancelled: "Replaced by a later correction",
 };
+
+/** A row of the office's Late today list: how late, and when they came in (if they have). */
+export function lateTodayRow(
+  o: { expected_return_at: string; returned_at?: string | null; late_minutes: number },
+  fmt: (iso: string) => string,
+): { chip: string; back: boolean; detail: string } {
+  const back = Boolean(o.returned_at);
+  return {
+    chip: `${formatMinutes(o.late_minutes)} late`,
+    back,
+    detail: `due ${fmt(o.expected_return_at)}, ${o.returned_at ? `back ${fmt(o.returned_at)}` : "not back yet"}`,
+  };
+}
 
 /** One correction on the history, in the office's words. */
 export function correctionLines(c: Correction): { title: string; detail: string } {

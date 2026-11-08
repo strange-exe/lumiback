@@ -25,6 +25,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { safeReturnNotice } from "@/lib/safe-return";
+import { wakeServer } from "@/lib/wake-server";
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { GateScanned, Outing } from "@/lib/types";
 import { openLocationSettings, settingsLabel } from "@/location/settings";
@@ -138,6 +139,11 @@ export default function Scan(): ReactNode {
   // Unknown (loading, offline) is null: the confirm step stays neutral, and the fallback reads
   // as at the hostel (Today shows the right card either way).
   const [out, setOut] = useState<boolean | null>(null);
+  // Start waking a sleeping server while the student points the camera (at most once a minute,
+  // shared with the app coming to the foreground).
+  useEffect(() => {
+    wakeServer();
+  }, []);
   useEffect(() => {
     if (status !== "signedIn") return;
     let alive = true;

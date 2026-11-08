@@ -6,6 +6,7 @@ import * as Updates from "expo-updates";
 import { useCallback, useState, type ReactNode } from "react";
 import { Alert, Linking, Text, View } from "react-native";
 
+import { canAnnounce } from "@/lib/announce";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
@@ -127,6 +128,16 @@ export default function Profile(): ReactNode {
             trailing={chevron}
             onPress={() => router.push("/profile/view-as")}
           />
+          {/* Not while viewing as a role: the server refuses it then, as the website hides it. */}
+          {canAnnounce(user) ? (
+            <Row
+              leading={icon("megaphone-outline")}
+              title="Announce an update"
+              detail="Tell every phone a new version is out, once a day"
+              trailing={chevron}
+              onPress={() => router.push("/profile/announce")}
+            />
+          ) : null}
         </Section>
       ) : null}
       {isDeveloperAsSelf(user) ? <DeveloperStatus /> : null}

@@ -7,8 +7,10 @@ import { loadPrefs } from "@/lib/prefs";
 import type { Viewer } from "@/lib/types";
 import { loadViewAs } from "@/lib/view-as";
 import {
+  APP_UPDATES_CHANNEL,
   endedMessage,
   followRequestNotice,
+  isAppUpdate,
   notificationRoute,
   RETURN_DUE,
   RETURN_SOON,
@@ -17,6 +19,7 @@ import {
   type NotificationRoute,
 } from "@/notify/plan";
 import { registerPush } from "@/notify/push";
+import { openAnnouncedUpdate } from "@/updates/announced";
 
 /**
  * Local notifications for what this phone knows itself: the location service that runs while
@@ -63,6 +66,13 @@ function ensureChannels(): Promise<void> {
       name: "Sharing and requests",
       description:
         "When a live share ends on its own, and when the hostel office decides your outing request.",
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+    // New: Android sets a channel's importance once, when it's created. Default (sound, no
+    // pop-up), and people can turn it off in Android's settings for Lumiback.
+    await Notifications.setNotificationChannelAsync(APP_UPDATES_CHANNEL, {
+      name: "App updates",
+      description: "When a new version of Lumiback is ready.",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   })().catch((error: unknown) => {
@@ -171,7 +181,8 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
 /**
  * Opens the screen a tapped notification points at, including the tap that launched the app.
  * Waits until signed in, so a tap that launched the app is handled after sign-in, not lost.
- * A notification without a known `url` (the escalation push has none) opens Today.
+ * A notification without a known `url` (the escalation push has none) opens Today. An "app
+ * updated" announcement checks for the update instead (see UpdatePrompt).
  */
 export function useNotificationRoutes(enabled: boolean): void {
   useEffect(() => {
@@ -179,7 +190,12 @@ export function useNotificationRoutes(enabled: boolean): void {
     const open = (response: Notifications.NotificationResponse | null): void => {
       if (!response) return;
       Notifications.clearLastNotificationResponse(); // handled: don't reopen on the next mount
-      router.navigate(notificationRoute(response.notification.request.content.data));
+      const data = response.notification.request.content.data;
+      if (isAppUpdate(data)) {
+        openAnnouncedUpdate();
+        return;
+      }
+      router.navigate(notificationRoute(data));
     };
     open(Notifications.getLastNotificationResponse());
     const subscription = Notifications.addNotificationResponseReceivedListener(open);

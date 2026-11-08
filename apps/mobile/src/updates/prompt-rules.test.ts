@@ -1,4 +1,5 @@
 import {
+  announcedUpdateStep,
   CHECK_EVERY_MS,
   overTheAirProgress,
   promptAllowed,
@@ -6,6 +7,31 @@ import {
   shouldPrompt,
   SNOOZE_MS,
 } from "./prompt-rules";
+
+describe("announcedUpdateStep (an app-update notification was tapped)", () => {
+  test("an update on the server: download it and restart, whatever was snoozed", () => {
+    expect(announcedUpdateStep({ enabled: true, dev: false, check: { isAvailable: true } })).toBe(
+      "update",
+    );
+  });
+
+  test("already up to date: show what's new instead", () => {
+    expect(announcedUpdateStep({ enabled: true, dev: false, check: { isAvailable: false } })).toBe(
+      "notes",
+    );
+  });
+
+  test("the check failed (offline): nothing to install, show what's new", () => {
+    expect(announcedUpdateStep({ enabled: true, dev: false, check: null })).toBe("notes");
+  });
+
+  test("development builds and builds without updates never check or restart", () => {
+    expect(announcedUpdateStep({ enabled: false, dev: false, check: null })).toBe("notes");
+    expect(announcedUpdateStep({ enabled: true, dev: true, check: { isAvailable: true } })).toBe(
+      "notes",
+    );
+  });
+});
 
 const T0 = 1_000_000;
 

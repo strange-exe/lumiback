@@ -31,6 +31,8 @@ export default function OfficeLayout(): ReactNode {
         <Stack.Screen name="rules" options={{ animation: "default" }} />
         <Stack.Screen name="gates" options={{ animation: "default" }} />
         <Stack.Screen name="corrections" options={{ animation: "default" }} />
+        <Stack.Screen name="late" options={{ animation: "default" }} />
+        <Stack.Screen name="hostel" options={{ animation: "default" }} />
         {/* A student's history, opened from Students or the register. */}
         <Stack.Screen name="student/[id]" options={{ animation: "default", title: "History" }} />
       </Stack>

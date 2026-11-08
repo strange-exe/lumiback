@@ -29,13 +29,25 @@ import type {
   Role,
   TodayRules,
 } from "@/lib/types";
+import { dueLine } from "@/lib/running-late";
 import { safeReturnNotice, safeReturnOffer, type SafeReturnOffer } from "@/lib/safe-return";
+import { sessionGeneration } from "@/lib/session";
 import { student } from "@/lib/student-api";
+import {
+  offlineView,
+  shouldCache,
+  todaySnapshot,
+  unreachable,
+  type OfflineView,
+} from "@/lib/today-cache";
+import { loadTodayCache, saveTodayCache } from "@/lib/today-cache-store";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
 import { allowNotifications, syncReturnReminders } from "@/notify/notify";
 import { CorrectionSheet } from "@/screens/correction-sheet";
+import { OfflineTrip } from "@/screens/offline-trip";
+import { RunningLate } from "@/screens/running-late";
 import { NoticeSheet } from "@/screens/office/NoticeSheet";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { OutOffice } from "@/screens/out-office";
@@ -79,7 +91,11 @@ interface TodayData {
   recent: Outing[] | null;
   /** For the safe-return tick (null: not loaded, so neither the tick nor the hint). */
   profile: Profile | null;
+  /** Lumiback can't be reached: the last trip it showed, read-only (null when online). */
+  offline: OfflineView | null;
 }
+
+const OFFLINE_RETRY_MS = 30_000;
 
 /** Students get their outing; wardens, head wardens and admins get the hostel office (no
  * tap-out, outing rules or sharing: those are for students). */
@@ -178,25 +194,63 @@ function Greeting({ name, role }: { name: string; role?: Role }): ReactNode {
 function StudentToday(): ReactNode {
   const c = useColors();
   const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const cache = shouldCache(user);
   const load = useCallback(async (): Promise<TodayData> => {
-    const [outing, summary, campus, page, request, profile] = await Promise.all([
-      api<Outing | null>("/outings/current"),
+    // Whose Today this is: a sign-out or another sign-in mid-load never keeps it for offline.
+    const session = sessionGeneration();
+    const rest = Promise.all([
       api<OutingSummary>("/outings/summary").catch(() => null),
       api<Campus>("/campus").catch(() => undefined),
       api<OutingPage>("/outings?limit=4").catch(() => null),
       api<OutingRequest | null>("/outings/request").catch(() => null),
       api<Profile>("/profile").catch(() => null),
     ]);
+    let outing: Outing | null;
+    try {
+      outing = await api<Outing | null>("/outings/current");
+    } catch (e) {
+      // Can't reach Lumiback: show the last trip it showed, read-only, if there is one for
+      // this account. Anything else (or nothing kept) is the usual error.
+      if (e instanceof ApiError && unreachable(e.status)) {
+        const offline = offlineView(await loadTodayCache(), userId ?? "", Date.now());
+        // (`rest` is left to settle: each of its calls already ignores its own failure.)
+        if (offline) {
+          return {
+            outing: null,
+            summary: null,
+            rules: null,
+            rulesStatus: "failed",
+            request: null,
+            recent: null,
+            profile: null,
+            offline,
+          };
+        }
+      }
+      throw e;
+    }
+    const [summary, campus, page, request, profile] = await rest;
     // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
     // outing changed on the web or one that just ended.
     void syncReturnReminders(outing?.expected_return_at ?? null);
+    if (cache && userId) void saveTodayCache(todaySnapshot(userId, outing, Date.now()), session);
     // The trip in progress is already the status card; Recent lists finished ones.
     const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
     const rules = campus?.today ?? null;
     const rulesStatus: RulesStatus = campus === undefined ? "failed" : rules ? "ok" : "none";
-    return { outing, summary, rules, rulesStatus, request, recent, profile };
-  }, []);
-  const { data, error, loading, refreshing, reload } = useData(load);
+    return { outing, summary, rules, rulesStatus, request, recent, profile, offline: null };
+  }, [userId, cache]);
+  const { data, error, loading, refreshing, reload, refetch } = useData(load);
+  const offline = data?.offline ?? null;
+  // Offline: try again every so often while Today is on screen (pull down works too).
+  useFocusEffect(
+    useCallback(() => {
+      if (!offline) return;
+      const timer = setInterval(() => void refetch(), OFFLINE_RETRY_MS);
+      return () => clearInterval(timer);
+    }, [offline, refetch]),
+  );
   // After a check-out with safe return ticked: what to fix, if anything (shown on the Out card).
   const [safeNotice, setSafeNotice] = useState<string | null>(null);
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
@@ -220,6 +274,9 @@ function StudentToday(): ReactNode {
 
       {loading ? (
         <HeroSkeleton />
+      ) : offline ? (
+        // Read-only: no tap-out, I'm back, running late or Help until Lumiback answers.
+        <OfflineTrip view={offline} busy={refreshing} onRetry={() => void reload()} />
       ) : data?.outing ? (
         <Out outing={data.outing} onChange={reload} safeNotice={safeNotice} />
       ) : !data ? (
@@ -482,7 +539,9 @@ function LogTripSheet({
         <View style={{ gap: space(1) }}>
           <T tone="caption">You&apos;ll be due back by</T>
           <Clock time={parts.time} period={parts.period} color={c.accentText} size={48} />
-          <T tone="caption">Set by your hostel&apos;s rules. It can&apos;t be changed later.</T>
+          <T tone="caption">
+            Set by your hostel&apos;s rules. If you&apos;re running late, you can move it once.
+          </T>
         </View>
       ) : null}
       <Field
@@ -577,6 +636,12 @@ function Out({
               </Text>
             </View>
           </View>
+          {/* Said they're running late: the new time, and the one it replaced. */}
+          {outing.original_return_at ? (
+            <Text style={[type.caption, { color: c.boardMuted }]}>
+              {dueLine(outing.expected_return_at, outing.original_return_at)}
+            </Text>
+          ) : null}
 
           {overdue ? (
             outing.late_reply ? (
@@ -624,6 +689,9 @@ function Out({
       </View>
 
       <PhaseStrip outing={outing} overdue={overdue} />
+
+      {/* Once per outing, while the server still offers it. */}
+      <RunningLate outing={outing} onDone={onChange} />
 
       {/* Who to call while out or late, and Help (confirmed first). */}
       <OutOffice office={outing.office} />

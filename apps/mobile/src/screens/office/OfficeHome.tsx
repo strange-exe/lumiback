@@ -142,6 +142,13 @@ export function OfficeHome({
             onPress={() => open("out")}
           />
           <Row
+            leading={icon("moon-outline")}
+            title="Late today"
+            detail="Back late, or still out past their time"
+            trailing={chevron}
+            onPress={() => router.push("/office/late")}
+          />
+          <Row
             leading={icon("megaphone-outline")}
             title="Send a notice"
             detail="To students out now, or ask them back"
@@ -183,6 +190,13 @@ export function OfficeHome({
           }
           trailing={chevron}
           onPress={() => router.push("/office/students")}
+        />
+        <Row
+          leading={icon("call-outline")}
+          title={all ? "Hostel contacts" : "Warden contact"}
+          detail="The name and number students see while out"
+          trailing={chevron}
+          onPress={() => router.push("/office/hostel")}
         />
         <Row
           leading={icon("scan-outline")}

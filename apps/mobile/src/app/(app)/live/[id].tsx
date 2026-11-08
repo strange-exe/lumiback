@@ -7,6 +7,7 @@ import { ago } from "@/lib/ago";
 import { api } from "@/lib/api";
 import { followFailure, isUuid, NOT_A_SHARE } from "@/lib/follow";
 import { timeLeft } from "@/lib/led";
+import { dueLine } from "@/lib/running-late";
 import { formatTime } from "@/lib/time";
 import type { Watching } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
@@ -20,6 +21,8 @@ import { MockNotice } from "@/ui/MockNotice";
 import { layout, space, type, useColors, useDockClearance } from "@/ui/theme";
 
 const POLL_MS = 5_000;
+/** The share's details (its end, the due-back time) are re-read about once a minute. */
+const DESCRIBE_MS = 60_000;
 
 type View_ =
   | { kind: "loading" }
@@ -36,6 +39,8 @@ export default function Watch(): ReactNode {
   const clearance = useDockClearance(); // the dock floats over this pushed screen too
   const [view, setView] = useState<View_>({ kind: "loading" });
   const share = useRef<Watching | null>(null);
+  // When `share` was last described: re-read now and then, so a moved due-back time shows.
+  const describedAt = useRef(0);
   const wasPending = useRef(false);
 
   const poll = useCallback(async (): Promise<boolean> => {
@@ -45,7 +50,7 @@ export default function Watch(): ReactNode {
       return false;
     }
     try {
-      if (!share.current) {
+      if (!share.current || Date.now() - describedAt.current >= DESCRIBE_MS) {
         const described = await api<Partial<Watching>>(`/sessions/${id}`);
         if (!described.sharer) {
           // Our own share (e.g. a link to it): the owner's view has no `sharer`. Show it where
@@ -54,6 +59,7 @@ export default function Watch(): ReactNode {
           return false;
         }
         share.current = described as Watching;
+        describedAt.current = Date.now();
       }
       const positions = await api<Positions>(`/sessions/${id}/location`);
       if (wasPending.current) haptic.success(); // just approved
@@ -169,6 +175,8 @@ function Live({
   const stale = !location || location.stale;
 
   const minutesLeft = Math.round((new Date(share.ends_at).getTime() - now) / 60_000);
+  // Out on an outing: when they're due back (and the earlier time, if they're running late).
+  const due = dueLine(share.due_back_at, share.original_due_at);
 
   return (
     <>
@@ -182,6 +190,7 @@ function Live({
         <Text style={[type.title, { color: c.onBoard }]} accessibilityRole="header">
           {`${first}'s way back`}
         </Text>
+        {due ? <Text style={[type.label, { color: c.boardMuted }]}>{due}</Text> : null}
       </LedBoard>
       <LiveMap
         point={location}

@@ -11,6 +11,7 @@ import { formatDay, formatMinutes, formatTime } from "@/lib/time";
 import type { OfficeRequest, OfficeScan, RecordOuting } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { Contact } from "@/screens/office/Contact";
+import { LateNote } from "@/screens/office/LateNote";
 import {
   Button,
   FormError,
@@ -275,6 +276,7 @@ function OutingCard({ outing: o }: { outing: RecordOuting }): ReactNode {
           o.returned_at ? `back ${when(o.returned_at)}` : "not back yet",
         ].join(" · ")}
       </T>
+      <LateNote outing={o} />
       {o.escalation ? (
         <T tone="caption">
           {o.escalation.resolved_at

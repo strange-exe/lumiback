@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { router } from "expo-router";
 import { AppState, Linking, View } from "react-native";
 
 import { WEB_URL } from "@/lib/config";
@@ -17,10 +18,12 @@ import { Button, FormError, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
 import { radius, space, useColors } from "@/ui/theme";
 
+import { onAnnouncedUpdate, WHATS_NEW } from "./announced";
 import { apkState, canSelfUpdate, downloadAndInstall, openInstaller, subscribeApk } from "./apk";
 import { NATIVE_BUILDS } from "./changelog";
 import { megabytes, nativeUpdateFor, type NativeUpdate } from "./native-build";
 import {
+  announcedUpdateStep,
   overTheAirProgress,
   promptAllowed,
   shouldCheck,
@@ -44,7 +47,6 @@ const reopeners = new Set<() => void>();
 export function showUpdatePrompt(): void {
   for (const reopen of reopeners) reopen();
 }
-
 // The newest app build to download, if any, shared with Profile's badge.
 let latestNative: NativeUpdate | null = null;
 const nativeListeners = new Set<() => void>();
@@ -128,6 +130,31 @@ function Prompt({ signedIn, pathname }: Where): ReactNode {
     return () => void reopeners.delete(reopen);
   }, []);
 
+  // Set when an "app updated" notification was tapped and an update is waiting: the sheet
+  // opens already downloading it, whatever "Remind me later" said.
+  const [announced, setAnnounced] = useState(false);
+  useEffect(() => {
+    const listener = (): void => {
+      void (async () => {
+        // Counts as this foreground's check, so the two don't ask the server at once.
+        lastCheck.current = Date.now();
+        const result = await Updates.checkForUpdateAsync().catch(() => null);
+        const step = announcedUpdateStep({
+          enabled: Updates.isEnabled,
+          dev: __DEV__,
+          check: result,
+        });
+        if (step === "update") {
+          setSnooze(null);
+          setAnnounced(true);
+        } else {
+          router.navigate(WHATS_NEW);
+        }
+      })();
+    };
+    return onAnnouncedUpdate(listener);
+  }, []);
+
   useEffect(() => {
     void check(); // at launch
     const sub = AppState.addEventListener("change", (state) => {
@@ -138,7 +165,9 @@ function Prompt({ signedIn, pathname }: Where): ReactNode {
     return () => sub.remove();
   }, [check]);
 
-  if (native) {
+  // A tapped announcement installs the over-the-air update it was about, even when a newer app
+  // build is also offered (that sheet comes back on the next foreground check).
+  if (native && !announced) {
     const id = `build-${native.build}`;
     const open = native.required || shouldPrompt({ available: true, id, snooze, now });
     const allowed = promptAllowed({ signedIn, pathname, required: native.required });
@@ -159,7 +188,11 @@ function Prompt({ signedIn, pathname }: Where): ReactNode {
         promptAllowed({ signedIn, pathname }) &&
         shouldPrompt({ available: isUpdateAvailable || isUpdatePending, id, snooze, now })
       }
-      onLater={() => setSnooze({ id, at: Date.now() })}
+      autoStart={announced}
+      onLater={() => {
+        setAnnounced(false);
+        setSnooze({ id, at: Date.now() });
+      }}
     />
   );
 }
@@ -191,11 +224,14 @@ function OverTheAirSheet({
   available,
   pending,
   open,
+  autoStart,
   onLater,
 }: {
   available: boolean;
   pending: boolean;
   open: boolean;
+  /** Start downloading at once (an "app updated" notification was tapped). */
+  autoStart: boolean;
   onLater: () => void;
 }): ReactNode {
   const c = useColors();
@@ -223,9 +259,23 @@ function OverTheAirSheet({
     }
   };
 
+  // Once per tap: a failed download shows its error and waits for "Update now" again.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!autoStart) {
+      started.current = false;
+      return;
+    }
+    if (started.current) return;
+    started.current = true;
+    void update();
+    // update() reads the latest state when it runs; the tap is what starts it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   return (
     <Sheet
-      open={(available && open) || updating}
+      open={(available && open) || updating || (autoStart && error !== null)}
       onClose={() => (updating ? undefined : onLater())}
       title="Update available"
     >

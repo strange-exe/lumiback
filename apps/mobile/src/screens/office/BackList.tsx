@@ -6,6 +6,7 @@ import { formatTime } from "@/lib/time";
 import type { OfficeOuting } from "@/lib/types";
 import { viaLabel } from "@/lib/words";
 import { CorrectionSheet } from "@/screens/correction-sheet";
+import { LateNote } from "@/screens/office/LateNote";
 import { Press, Section, StatusChip, T } from "@/ui/kit";
 import { fonts, space, useColors } from "@/ui/theme";
 
@@ -87,6 +88,7 @@ function BackRow({
           .filter(Boolean)
           .join(", ")}
       </T>
+      <LateNote outing={o} />
       <Press
         onPress={onCorrect}
         accessibilityLabel={`Correct ${o.name}'s outing`}

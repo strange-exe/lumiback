@@ -131,6 +131,31 @@ describe("OfficeHome", () => {
     expect(failed).not.toContain("Asked for help");
   });
 
+  it("opens Late today and the warden contact, like the website's register and My hostel", () => {
+    const { router } = jest.requireMock<{ router: { push: jest.Mock } }>("expo-router");
+    router.push.mockClear();
+    const tree = render({ ...base, overview: OVERVIEW, loading: false, error: null });
+    const press = (label: string): void => {
+      const [row] = tree.root.findAll(
+        (n) =>
+          typeof n.type !== "string" &&
+          n.props.accessibilityLabel === label &&
+          typeof n.props.onPress === "function",
+      );
+      const onPress = row?.props.onPress as (() => void) | undefined;
+      if (!onPress) throw new Error(`No row named ${label}`);
+      act(() => onPress());
+    };
+    press("Late today");
+    press("Warden contact");
+    expect(router.push.mock.calls).toEqual([["/office/late"], ["/office/hostel"]]);
+    // Head wardens and admins look after every hostel: the row says so.
+    const admin = words(
+      render({ ...base, role: "admin", overview: OVERVIEW, loading: false, error: null }),
+    );
+    expect(admin).toContain("Hostel contacts");
+  });
+
   it("offers a notice to the students who are out", () => {
     const shown = words(render({ ...base, overview: OVERVIEW, loading: false, error: null }));
     expect(shown).toContain("Send a notice");

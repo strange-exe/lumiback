@@ -15,6 +15,7 @@ export default function Layout(): ReactNode {
       <Stack.Screen name="whats-new" options={{ title: "What's new" }} />
       <Stack.Screen name="delete-account" options={{ title: "Delete account" }} />
       <Stack.Screen name="view-as" options={{ title: "View as" }} />
+      <Stack.Screen name="announce" options={{ title: "Announce an update" }} />
     </TabStack>
   );
 }

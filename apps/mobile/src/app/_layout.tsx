@@ -12,6 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { loadPrefs } from "@/lib/prefs";
+import { useWakeOnForeground } from "@/lib/wake-server";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
 import { OfflineStart } from "@/screens/offline-start";
@@ -23,6 +24,8 @@ void SplashScreen.preventAutoHideAsync();
 
 function Navigator(): ReactNode {
   const { status, user } = useAuth();
+  // Back in the app: start waking a sleeping server before the first real request needs it.
+  useWakeOnForeground();
   // Once the starting screen has handed over (or the launch went offline), it never returns:
   // signing out later goes straight to the sign-in form.
   const [handedOff, setHandedOff] = useState(false);

@@ -15,6 +15,7 @@ import { api, ApiError } from "@/lib/api";
 import { deviceLabel } from "@/lib/devices";
 import { clearOfficeFilters } from "@/lib/office-filters";
 import { clearTokens, onSignedOut, storedRefreshToken, storeTokens } from "@/lib/session";
+import { clearTodayCache } from "@/lib/today-cache-store";
 import type { Registered, ShareSession, TokenPair, User, ViewAsRole } from "@/lib/types";
 import { clearViewAs, loadViewAs, parseViewAsRole, useViewAs, viewingAs } from "@/lib/view-as";
 import { sendingShareIds, stopSending } from "@/location/task";
@@ -75,6 +76,7 @@ export function useAuth(): AuthValue {
 async function forgetStudentOnPhone(): Promise<void> {
   clearSafeReturn();
   void syncReturnReminders(null).catch(() => undefined);
+  await clearTodayCache(); // Today offline's copy of their trip
   await stopSending().catch(() => undefined);
 }
 
@@ -238,6 +240,9 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactNode {
       await clearViewAs(); // a new sign-in starts as itself
       await clearOfficeFilters(); // with its own office filters
       await storeTokens(tokens);
+      // After the session changes: a Today load of the previous session still in flight then
+      // sees a new generation and won't keep (or will undo) its write.
+      await clearTodayCache(); // and no one else's trip kept for Today offline
       await loadUser();
     },
     [loadUser],

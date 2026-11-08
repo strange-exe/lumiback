@@ -1,6 +1,7 @@
 /** The hostel office's API calls. The server checks the role on every call, and limits a
  * warden to their own hostels' students. */
 import { api } from "@/lib/api";
+import type { ContactBody } from "@/lib/hostel-contact";
 import { scanQuery, studentsQuery } from "@/lib/office";
 import { recordPath } from "@/lib/record";
 import type {
@@ -86,8 +87,19 @@ export const office = {
       body: { approve, note },
     }),
 
+  /** Everyone late today (back after their return time, or still out past it), most late
+   * first; a warden sees their hostels' students only. */
+  lateToday: () => api<OfficeOuting[]>("/admin/late-today"),
+
   /** A warden's own hostels; every hostel for an admin. */
   hostels: () => api<OfficeHostel[]>("/admin/my-hostels"),
+  /** The warden contact shown to students while out, on escalations and in Help emails. A
+   * warden may change only their own hostels' (404 otherwise). Returns the updated list. */
+  saveHostelContact: (hostelId: string, body: ContactBody) =>
+    api<OfficeHostel[]>(`/admin/hostels/${encodeURIComponent(hostelId)}/contact`, {
+      method: "PATCH",
+      body,
+    }),
   students: (filter: {
     hostelId?: string | null;
     q?: string;

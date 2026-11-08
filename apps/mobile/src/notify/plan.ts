@@ -142,6 +142,19 @@ export function notificationRoute(data: unknown): NotificationRoute {
   return student?.[1] ? `/office/student/${student[1].toLowerCase()}` : "/today";
 }
 
+/**
+ * "App updates": the developers' announcement of a new release. Its own Android channel, so
+ * people can mute it in Android's settings; not one of the in-app switches below.
+ */
+export const APP_UPDATES_CHANNEL = "app-updates";
+
+/** A tapped push announcing a release (data {"kind": "app-update"}, no url). */
+export function isAppUpdate(data: unknown): boolean {
+  return (
+    data !== null && typeof data === "object" && (data as { kind?: unknown }).kind === "app-update"
+  );
+}
+
 /** Server push channels (match the Android channels and backend PushMessage.channel). */
 export type PushChannel = "follow-requests" | "return-reminders" | "share-status";
 

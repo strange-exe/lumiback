@@ -7,6 +7,7 @@ import { office } from "@/lib/office-api";
 import { formatMinutes, formatTime } from "@/lib/time";
 import type { OfficeOuting } from "@/lib/types";
 import { CorrectionSheet } from "@/screens/correction-sheet";
+import { LateNote } from "@/screens/office/LateNote";
 import { Press, Section, Segmented, StatusChip, T } from "@/ui/kit";
 import { fonts, space, useColors } from "@/ui/theme";
 
@@ -117,6 +118,7 @@ function OutRow({
             .join(" · ")}
         </T>
       </View>
+      <LateNote outing={o} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", columnGap: space(5) }}>
         <Press
           onPress={onRecord}

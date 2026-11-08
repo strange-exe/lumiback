@@ -60,6 +60,26 @@ export function overTheAirProgress({
   };
 }
 
+/**
+ * After an "app updated" notification is tapped: "update" when the server has a newer update
+ * for this build (download it and restart, even if "Remind me later" was chosen: the tap asked
+ * for it), otherwise "notes" (show What's new; nothing restarts). Development builds and builds
+ * without updates never check: expo-updates rejects there.
+ */
+export function announcedUpdateStep({
+  enabled,
+  dev,
+  check,
+}: {
+  enabled: boolean;
+  dev: boolean;
+  /** checkForUpdateAsync's answer; null when it failed or didn't run. */
+  check: { isAvailable: boolean } | null;
+}): "update" | "notes" {
+  if (!enabled || dev) return "notes";
+  return check?.isAvailable ? "update" : "notes";
+}
+
 export function shouldPrompt({
   available,
   id,
