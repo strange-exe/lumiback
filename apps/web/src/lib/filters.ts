@@ -1,15 +1,17 @@
 /**
- * Remembered filters for the hostel office's lists (Register, People, Scans, Escalations): the
- * last hostel or filter chosen on each comes back on the next visit. One small cookie holds
- * them, read only by the server (httpOnly), cleared on sign-out and on a fresh sign-in.
+ * Remembered filters for the hostel office's lists (Register, People, Scans, Escalations, Audit
+ * log): the last hostel or filter chosen on each comes back on the next visit. One small cookie
+ * holds them, read only by the server (httpOnly), cleared on sign-out and on a fresh sign-in.
  *
  * - Choosing a filter goes through /admin/filter (a Route Handler: Server Components can't set
  *   cookies), which remembers the choice and opens the page with it in the address.
  * - The address always wins: a visit with any filter, search or page in it shows exactly that.
  *   Only a bare visit (/admin/scans) uses what was remembered.
  * - Choosing "All" is the reset: that page's entry is removed.
+ * - Searches and date ranges ride along in the address but are never remembered: coming back to
+ *   a list should not silently hide most of it.
  * - Everything read back is checked against a fixed allowlist: hostel and gate ids must be
- *   UUIDs, other values come from fixed lists. Anything else is ignored.
+ *   UUIDs, dates real calendar days, other values come from fixed lists. Anything else is ignored.
  *
  * Requests is not remembered on purpose: its only choice is a past day, and opening Requests on
  * an old day would hide today's waiting requests.
@@ -17,59 +19,118 @@
  * Pure (no Next.js imports), so `node --test` can load it.
  */
 
+import { isRealDate } from "../features/admin/day-param.ts";
+import { AUDIT_AREAS } from "./audit-areas.ts";
 import { isUuid } from "./ids.ts";
 
 export const FILTERS_COOKIE = "lb_office_filters";
 /** About a term; each choice renews it. */
 export const FILTERS_MAX_AGE = 90 * 24 * 60 * 60;
-/** Longer than any valid value (about 250 characters with every page remembered). */
+/** Longer than any valid value (about 300 characters with every page remembered). */
 const MAX_COOKIE_CHARS = 1024;
-/** The People search box's own limit. */
-const MAX_Q = 100;
+/** The search boxes' own limit (the API's too). */
+export const MAX_Q = 100;
 
-export type FilterView = "register" | "people" | "scans" | "escalations";
+export type FilterView = "register" | "people" | "scans" | "escalations" | "audit";
 export type FilterValues = Readonly<Record<string, string>>;
 export type Remembered = Readonly<Partial<Record<FilterView, FilterValues>>>;
+/** Address-only values (a search, a date range), keyed by their address name. */
+export type FilterExtras = Readonly<Record<string, string | undefined>>;
 
 /** A field's check: the value to keep, or null when it's the default or not allowed. */
 type Check = (value: unknown) => string | null;
 
 const oneOf =
-  (...allowed: string[]): Check =>
+  (...allowed: readonly string[]): Check =>
   (value) =>
     typeof value === "string" && allowed.includes(value) ? value : null;
 const uuid: Check = (value) => (isUuid(value) ? value.toLowerCase() : null);
+/** A search: trimmed and cut to the box's limit; shorter than `min` letters is no search. */
+const text =
+  (min: number): Check =>
+  (value) => {
+    if (typeof value !== "string") return null;
+    const q = value.trim().slice(0, MAX_Q);
+    return q.length >= min ? q : null;
+  };
+// The API takes dates in 2000-2999 only (a 422 otherwise), so the filters drop the rest here
+// rather than letting the page fail.
+const day: Check = (value) =>
+  isRealDate(value) && value >= "2000-01-01" && value <= "2999-12-31" ? value : null;
 
 interface ViewSpec {
   path: string;
   /** The remembered fields, in address order. Defaults ("all", "open") are never stored. */
   fields: Readonly<Record<string, Check>>;
-  /** Other address keys that make a visit explicit (a search, a page of older scans). */
+  /** Address-only values carried by filter links, never remembered, in address order. */
+  extras: Readonly<Record<string, Check>>;
+  /** Other address keys that make a visit explicit (a page of older rows). */
   explicit: readonly string[];
 }
 
+/** The API refuses one-letter searches on these lists, so a link never carries one. */
+const SEARCH = text(2);
+const RANGE = { from: day, to: day };
+
 export const VIEWS: Readonly<Record<FilterView, ViewSpec>> = {
-  register: { path: "/admin", fields: { state: oneOf("overdue", "out") }, explicit: [] },
+  register: {
+    path: "/admin",
+    fields: { state: oneOf("overdue", "out"), hostel: uuid },
+    extras: { q: SEARCH },
+    explicit: [],
+  },
   people: {
     path: "/admin/people",
     fields: { hostel: uuid, account: oneOf("invited", "off") },
-    explicit: ["q"],
+    extras: { q: text(1) },
+    explicit: [],
   },
   scans: {
     path: "/admin/scans",
     fields: {
       gate: uuid,
-      result: oneOf("accepted", "bad_code", "gate_off", "too_far", "weak_gps", "mock_gps"),
+      result: oneOf(
+        "accepted",
+        "bad_code",
+        "gate_off",
+        "too_far",
+        "weak_gps",
+        "mock_gps",
+        "not_allowed",
+      ),
     },
+    extras: { q: SEARCH, ...RANGE },
     explicit: ["before"],
   },
-  escalations: { path: "/admin/escalations", fields: { state: oneOf("all") }, explicit: [] },
+  escalations: {
+    path: "/admin/escalations",
+    fields: { state: oneOf("all") },
+    extras: {},
+    explicit: [],
+  },
+  audit: {
+    path: "/admin/audit",
+    fields: { area: oneOf(...AUDIT_AREAS) },
+    extras: { q: SEARCH, ...RANGE },
+    explicit: ["before"],
+  },
 };
 
 export function filterView(value: unknown): FilterView | null {
-  return value === "register" || value === "people" || value === "scans" || value === "escalations"
-    ? value
-    : null;
+  return typeof value === "string" && Object.hasOwn(VIEWS, value) ? (value as FilterView) : null;
+}
+
+function checked(
+  checks: Readonly<Record<string, Check>>,
+  input: Readonly<Record<string, unknown>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [field, check] of Object.entries(checks)) {
+    if (!Object.hasOwn(input, field)) continue;
+    const value = check(input[field]);
+    if (value !== null) out[field] = value;
+  }
+  return out;
 }
 
 /** The valid, non-default values among `input` (an address's query or a stored entry). */
@@ -77,13 +138,15 @@ export function chosenFrom(
   view: FilterView,
   input: Readonly<Record<string, unknown>>,
 ): FilterValues {
-  const out: Record<string, string> = {};
-  for (const [field, check] of Object.entries(VIEWS[view].fields)) {
-    if (!Object.hasOwn(input, field)) continue;
-    const value = check(input[field]);
-    if (value !== null) out[field] = value;
-  }
-  return out;
+  return checked(VIEWS[view].fields, input);
+}
+
+/** The valid address-only values (search, dates) among `input`. */
+export function extrasFrom(
+  view: FilterView,
+  input: Readonly<Record<string, unknown>>,
+): FilterValues {
+  return checked(VIEWS[view].extras, input);
 }
 
 /** The cookie's value, read defensively: anything malformed is simply not remembered. */
@@ -123,10 +186,12 @@ export function remember(
   return next;
 }
 
-/** The address names a filter, a search or a page: show exactly that. */
+/** The address names a filter, a search, a date or a page: show exactly that. */
 export function isExplicit(view: FilterView, query: Readonly<Record<string, unknown>>): boolean {
   const spec = VIEWS[view];
-  return [...Object.keys(spec.fields), ...spec.explicit].some((key) => Object.hasOwn(query, key));
+  return [...Object.keys(spec.fields), ...Object.keys(spec.extras), ...spec.explicit].some((key) =>
+    Object.hasOwn(query, key),
+  );
 }
 
 /** What a page shows: the address's filters, or on a bare visit the remembered ones. */
@@ -142,25 +207,27 @@ export function resolveFilters(
     : { values: {}, remembered: false };
 }
 
-function search(view: FilterView, values: FilterValues, extra?: { q?: string }): URLSearchParams {
+function search(view: FilterView, values: FilterValues, extra?: FilterExtras): URLSearchParams {
   const query = new URLSearchParams();
   const clean = chosenFrom(view, values);
   for (const field of Object.keys(VIEWS[view].fields)) {
     if (clean[field]) query.set(field, clean[field]);
   }
-  const q = extra?.q?.trim().slice(0, MAX_Q);
-  if (view === "people" && q) query.set("q", q);
+  const extras = extrasFrom(view, extra ?? {});
+  for (const key of Object.keys(VIEWS[view].extras)) {
+    if (extras[key]) query.set(key, extras[key]);
+  }
   return query;
 }
 
-/** The page itself with these filters (and, on People, a search). */
-export function pageHref(view: FilterView, values: FilterValues, extra?: { q?: string }): string {
+/** The page itself with these filters (and any search or dates the page takes). */
+export function pageHref(view: FilterView, values: FilterValues, extra?: FilterExtras): string {
   const query = search(view, values, extra).toString();
   return query ? `${VIEWS[view].path}?${query}` : VIEWS[view].path;
 }
 
 /** A filter link: remembers the choice, then opens the page with it (app/(admin)/admin/filter). */
-export function filterHref(view: FilterView, values: FilterValues, extra?: { q?: string }): string {
+export function filterHref(view: FilterView, values: FilterValues, extra?: FilterExtras): string {
   const query = search(view, values, extra);
   const all = new URLSearchParams({ view });
   for (const [key, value] of query) all.append(key, value);

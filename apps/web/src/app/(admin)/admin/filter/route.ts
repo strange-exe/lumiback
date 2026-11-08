@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE_BASE } from "@/lib/cookies";
 import {
   chosenFrom,
+  extrasFrom,
   FILTERS_COOKIE,
   FILTERS_MAX_AGE,
   filterView,
@@ -26,7 +27,8 @@ export function GET(request: NextRequest): NextResponse {
   if (view === null) return NextResponse.redirect(new URL("/admin", request.url), 303);
   const values = chosenFrom(view, query);
   const kept = remember(parseFilters(request.cookies.get(FILTERS_COOKIE)?.value), view, values);
-  const to = pageHref(view, values, { q: typeof query.q === "string" ? query.q : undefined });
+  // A search or date range rides along to the page but isn't remembered.
+  const to = pageHref(view, values, extrasFrom(view, query));
   const response = NextResponse.redirect(new URL(to, request.url), 303);
   // A link from another site still opens the list, but doesn't change what this browser
   // remembers (browsers without Sec-Fetch-Site send none, and are treated as our own pages).

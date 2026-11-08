@@ -3,9 +3,11 @@ import { test } from "node:test";
 
 import {
   chosenFrom,
+  extrasFrom,
   FILTERS_COOKIE,
   FILTERS_MAX_AGE,
   filterHref,
+  filterView,
   isExplicit,
   pageHref,
   parseFilters,
@@ -98,12 +100,14 @@ test("remembering one page leaves the others, and an empty choice removes it", (
 
 test("the cookie stays short with every page remembered", () => {
   const all = {
-    register: { state: "overdue" },
+    register: { state: "overdue", hostel: HOSTEL },
     people: { hostel: HOSTEL, account: "invited" },
-    scans: { gate: GATE, result: "weak_gps" },
+    scans: { gate: GATE, result: "not_allowed" },
     escalations: { state: "all" },
+    audit: { area: "correction" },
   } as const;
-  assert.ok(serializeFilters(all).length < 300);
+  assert.ok(serializeFilters(all).length < 400);
+  assert.deepEqual(parseFilters(serializeFilters(all)), all);
 });
 
 test("a visit with any filter, search or page in its address is explicit", () => {
@@ -164,4 +168,57 @@ test("the page address holds every non-default value, or none", () => {
     pageHref("people", {}, { q: "x".repeat(150) }),
     `/admin/people?q=${"x".repeat(100)}`,
   );
+});
+
+test("the register remembers a hostel and carries a search it doesn't remember", () => {
+  assert.deepEqual(chosenFrom("register", params(`state=out&hostel=${HOSTEL}&q=riya`)), {
+    state: "out",
+    hostel: HOSTEL,
+  });
+  assert.deepEqual(extrasFrom("register", params(`q=%20riya%20&from=2026-11-01`)), { q: "riya" });
+  assert.equal(
+    pageHref("register", { hostel: HOSTEL.toUpperCase() }, { q: "Riya Sen" }),
+    `/admin?hostel=${HOSTEL}&q=Riya+Sen`,
+  );
+  // The API refuses one-letter searches, so a link never carries one.
+  assert.equal(pageHref("register", {}, { q: "r" }), "/admin");
+  assert.equal(isExplicit("register", params("q=ri")), true);
+  assert.deepEqual(parseFilters(JSON.stringify({ register: { hostel: HOSTEL, q: "riya" } })), {
+    register: { hostel: HOSTEL },
+  });
+});
+
+test("scans carry a search and real dates only", () => {
+  assert.deepEqual(
+    extrasFrom("scans", params("q=22CS001&from=2026-11-01&to=2026-11-07&before=9&gate=x")),
+    { q: "22CS001", from: "2026-11-01", to: "2026-11-07" },
+  );
+  // 1999 and 3000 are real dates but outside what the API takes (it would answer 422).
+  const bads = ["2026-02-30", "2026-13-01", "01-11-2026", "2026-11-1", "today", ""];
+  for (const bad of [...bads, "1999-12-31", "3000-01-01"]) {
+    assert.deepEqual(extrasFrom("scans", { from: bad, to: bad }), {}, bad);
+  }
+  assert.deepEqual(chosenFrom("scans", params("result=not_allowed")), { result: "not_allowed" });
+  assert.equal(
+    filterHref("scans", { result: "too_far" }, { q: "kabir", from: "2026-11-01" }),
+    "/admin/filter?view=scans&result=too_far&q=kabir&from=2026-11-01",
+  );
+  assert.equal(isExplicit("scans", params("to=2026-11-07")), true);
+});
+
+test("the audit log remembers an area from the fixed list", () => {
+  assert.equal(filterView("audit"), "audit");
+  assert.equal(filterView("__proto__"), null);
+  assert.equal(filterView("toString"), null);
+  assert.deepEqual(chosenFrom("audit", params("area=people")), { area: "people" });
+  assert.deepEqual(chosenFrom("audit", params("area=people:add")), {});
+  assert.deepEqual(chosenFrom("audit", params("area=all")), {});
+  assert.equal(
+    pageHref("audit", { area: "settings" }, { q: "asha", from: "2026-11-01", to: "2026-11-02" }),
+    "/admin/audit?area=settings&q=asha&from=2026-11-01&to=2026-11-02",
+  );
+  assert.equal(isExplicit("audit", params("before=40")), true);
+  assert.deepEqual(parseFilters(JSON.stringify({ audit: { area: "rules", from: "2026-11-01" } })), {
+    audit: { area: "rules" },
+  });
 });

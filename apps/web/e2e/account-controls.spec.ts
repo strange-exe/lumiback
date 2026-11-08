@@ -283,10 +283,11 @@ test.describe("as an admin", () => {
 
     // Cancel the invite: the row goes and the page says so.
     await page.goto(`/admin/people?q=${id}`);
-    await row(page, name)
-      .getByRole("button", { name: `Cancel invite: ${name}` })
-      .click();
     const cancel = page.getByRole("dialog", { name: `Cancel ${name}'s invite?` });
+    await openDialog(
+      row(page, name).getByRole("button", { name: `Cancel invite: ${name}` }),
+      cancel,
+    );
     await expect(cancel).toContainText(`${id}@geu.ac.in`);
     expect(await axeProblems(page), "accessibility of the cancel dialog").toEqual([]);
     await cancel.getByRole("button", { name: "Cancel invite" }).click();

@@ -412,7 +412,11 @@ test.describe("as an admin", () => {
       /^outings-\d{4}-\d{2}-\d{2}-to-\d{4}-\d{2}-\d{2}\.csv$/,
     );
     const text = readFileSync(await file.path(), "utf8");
-    expect(text.split("\n")[0]).toContain("Name,Email,Roll no.,Destination");
+    // A byte order mark first, so Excel reads names in any script; then plain column names.
+    expect(text.codePointAt(0)).toBe(0xfeff);
+    expect(text.split("\n")[0]).toContain(
+      "Student,Roll number,Hostel,Email,Destination,Left (IST)",
+    );
   });
 
   test("a refused register download comes back to the form with the reason", async ({ page }) => {

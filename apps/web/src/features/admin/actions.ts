@@ -13,6 +13,7 @@ import {
   type BulkOutcome,
 } from "@/features/admin/bulk";
 import { attempt, number, pathId, text, tokenOrSignIn } from "@/features/admin/form";
+import { readQuietHours } from "@/features/admin/quiet-hours";
 import { correctionBody } from "@/features/outings/corrections";
 import { ApiError, callBackend } from "@/lib/backend";
 import { isUuid } from "@/lib/ids";
@@ -128,17 +129,29 @@ export async function newKioskLink(_: GateFormState, form: FormData): Promise<Ga
 
 export async function saveSettings(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
-  const fields = { retention: text(form, "retention") };
+  const quietOn = form.get("quiet") === "on";
+  const fields = {
+    retention: text(form, "retention"),
+    quiet: quietOn ? "on" : "",
+    quiet_from: text(form, "quiet_from"),
+    quiet_until: text(form, "quiet_until"),
+  };
   const days = number(form, "retention");
   if (days === null || days < 7 || days > 730) {
     return { error: "Keep campus records for between 7 and 730 days.", fields };
   }
+  const quiet = readQuietHours(quietOn, fields.quiet_from, fields.quiet_until);
+  if (!quiet.ok) return { error: quiet.error, fields };
   const result = await attempt(
     () =>
       callBackend("/admin/settings", {
         method: "PUT",
         token,
-        body: { scan_retention_days: Math.round(days) },
+        body: {
+          scan_retention_days: Math.round(days),
+          kiosk_quiet_from: quiet.from,
+          kiosk_quiet_until: quiet.until,
+        },
       }),
     fields,
   );

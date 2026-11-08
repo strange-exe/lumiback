@@ -30,6 +30,8 @@ const SECTIONS: readonly Section[] = [
   // Wardens see their own hostels' students there (details, turning an account off).
   { href: "/admin/people", label: "People", for: "staff", tour: "nav-people" },
   { href: "/admin/settings", label: "Settings", for: ["admin", "developer"] },
+  // Read only: every change made in the office.
+  { href: "/admin/audit", label: "Audit log", for: ["admin", "developer"] },
   // Which builds are running (a developer as themselves; while viewing, `role` is the viewed one).
   { href: "/admin/status", label: "Status", for: ["developer"] },
 ];

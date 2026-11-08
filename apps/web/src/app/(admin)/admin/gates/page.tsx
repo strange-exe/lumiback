@@ -3,13 +3,21 @@ import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
 import { CreateGateForm, GateActions } from "@/features/admin/components/GateForms";
+import { formatWhen } from "@/features/admin/format";
+import { kioskLine, type KioskTone } from "@/features/admin/kiosk-health";
+import { formatTime } from "@/features/outings/time";
 import { requireAdmin } from "@/lib/session";
+import type { Gate } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Gates" };
 
 export default async function GatesPage(): Promise<ReactNode> {
   const { token } = await requireAdmin();
-  const gates = await adminApi.gates(token);
+  const [gates, settings] = await Promise.all([adminApi.gates(token), adminApi.settings(token)]);
+  // "06:00" (IST) as the app writes times elsewhere ("6:00 AM").
+  const opensAt = settings.kiosk_quiet_until
+    ? formatTime(`2000-01-01T${settings.kiosk_quiet_until}:00+05:30`)
+    : null;
 
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-start">
@@ -52,6 +60,7 @@ export default async function GatesPage(): Promise<ReactNode> {
                     {gate.lat.toFixed(5)}, {gate.lng.toFixed(5)}
                   </a>
                 </p>
+                <KioskStatus gate={gate} opensAt={opensAt} />
                 <GateActions gate={gate} />
               </li>
             ))}
@@ -60,5 +69,29 @@ export default async function GatesPage(): Promise<ReactNode> {
       </section>
       <CreateGateForm />
     </div>
+  );
+}
+
+const TONES: Record<KioskTone, string> = {
+  good: "bg-good-soft text-good",
+  warn: "bg-warn-soft text-warn",
+  muted: "bg-line text-muted",
+};
+
+/** The gate tablet's health: the label says it; the colour only repeats it. */
+function KioskStatus({ gate, opensAt }: { gate: Gate; opensAt: string | null }): ReactNode {
+  const line = kioskLine(
+    gate.kiosk,
+    gate.kiosk_seen_at ? formatWhen(gate.kiosk_seen_at) : null,
+    opensAt,
+  );
+  if (!line) return null;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm" data-kiosk={gate.kiosk}>
+      <span className={`rounded-full px-2.5 py-0.5 font-bold ${TONES[line.tone]}`}>
+        {line.label}
+      </span>
+      <span className="text-muted">{line.detail}</span>
+    </p>
   );
 }

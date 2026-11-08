@@ -13,7 +13,8 @@ import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
 import { inViaLabel } from "@/features/outings/corrections";
 import { formatMinutes } from "@/features/outings/time";
-import { filterHref, resolveFilters } from "@/lib/filters";
+import { recordHref } from "@/features/admin/record";
+import { extrasFrom, filterHref, MAX_Q, pageHref, resolveFilters } from "@/lib/filters";
 import { rememberedFilters, requireStaff } from "@/lib/session";
 import type { AdminOuting } from "@/lib/types";
 
@@ -27,20 +28,40 @@ const STATES = [
 type State = (typeof STATES)[number]["value"];
 
 interface PageProps {
-  searchParams: Promise<{ state?: string; export_error?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    state?: string;
+    hostel?: string;
+    q?: string | string[];
+    export_error?: string;
+    from?: string;
+    to?: string;
+  }>;
 }
 
 export default async function RegisterPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
   const params = await searchParams;
-  // The address's filter, or on a bare visit the one chosen last time (lib/filters.ts).
-  const { values } = resolveFilters("register", params, await rememberedFilters());
+  // The address's filters, or on a bare visit the ones chosen last time (lib/filters.ts). The
+  // search is never remembered.
+  const [{ values }, mine] = await Promise.all([
+    rememberedFilters().then((kept) => resolveFilters("register", params, kept)),
+    adminApi.myHostels(token),
+  ]);
   const state: State = STATES.find((s) => s.value === values.state)?.value ?? "all";
+  // A hostel that isn't (or is no longer) one of theirs is simply not applied.
+  const hostel = mine.find((h) => h.id === values.hostel);
+  const q = extrasFrom("register", params).q ?? "";
+  const typed = typeof params.q === "string" ? params.q.trim() : "";
+  const filters = { hostel: hostel?.id, q: q || undefined };
   const [overview, outings, late] = await Promise.all([
     adminApi.overview(token),
-    adminApi.outings(token, state),
-    adminApi.lateToday(token),
+    adminApi.outings(token, state, filters),
+    adminApi.lateToday(token, filters),
   ]);
+  const narrowed = Boolean(hostel || q);
+  const where = [hostel ? `in ${hostel.name}` : "", q ? `matching "${q}"` : ""]
+    .filter(Boolean)
+    .join(" ");
   // Rendered per request: the server's clock is "now" for the correction forms.
   const nowIso = new Date().toISOString();
 
@@ -104,7 +125,11 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
               // A plain link (no prefetch): following it remembers the choice.
               <a
                 key={s.value}
-                href={filterHref("register", { state: s.value })}
+                href={filterHref(
+                  "register",
+                  { state: s.value, ...(hostel ? { hostel: hostel.id } : {}) },
+                  { q },
+                )}
                 aria-current={state === s.value ? "page" : undefined}
                 className={`flex min-h-10 items-center rounded-[10px] px-3 text-sm font-bold ${
                   state === s.value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
@@ -115,18 +140,46 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
             ))}
           </nav>
         </div>
+        <RegisterSearch state={state} hostel={hostel?.id} q={q} typed={typed} />
+        {mine.length > 1 && (
+          <nav aria-label="Hostel">
+            <ul className="flex flex-wrap gap-1">
+              {[undefined, ...mine].map((h) => (
+                <li key={h?.id ?? "all"}>
+                  <a
+                    href={filterHref(
+                      "register",
+                      { ...(state !== "all" ? { state } : {}), ...(h ? { hostel: h.id } : {}) },
+                      { q },
+                    )}
+                    aria-current={hostel?.id === h?.id ? "page" : undefined}
+                    className={`flex min-h-11 items-center rounded-control px-3 text-sm font-bold ${
+                      hostel?.id === h?.id
+                        ? "bg-accent-soft text-ink ring-1 ring-accent"
+                        : "text-muted ring-1 ring-line hover:text-ink"
+                    }`}
+                  >
+                    {h ? h.name : "All hostels"}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
         {outings.length === 0 ? (
           <p className="rounded-sheet border border-dashed border-line px-5 py-10 text-center text-muted">
-            {state === "overdue"
-              ? "Nobody is late."
-              : "Nobody is out right now. Students appear here when they tap out at a gate or check out in the app or on the website."}
+            {narrowed
+              ? `Nobody ${where} is ${state === "overdue" ? "late" : "out"} right now.`
+              : state === "overdue"
+                ? "Nobody is late."
+                : "Nobody is out right now. Students appear here when they tap out at a gate or check out in the app or on the website."}
           </p>
         ) : (
           <OutingsTable outings={outings} nowIso={nowIso} />
         )}
       </section>
 
-      <LateToday late={late} nowIso={nowIso} />
+      <LateToday late={late} nowIso={nowIso} where={where} />
 
       <ExportForm
         error={exportMessage(params.export_error)}
@@ -134,6 +187,73 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
         to={exportDate(params.to)}
       />
     </div>
+  );
+}
+
+/** The student's name, linking to their record (a deleted account has none). */
+function StudentName({ outing }: { outing: AdminOuting }): ReactNode {
+  if (!outing.student_id) return <p className="truncate font-bold text-ink">{outing.name}</p>;
+  return (
+    <p className="truncate font-bold">
+      <Link
+        href={recordHref(outing.student_id)}
+        prefetch={false}
+        className="text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+      >
+        {outing.name}
+      </Link>
+    </p>
+  );
+}
+
+/** Name or roll number search; the state and hostel chosen stay as they are. */
+function RegisterSearch({
+  state,
+  hostel,
+  q,
+  typed,
+}: {
+  state: State;
+  hostel: string | undefined;
+  q: string;
+  typed: string;
+}): ReactNode {
+  return (
+    <form method="get" role="search" className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-end gap-3">
+        {state !== "all" && <input type="hidden" name="state" value={state} />}
+        {hostel && <input type="hidden" name="hostel" value={hostel} />}
+        <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-bold text-ink">
+          Name or roll number
+          <input
+            type="search"
+            name="q"
+            defaultValue={typed || q}
+            minLength={2}
+            maxLength={MAX_Q}
+            className="min-h-12 rounded-control border border-line bg-surface px-4 text-base font-normal text-ink"
+          />
+        </label>
+        <button
+          type="submit"
+          className="min-h-12 rounded-control bg-ink px-5 font-bold text-page hover:opacity-90"
+        >
+          Search
+        </button>
+        {q && (
+          <a
+            href={pageHref("register", {
+              ...(state !== "all" ? { state } : {}),
+              ...(hostel ? { hostel } : {}),
+            })}
+            className="flex min-h-12 items-center px-1 text-sm font-bold text-accent-text underline-offset-4 hover:underline"
+          >
+            Clear search
+          </a>
+        )}
+      </div>
+      {typed && !q && <p className="text-sm text-muted">Type at least 2 letters to search.</p>}
+    </form>
   );
 }
 
@@ -163,7 +283,7 @@ function OutingsTable({ outings, nowIso }: { outings: AdminOuting[]; nowIso: str
         {outings.map((o) => (
           <tr key={o.id} className="grid grid-cols-2 gap-x-4 gap-y-1.5 py-3.5 md:table-row">
             <td className="col-span-2 min-w-0 md:py-3.5 md:pr-4">
-              <p className="truncate font-bold text-ink">{o.name}</p>
+              <StudentName outing={o} />
               <p className="truncate text-sm text-muted">
                 {[o.roll_no, o.hostel, o.destination ? `to ${o.destination}` : null]
                   .filter(Boolean)
@@ -212,7 +332,15 @@ function OutingsTable({ outings, nowIso }: { outings: AdminOuting[]; nowIso: str
 }
 
 /** Tonight's latecomers: back after their return time, or still out past it. */
-function LateToday({ late, nowIso }: { late: AdminOuting[]; nowIso: string }): ReactNode {
+function LateToday({
+  late,
+  nowIso,
+  where,
+}: {
+  late: AdminOuting[];
+  nowIso: string;
+  where: string;
+}): ReactNode {
   return (
     <section aria-labelledby="late-heading" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -226,7 +354,7 @@ function LateToday({ late, nowIso }: { late: AdminOuting[]; nowIso: string }): R
       </div>
       {late.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
-          Nobody has been late today.
+          {where ? `Nobody ${where} has been late today.` : "Nobody has been late today."}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-line border-y border-line">
@@ -236,7 +364,7 @@ function LateToday({ late, nowIso }: { late: AdminOuting[]; nowIso: string }): R
               className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
             >
               <div className="min-w-0">
-                <p className="truncate font-bold text-ink">{o.name}</p>
+                <StudentName outing={o} />
                 <p className="truncate text-sm text-muted">
                   {[o.roll_no, o.hostel].filter(Boolean).join(" · ") || o.email} · due{" "}
                   {formatWhen(o.expected_return_at)}

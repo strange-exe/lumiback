@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { LedFigure } from "@/components/led/LedFigure";
 import { formatTime } from "@/features/outings/time";
 import { QrCode } from "@/features/kiosk/QrCode";
+import { quietUntil } from "@/features/kiosk/quiet";
 import type { KioskCode } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
 
@@ -17,6 +18,7 @@ type View =
   | { kind: "no-token" }
   | { kind: "replaced" }
   | { kind: "off"; message: string }
+  | { kind: "quiet"; opensAt: string }
   | { kind: "code"; code: KioskCode; offline: boolean; countdownMs: number; nextAt: number }
   | { kind: "offline" };
 
@@ -119,8 +121,21 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
         return;
       }
       if (response.status === 423) {
-        const body = (await response.json().catch(() => null)) as { detail?: string } | null;
-        setView({ kind: "off", message: body?.detail ?? "This gate is switched off" });
+        const body: unknown = await response.json().catch(() => null);
+        if (stopped) return;
+        // Quiet hours: sleep until the kiosks open instead of asking every 30 seconds.
+        const quiet = quietUntil(body, Date.now());
+        if (quiet) {
+          last = null;
+          setView({ kind: "quiet", opensAt: quiet.opensAt });
+          later(quiet.waitMs);
+          return;
+        }
+        const detail = (body as { detail?: unknown } | null)?.detail;
+        setView({
+          kind: "off",
+          message: typeof detail === "string" ? detail : "This gate is switched off",
+        });
         later(30_000);
         return;
       }
@@ -199,6 +214,13 @@ function Body({ view }: { view: View }): ReactNode {
         <Message
           title={view.message}
           detail="An admin can switch it back on in Admin → Gates. This screen checks every 30 seconds."
+        />
+      );
+    case "quiet":
+      return (
+        <Message
+          title={`Opens at ${formatTime(view.opensAt)}`}
+          detail="Quiet hours: this gate isn't taking scans now. The code comes back on its own, so leave this tablet on."
         />
       );
     case "replaced":

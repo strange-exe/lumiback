@@ -315,10 +315,13 @@ export interface CorrectionQueue {
   unrecorded: AdminOuting[];
 }
 
-export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";
+export type ScanResult =
+  "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps" | "not_allowed";
 
 export interface AdminScan {
   id: number;
+  /** For a link to their record; null once the account was deleted. Missing (older server). */
+  student_id?: string | null;
   name: string;
   roll_no: string | null;
   gate: string | null;
@@ -344,7 +347,16 @@ export interface Gate {
   created_at: string;
   /** Some scan or outing names it, so it stays for the records. Missing (older server): used. */
   used?: boolean;
+  /** Admins only (null for wardens): when the gate's kiosk tablet last asked for a code, IST. */
+  kiosk_seen_at?: string | null;
+  /**
+   * Admins only. ok: seen in the last few minutes; stale: not for longer; never: no tablet has
+   * opened this gate's kiosk; quiet: inside the kiosks' quiet hours.
+   */
+  kiosk?: KioskHealth | null;
 }
+
+export type KioskHealth = "ok" | "stale" | "never" | "quiet";
 
 export interface GateCreated {
   gate: Gate;
@@ -356,6 +368,66 @@ export interface CampusSettings {
   /** "HH:MM", IST. Superseded by rule sets. */
   curfew: string | null;
   scan_retention_days: number;
+  /** Kiosk quiet hours, "HH:MM" IST: both set, or both null (always on). May cross midnight. */
+  kiosk_quiet_from?: string | null;
+  kiosk_quiet_until?: string | null;
+}
+
+// ---------- audit log, a student's record ----------
+
+/** GET /admin/audit: one change an admin or the office made. Actor fields null once deleted. */
+export interface AuditEntry {
+  id: number;
+  /** IST */
+  at: string;
+  actor_name: string | null;
+  actor_email: string | null;
+  actor_role: Role | null;
+  /** "gate:create", "settings", ...: the area, then what was done. */
+  action: string;
+  target: string;
+}
+
+export interface AuditPage {
+  items: AuditEntry[];
+  /** An entry id: pass as ?before= for older ones. */
+  next_before: number | null;
+}
+
+/** GET /admin/students/{id}: who they are and their record in numbers. */
+export interface StudentRecord {
+  student: OfficeStudent;
+  outings: number;
+  late: number;
+  open_escalations: number;
+  requests: number;
+}
+
+export interface RecordEscalation {
+  created_at: string;
+  resolved_at: string | null;
+  /** The staff member's name; null while open, or once their account is gone. */
+  resolved_by: string | null;
+  note: string | null;
+}
+
+export interface RecordOuting extends AdminOuting {
+  purpose: string | null;
+  /** Oldest first. */
+  corrections: Correction[];
+  escalation: RecordEscalation | null;
+}
+
+export interface RecordOutingPage {
+  items: RecordOuting[];
+  /** A left_at (IST): pass as ?before= for older outings. */
+  next_before: string | null;
+}
+
+export interface RecordRequestPage {
+  items: AdminRequest[];
+  /** A created_at (IST): pass as ?before= for older requests. */
+  next_before: string | null;
 }
 
 // ---------- outing rules (admin) ----------

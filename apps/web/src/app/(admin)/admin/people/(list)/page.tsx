@@ -9,6 +9,7 @@ import { AddPersonForm } from "@/features/admin/components/AddPersonForm";
 import { BULK_FORM, BulkActions, SelectAllShown } from "@/features/admin/components/BulkActions";
 import { MoveForm } from "@/features/admin/components/MoveForm";
 import { PasswordLinkForm } from "@/features/admin/components/PasswordLinkForm";
+import { recordHref } from "@/features/admin/record";
 import { RoleForm } from "@/features/admin/components/RoleForm";
 import { filterHref, resolveFilters } from "@/lib/filters";
 import { rememberedFilters, requireStaff } from "@/lib/session";
@@ -295,7 +296,18 @@ function Who({ person, isMe }: { person: Row["person"]; isMe: boolean }): ReactN
   return (
     <div className="min-w-0">
       <p className="flex items-center gap-2 font-bold text-ink">
-        <span className="truncate">{person.name}</span>
+        {person.role === "student" ? (
+          // Their record: outings, requests, corrections and gate scans.
+          <Link
+            href={recordHref(person.id)}
+            prefetch={false}
+            className="truncate underline decoration-line underline-offset-4 hover:decoration-ink"
+          >
+            {person.name}
+          </Link>
+        ) : (
+          <span className="truncate">{person.name}</span>
+        )}
         {person.role !== "student" && (
           <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent">
             {ROLE_LABEL[person.role]}

@@ -7,6 +7,7 @@ import type {
   AdminScanPage,
   AdminRequest,
   AdminUser,
+  AuditPage,
   CampusSettings,
   CorrectionQueue,
   Escalation,
@@ -14,9 +15,30 @@ import type {
   Holiday,
   Hostel,
   OfficeStudent,
+  RecordOutingPage,
+  RecordRequestPage,
   RuleSet,
   ScanResult,
+  StudentRecord,
 } from "@/lib/types";
+
+interface RegisterFilters {
+  hostel?: string;
+  q?: string;
+}
+
+function registerQuery(filters: RegisterFilters): URLSearchParams {
+  const query = new URLSearchParams();
+  if (filters.hostel) query.set("hostel_id", filters.hostel);
+  if (filters.q) query.set("q", filters.q);
+  return query;
+}
+
+/** The ids reaching here were checked as UUIDs by the page; encoding is belt and braces. */
+function recordPath(id: string, list: "outings" | "requests" | "scans", before?: string): string {
+  const path = `/admin/students/${encodeURIComponent(id)}/${list}`;
+  return before ? `${path}?${new URLSearchParams({ before }).toString()}` : path;
+}
 
 /** Reads for admin Server Components. The backend enforces the admin role on every call. */
 export const adminApi = {
@@ -24,23 +46,69 @@ export const adminApi = {
     return callBackend<AdminOverview>("/admin/overview", { token });
   },
 
-  outings(token: string, state: "all" | "out" | "overdue" = "all"): Promise<AdminOuting[]> {
-    return callBackend<AdminOuting[]>(`/admin/outings?state=${state}`, { token });
+  /** `hostel`: one of the office's hostels (else a 404). `q`: a name or roll number. */
+  outings(
+    token: string,
+    state: "all" | "out" | "overdue" = "all",
+    filters: RegisterFilters = {},
+  ): Promise<AdminOuting[]> {
+    const query = registerQuery(filters);
+    query.set("state", state);
+    return callBackend<AdminOuting[]>(`/admin/outings?${query.toString()}`, { token });
   },
 
-  lateToday(token: string): Promise<AdminOuting[]> {
-    return callBackend<AdminOuting[]>("/admin/late-today", { token });
+  lateToday(token: string, filters: RegisterFilters = {}): Promise<AdminOuting[]> {
+    const search = registerQuery(filters).toString();
+    return callBackend<AdminOuting[]>(`/admin/late-today${search ? `?${search}` : ""}`, { token });
   },
 
+  /** `q`: a student's name or roll number. `from`/`to`: IST days (YYYY-MM-DD), inclusive. */
   scans(
     token: string,
-    filters: { before?: string; gate?: string; result?: ScanResult },
+    filters: {
+      before?: string;
+      gate?: string;
+      result?: ScanResult;
+      q?: string;
+      from?: string;
+      to?: string;
+    },
   ): Promise<AdminScanPage> {
     const query = new URLSearchParams({ limit: "50" });
     if (filters.before) query.set("before", filters.before);
     if (filters.gate) query.set("gate_id", filters.gate);
     if (filters.result) query.set("result", filters.result);
+    if (filters.q) query.set("q", filters.q);
+    if (filters.from) query.set("from", filters.from);
+    if (filters.to) query.set("to", filters.to);
     return callBackend<AdminScanPage>(`/admin/scans?${query.toString()}`, { token });
+  },
+
+  /** The admin audit log, newest first (admins and developers only). */
+  audit(
+    token: string,
+    filters: { before?: string; area?: string; q?: string; from?: string; to?: string },
+  ): Promise<AuditPage> {
+    const query = new URLSearchParams({ limit: "50" });
+    for (const key of ["before", "area", "q", "from", "to"] as const) {
+      const value = filters[key];
+      if (value) query.set(key, value);
+    }
+    return callBackend<AuditPage>(`/admin/audit?${query.toString()}`, { token });
+  },
+
+  /** One student's record: a 404 for anyone who isn't a student this office looks after. */
+  studentRecord(token: string, id: string): Promise<StudentRecord> {
+    return callBackend<StudentRecord>(`/admin/students/${encodeURIComponent(id)}`, { token });
+  },
+  recordOutings(token: string, id: string, before?: string): Promise<RecordOutingPage> {
+    return callBackend<RecordOutingPage>(recordPath(id, "outings", before), { token });
+  },
+  recordRequests(token: string, id: string, before?: string): Promise<RecordRequestPage> {
+    return callBackend<RecordRequestPage>(recordPath(id, "requests", before), { token });
+  },
+  recordScans(token: string, id: string, before?: string): Promise<AdminScanPage> {
+    return callBackend<AdminScanPage>(recordPath(id, "scans", before), { token });
   },
 
   gates(token: string): Promise<Gate[]> {

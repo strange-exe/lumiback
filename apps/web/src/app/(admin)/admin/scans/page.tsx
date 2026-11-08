@@ -2,46 +2,58 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FormError } from "@/components/ui/Field";
 import { adminApi } from "@/features/admin/api";
-import { formatWhen } from "@/features/admin/format";
-import { filterHref, resolveFilters } from "@/lib/filters";
+import { ScanRow, SCAN_RESULTS } from "@/features/admin/components/ScanRow";
+import { istToday } from "@/features/admin/format";
+import { extrasFrom, filterHref, MAX_Q, pageHref, resolveFilters } from "@/lib/filters";
 import { rememberedFilters, requireStaff } from "@/lib/session";
-import type { AdminScan, ScanResult } from "@/lib/types";
+import type { ScanResult } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Scans" };
 
-const RESULTS: Record<ScanResult, string> = {
-  accepted: "Accepted",
-  bad_code: "Invalid or old code",
-  gate_off: "Gate switched off",
-  too_far: "Too far from the gate",
-  weak_gps: "GPS too weak",
-  mock_gps: "Mock location",
-};
-
 interface PageProps {
-  searchParams: Promise<{ before?: string; gate?: string; result?: string }>;
+  searchParams: Promise<{
+    before?: string;
+    gate?: string;
+    result?: string;
+    q?: string | string[];
+    from?: string;
+    to?: string;
+  }>;
 }
 
 export default async function ScansPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token } = await requireStaff();
   const params = await searchParams;
-  // The address's filters, or on a bare visit the ones chosen last time (lib/filters.ts).
+  // The address's filters, or on a bare visit the ones chosen last time (lib/filters.ts). A
+  // search and dates are never remembered.
   const { values } = resolveFilters("scans", params, await rememberedFilters());
   const result =
-    values.result && values.result in RESULTS ? (values.result as ScanResult) : undefined;
+    values.result && values.result in SCAN_RESULTS ? (values.result as ScanResult) : undefined;
+  const { q = "", from, to } = extrasFrom("scans", params);
+  const typed = typeof params.q === "string" ? params.q.trim() : "";
+  const backwards = Boolean(from && to && to < from);
   const before = params.before && /^\d+$/.test(params.before) ? params.before : undefined;
   const gates = await adminApi.gates(token);
   // A remembered gate that's since been removed is simply not applied.
   const gate = gates.some((g) => g.id === values.gate) ? values.gate : undefined;
-  const page = await adminApi.scans(token, { before, gate, result });
+  const page = backwards
+    ? { items: [], next_before: null }
+    : await adminApi.scans(token, { before, gate, result, q: q || undefined, from, to });
 
-  const older = new URLSearchParams();
-  if (gate) older.set("gate", gate);
-  if (result) older.set("result", result);
-  if (page.next_before !== null) older.set("before", String(page.next_before));
+  const chosen = { ...(gate ? { gate } : {}), ...(result ? { result } : {}) };
+  const extras = { q, from, to };
+  const here = pageHref("scans", chosen, extras);
+  const older =
+    page.next_before === null
+      ? null
+      : `${here}${here.includes("?") ? "&" : "?"}before=${page.next_before}`;
+  const filtered = Boolean(gate || result || q || from || to);
+  const today = istToday();
 
   const select = "min-h-11 rounded-control border border-line bg-surface px-3 text-sm text-ink";
+  const input = `${select} font-normal`;
 
   return (
     <section aria-labelledby="scans-heading" className="flex flex-col gap-6">
@@ -55,50 +67,83 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
         </p>
       </div>
 
-      {/* Sent to /admin/filter, which remembers the choice and opens this page with it. */}
-      <form method="get" action="/admin/filter" className="flex flex-wrap items-end gap-3">
+      {/* Sent to /admin/filter, which remembers the gate and result (not the search or dates)
+          and opens this page with them. */}
+      <form
+        method="get"
+        action="/admin/filter"
+        role="search"
+        aria-label="Filter scans"
+        className="flex flex-col gap-3"
+      >
         <input type="hidden" name="view" value="scans" />
-        <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
-          Gate
-          <select name="gate" defaultValue={gate ?? ""} className={select}>
-            <option value="">All gates</option>
-            {gates.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
-          Result
-          <select name="result" defaultValue={result ?? ""} className={select}>
-            <option value="">Any result</option>
-            {Object.entries(RESULTS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="submit"
-          className="min-h-11 rounded-control bg-ink px-4 text-sm font-bold text-page hover:opacity-90"
-        >
-          Filter
-        </button>
-        {(gate || result) && (
-          <a
-            href={filterHref("scans", {})}
-            className="flex min-h-11 items-center px-2 text-sm font-bold text-accent"
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex min-w-[min(100%,16rem)] flex-1 flex-col gap-1.5 text-sm font-bold text-ink">
+            Student name or roll number
+            <input
+              type="search"
+              name="q"
+              defaultValue={typed || q}
+              minLength={2}
+              maxLength={MAX_Q}
+              className={input}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            From
+            <input type="date" name="from" defaultValue={from} max={today} className={input} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            To
+            <input type="date" name="to" defaultValue={to} max={today} className={input} />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            Gate
+            <select name="gate" defaultValue={gate ?? ""} className={select}>
+              <option value="">All gates</option>
+              {gates.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+            Result
+            <select name="result" defaultValue={result ?? ""} className={select}>
+              <option value="">Any result</option>
+              {Object.entries(SCAN_RESULTS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="min-h-11 rounded-control bg-ink px-4 text-sm font-bold text-page hover:opacity-90"
           >
-            Clear
-          </a>
-        )}
+            Filter
+          </button>
+          {filtered && (
+            <a
+              href={filterHref("scans", {})}
+              className="flex min-h-11 items-center px-2 text-sm font-bold text-accent-text underline-offset-4 hover:underline"
+            >
+              Clear
+            </a>
+          )}
+        </div>
+        {typed && !q && <p className="text-sm text-muted">Type at least 2 letters to search.</p>}
       </form>
 
-      {page.items.length === 0 ? (
+      {backwards ? (
+        <FormError message="The end date is before the start date. Choose the dates again." />
+      ) : page.items.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-10 text-center text-muted">
-          {gate || result
+          {filtered
             ? "No scans match these filters."
             : "No scans yet. They appear here as students tap out and in at a gate."}
         </p>
@@ -110,49 +155,14 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
         </ol>
       )}
 
-      {page.next_before !== null && (
+      {older && (
         <Link
-          href={`/admin/scans?${older.toString()}`}
-          className="self-center font-bold text-accent underline-offset-4 hover:underline"
+          href={older}
+          className="flex min-h-11 items-center self-center font-bold text-accent-text underline-offset-4 hover:underline"
         >
           Older scans
         </Link>
       )}
     </section>
-  );
-}
-
-function ScanRow({ scan }: { scan: AdminScan }): ReactNode {
-  const accepted = scan.result === "accepted";
-  const distance =
-    scan.distance_m === null
-      ? null
-      : `${Math.round(scan.distance_m)} m from gate${
-          scan.accuracy_m === null ? "" : ` (GPS ±${Math.round(scan.accuracy_m)} m)`
-        }`;
-  return (
-    <li className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 py-3.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]">
-      <div className="min-w-0">
-        <p className="truncate font-bold text-ink">{scan.name}</p>
-        <p className="truncate text-sm text-muted">
-          {scan.direction === "out" ? "Tapping out" : "Tapping in"}
-          {scan.gate ? ` · ${scan.gate}` : ""}
-          {scan.roll_no ? ` · ${scan.roll_no}` : ""}
-        </p>
-      </div>
-      <p className="col-start-2 row-start-1 text-right text-sm tabular-nums text-muted sm:col-start-3">
-        {formatWhen(scan.scanned_at)}
-      </p>
-      <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:col-span-1 sm:col-start-2 sm:row-start-1">
-        <span
-          className={`inline-flex rounded-full px-2.5 py-0.5 font-bold ${
-            accepted ? "bg-good-soft text-good" : "bg-danger-soft text-danger"
-          }`}
-        >
-          {RESULTS[scan.result]}
-        </span>
-        {distance && <span className="tabular-nums text-muted">{distance}</span>}
-      </div>
-    </li>
   );
 }
