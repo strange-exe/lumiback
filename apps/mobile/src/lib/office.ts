@@ -16,6 +16,7 @@ export const SCAN_RESULT_LABEL: Record<ScanResult, string> = {
   too_far: "Too far from the gate",
   weak_gps: "GPS too weak",
   mock_gps: "Mock location",
+  not_allowed: "Outside the outing rules",
 };
 
 const SCANS_PER_PAGE = 30;

@@ -32,6 +32,7 @@ const RESULT_CHIPS: { value: ResultFilter; label: string }[] = [
   { value: "too_far", label: "Too far" },
   { value: "weak_gps", label: "Weak GPS" },
   { value: "mock_gps", label: "Mock GPS" },
+  { value: "not_allowed", label: "Rules" },
 ];
 
 /** Every gate scan, including refused ones, newest first; filter by gate and result. A warden

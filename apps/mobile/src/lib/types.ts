@@ -291,6 +291,8 @@ export interface CorrectionQueue {
 
 export interface OfficeRequest {
   id: string;
+  /** The day it's for (YYYY-MM-DD, IST). */
+  day?: string;
   name: string;
   roll_no: string | null;
   hostel: string | null;
@@ -362,6 +364,40 @@ export interface OfficeStudent {
   /** Right now. */
   status: "in" | "out" | "overdue";
   account: AccountState;
+}
+
+/** GET /admin/students/{id}: a student's history at the top: who, and their record in numbers
+ * (outings and late ones in the viewer's hostels). */
+export interface StudentRecord {
+  student: OfficeStudent;
+  outings: number;
+  late: number;
+  open_escalations: number;
+  requests: number;
+}
+
+/** An outing in a student's history, with its corrections (oldest first) and late follow-up. */
+export interface RecordOuting extends OfficeOuting {
+  purpose: string | null;
+  on_request?: boolean;
+  corrections: Correction[];
+  escalation: {
+    created_at: string;
+    resolved_at: string | null;
+    /** The staff member's name; null while open, or once their account is gone. */
+    resolved_by: string | null;
+    note: string | null;
+  } | null;
+}
+
+/** Pages of a student's history; pass `next_before` back as `before` for older ones. */
+export interface RecordOutingPage {
+  items: RecordOuting[];
+  next_before: string | null;
+}
+export interface RecordRequestPage {
+  items: OfficeRequest[];
+  next_before: string | null;
 }
 
 /** invited: added by the office, hasn't chosen a password yet; reset: a password link was
@@ -459,11 +495,14 @@ export interface Holiday {
 }
 
 /** Why a gate scan was accepted or refused (backend ScanResult). */
-export type ScanResult = "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps";
+export type ScanResult =
+  "accepted" | "bad_code" | "gate_off" | "too_far" | "weak_gps" | "mock_gps" | "not_allowed";
 
 /** One gate scan in the office's log; only the distance from the gate, never a location. */
 export interface OfficeScan {
   id: number;
+  /** For their history; null once the account was deleted. Missing from an older server. */
+  student_id?: string | null;
   name: string;
   roll_no: string | null;
   gate: string | null;

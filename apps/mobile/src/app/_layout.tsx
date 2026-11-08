@@ -15,6 +15,7 @@ import { loadPrefs } from "@/lib/prefs";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
 import { OfflineStart } from "@/screens/offline-start";
+import { StartingScreen } from "@/screens/StartingScreen";
 import { useColors } from "@/ui/theme";
 import { UpdatePrompt } from "@/updates/UpdatePrompt";
 
@@ -36,13 +37,23 @@ function Navigator(): ReactNode {
   useEffect(() => {
     void loadPrefs().finally(() => setPrefsLoaded(true));
   }, []);
-  const ready = fontsLoaded && prefsLoaded && status !== "loading";
+  // The splash covers only what is local (fonts, preferences); the server check that can take
+  // up to a minute (a sleeping server waking) gets the app's own starting screen instead.
+  const ready = fontsLoaded && prefsLoaded;
 
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
   }, [ready]);
 
   if (!ready) return null;
+  if (status === "loading") {
+    return (
+      <>
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+        <StartingScreen />
+      </>
+    );
+  }
   if (status === "offline") {
     return (
       <>

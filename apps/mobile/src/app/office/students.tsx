@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, Pressable, RefreshControl, View } from "react-native";
 
@@ -308,6 +309,15 @@ function StudentRow({
             name={s.emergency_name}
             phone={s.emergency_phone}
           />
+          {s.role === "student" ? (
+            <Button
+              label="Show their history"
+              variant="secondary"
+              onPress={() =>
+                router.push({ pathname: "/office/student/[id]", params: { id: s.id } })
+              }
+            />
+          ) : null}
           {onMove ? (
             <Button label="Move to another hostel" variant="secondary" onPress={onMove} />
           ) : null}

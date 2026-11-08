@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { router } from "expo-router";
 import { useState, type ReactNode } from "react";
 import { View } from "react-native";
 
@@ -116,15 +117,33 @@ function OutRow({
             .join(" · ")}
         </T>
       </View>
-      <Press
-        onPress={onRecord}
-        accessibilityLabel={`Record ${o.name}'s return`}
-        style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
-      >
-        <T tone="label" style={{ color: c.accentText }}>
-          Record return
-        </T>
-      </Press>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", columnGap: space(5) }}>
+        <Press
+          onPress={onRecord}
+          accessibilityLabel={`Record ${o.name}'s return`}
+          style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
+        >
+          <T tone="label" style={{ color: c.accentText }}>
+            Record return
+          </T>
+        </Press>
+        {o.student_id ? (
+          <Press
+            onPress={() =>
+              router.push({
+                pathname: "/office/student/[id]",
+                params: { id: o.student_id ?? "" },
+              })
+            }
+            accessibilityLabel={`${o.name}'s history`}
+            style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
+          >
+            <T tone="label" style={{ color: c.accentText }}>
+              History
+            </T>
+          </Press>
+        ) : null}
+      </View>
     </View>
   );
 }

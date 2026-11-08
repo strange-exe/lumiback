@@ -2,6 +2,7 @@
  * warden to their own hostels' students. */
 import { api } from "@/lib/api";
 import { scanQuery, studentsQuery } from "@/lib/office";
+import { recordPath } from "@/lib/record";
 import type {
   AccountEdit,
   AccountFilter,
@@ -23,9 +24,12 @@ import type {
   PasswordLinkSent,
   Person,
   PersonAdded,
+  RecordOutingPage,
+  RecordRequestPage,
   Role,
   RuleSet,
   ScanResult,
+  StudentRecord,
 } from "@/lib/types";
 
 export const office = {
@@ -119,6 +123,15 @@ export const office = {
   /** Gate scans, newest first, a page at a time; a warden sees their hostels' students only. */
   scans: (filter: { before?: number | null; gateId?: string | null; result?: ScanResult | null }) =>
     api<OfficeScanPage>(`/admin/scans?${scanQuery(filter)}`),
+
+  /** One student's history: a 404 for anyone who isn't a student this office looks after. */
+  studentRecord: (id: string) => api<StudentRecord>(`/admin/students/${encodeURIComponent(id)}`),
+  recordOutings: (id: string, before?: string | null) =>
+    api<RecordOutingPage>(recordPath(id, "outings", before)),
+  recordRequests: (id: string, before?: string | null) =>
+    api<RecordRequestPage>(recordPath(id, "requests", before)),
+  recordScans: (id: string, before?: number | null) =>
+    api<OfficeScanPage>(recordPath(id, "scans", before)),
 
   gates: () => api<Gate[]>("/admin/gates"),
   /** Admins only, like the two below. */

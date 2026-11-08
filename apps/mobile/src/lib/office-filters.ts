@@ -29,6 +29,7 @@ const RESULTS: readonly string[] = [
   "too_far",
   "weak_gps",
   "mock_gps",
+  "not_allowed",
 ];
 
 export const DEFAULT_OFFICE_FILTERS: OfficeFilters = {
