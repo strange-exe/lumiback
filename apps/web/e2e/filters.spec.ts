@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { ADMIN_STATE } from "../playwright.config";
-import { ADMIN, designMatrix, signIn, watchForErrors } from "./helpers";
+import { ADMIN, API, designMatrix, signIn, watchForErrors } from "./helpers";
 
 // Remembered filters (src/lib/filters.ts): the hostel office's lists open on the filter chosen
 // last time; the address always wins; "All" resets; signing out forgets them.
@@ -126,22 +126,56 @@ test.describe("as an admin", () => {
     expect(errors).toEqual([]);
   });
 
-  test("a well-formed hostel that isn't one of theirs is never applied", async ({ page }) => {
+  test("a well-formed hostel that isn't one of theirs is never applied", async ({
+    page,
+    request,
+  }) => {
     // Passes the UUID check, so only People's "one of my hostels" test stops it: applied,
-    // the API would answer an empty list for a hostel that doesn't exist.
-    const foreign = "7a1b2c3d-0000-4000-8000-0000000000bb";
-    await page.context().addCookies([
-      {
-        name: COOKIE,
-        value: encodeURIComponent(JSON.stringify({ people: { hostel: foreign } })),
-        domain: "localhost",
-        path: "/",
+    // the API would answer an empty list for a hostel that doesn't exist. So someone must
+    // live in a hostel: the plain seed has no one, so this test adds a student and removes them.
+    const login = await request.post(`${API}/auth/login`, {
+      data: { email: ADMIN.email, password: ADMIN.password },
+    });
+    expect(login.status()).toBe(200);
+    const { access_token } = (await login.json()) as { access_token: string };
+    const headers = { Authorization: `Bearer ${access_token}` };
+    const hostels = (await (await request.get(`${API}/admin/hostels`, { headers })).json()) as {
+      id: string;
+      name: string;
+    }[];
+    const added = await request.post(`${API}/admin/people`, {
+      headers,
+      data: {
+        name: "Filterrow Ishaan",
+        role: "student",
+        student_id: "24019950",
+        email: "filterrow0@geu.ac.in",
+        hostel_id: hostels.find((h) => h.name === "Hostel 3")!.id,
       },
-    ]);
-    for (const path of ["/admin/people", `/admin/people?hostel=${foreign}`]) {
-      await page.goto(path);
-      await expect(current(page, "Show"), path).toHaveText("All students");
-      await expect(page.locator("input[data-bulk]").first(), path).toBeAttached();
+    });
+    expect(added.ok(), await added.text()).toBe(true);
+    const found = (await (
+      await request.get(`${API}/admin/students?q=filterrow`, { headers })
+    ).json()) as { id: string }[];
+    const foreign = "7a1b2c3d-0000-4000-8000-0000000000bb";
+    try {
+      await page.context().addCookies([
+        {
+          name: COOKIE,
+          value: encodeURIComponent(JSON.stringify({ people: { hostel: foreign } })),
+          domain: "localhost",
+          path: "/",
+        },
+      ]);
+      for (const path of ["/admin/people", `/admin/people?hostel=${foreign}`]) {
+        await page.goto(path);
+        await expect(current(page, "Show"), path).toHaveText("All students");
+        await expect(page.locator("input[data-bulk]").first(), path).toBeAttached();
+      }
+    } finally {
+      for (const { id } of found) {
+        await request.delete(`${API}/admin/users/${id}/invite`, { headers });
+      }
     }
   });
 
