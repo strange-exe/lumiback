@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.18.1",
+    "date": "2026-11-09",
+    "title": "Update announcements, written for you",
+    "summary": "Announce an update now starts with this release's title and a one-line summary, ready to edit before you send it.",
+    "points": [
+      "For developers: Announce an update now starts with this release's title and a one-line summary, ready to edit before you send it."
+    ]
+  },
+  {
     "version": "1.18.0",
     "date": "2026-11-09",
     "title": "Running late, and your trip without a connection",
