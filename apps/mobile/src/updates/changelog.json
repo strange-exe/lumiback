@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.17.0",
+    "date": "2026-11-08",
+    "title": "Help while you're out, and a new starting screen",
+    "points": [
+      "While you're out, Help tells the hostel office where you are (one location, once) and lets your followers and emergency contact know you asked for help. The hostel office's number is there to call.",
+      "The hostel office can send a notice to everyone who is out and note each call they make about a late student. Alerts that can't reach a phone are emailed instead.",
+      "If an admin changes your email address, you choose a new password from a link sent to the new address.",
+      "A new starting screen: it tells you when the server has started, signs you in and welcomes you back."
+    ]
+  },
+  {
     "version": "1.16.0",
     "date": "2026-11-08",
     "title": "A student's whole history, and an audit log",
