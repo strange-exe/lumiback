@@ -1,6 +1,7 @@
 import { Phone } from "@phosphor-icons/react/dist/ssr";
 import type { ReactNode } from "react";
 
+import { telHref } from "@/features/admin/alerts";
 import { formatPhone } from "@/features/admin/format";
 
 /** A person to call, with a tap-to-call link (dials straight from a phone). */
@@ -20,7 +21,7 @@ export function Contact({
         {name ? <span className="truncate text-ink">{name}</span> : null}
         {phone ? (
           <a
-            href={`tel:${phone}`}
+            href={telHref(phone)}
             className="inline-flex min-h-11 items-center gap-1.5 self-start font-bold text-accent tabular-nums underline-offset-4 hover:underline"
           >
             <Phone aria-hidden="true" className="size-4" />

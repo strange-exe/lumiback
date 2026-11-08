@@ -12,6 +12,7 @@ import type {
   CorrectionQueue,
   Escalation,
   Gate,
+  HelpRequest,
   Holiday,
   Hostel,
   OfficeStudent,
@@ -148,6 +149,11 @@ export const adminApi = {
 
   escalations(token: string, state: "open" | "all" = "open"): Promise<Escalation[]> {
     return callBackend<Escalation[]>(`/admin/escalations?state=${state}`, { token });
+  },
+
+  /** Students who pressed Help while out, newest first, in this office's hostels. */
+  help(token: string, state: "open" | "all" = "open"): Promise<HelpRequest[]> {
+    return callBackend<HelpRequest[]>(`/admin/help?state=${state}`, { token });
   },
 
   /** Students' correction asks, and returns the gate never saw, in this office's hostels. */

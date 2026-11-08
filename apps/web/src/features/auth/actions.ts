@@ -7,9 +7,9 @@ import { redirect } from "next/navigation";
 import { isDeviceId, signedOutNotice } from "@/features/account/devices";
 import { changePasswordProblem, passwordChangedNotice } from "@/features/account/password";
 import { isLinkToken } from "@/features/auth/link-token";
-import { shareApi } from "@/features/share/api";
+import { endTabShare } from "@/features/auth/sign-out-share";
 import { ApiError, callBackend, visitorIp } from "@/lib/backend";
-import { accessToken, clearTokens, refreshToken, storeTokens, viewingAs } from "@/lib/session";
+import { accessToken, clearTokens, refreshToken, storeTokens } from "@/lib/session";
 import type { FormState, PasswordLinkInfo, TokenPair } from "@/lib/types";
 
 function text(form: FormData, key: string): string {
@@ -110,18 +110,8 @@ export async function resendCode(_: FormState, form: FormData): Promise<FormStat
 
 export async function signOut(): Promise<void> {
   const access = await accessToken();
-  // While viewing as another role the API refuses every change, so this would only fail.
-  if (access && !(await viewingAs())) {
-    // Signing out of the device you're sharing from ends the share: nobody is left to stop it.
-    // Not a safe-return share: it belongs to the outing (the app may be sending it) and ends
-    // when the student is back.
-    const live = await shareApi.activeTabShare(access).catch(() => null);
-    if (live?.source === "tab_live") {
-      await callBackend(`/sessions/${live.id}/stop`, { method: "POST", token: access }).catch(
-        () => undefined,
-      );
-    }
-  }
+  // Ends this browser's live tab share (as yourself, so also while viewing as a role).
+  if (access) await endTabShare(access, (path, options) => callBackend(path, options));
   const token = await refreshToken();
   if (token) {
     // Revoke on the server too; a failure here must not keep the student signed in locally.

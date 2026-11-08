@@ -77,6 +77,26 @@ export interface Outing {
   safe_return_session_id?: string | null;
   /** The latest correction of this outing (asked by the student or made by the office). */
   correction?: Correction | null;
+  /** Only on the current outing: the hostel office to call while out or late. */
+  office?: OfficeContact | null;
+}
+
+/**
+ * The hostel office of a student's outing. `phone` null: the hostel has no number yet, so the
+ * student can ask the office to call them instead.
+ */
+export interface OfficeContact {
+  hostel: string | null;
+  name: string | null;
+  phone: string | null;
+}
+
+/** POST /outings/current/help: who was told, and the office number to call. */
+export interface HelpSent {
+  office: OfficeContact | null;
+  office_told: number;
+  followers_told: number;
+  contact_told: boolean;
 }
 
 /**
@@ -274,6 +294,8 @@ export interface AdminOverview {
   open_escalations?: number;
   /** Students' correction asks plus unrecorded returns to fix. */
   corrections?: number;
+  /** Students who pressed Help, not yet handled. */
+  open_help?: number;
 }
 
 export interface AdminOuting {
@@ -371,6 +393,11 @@ export interface CampusSettings {
   /** Kiosk quiet hours, "HH:MM" IST: both set, or both null (always on). May cross midnight. */
   kiosk_quiet_from?: string | null;
   kiosk_quiet_until?: string | null;
+  /** Follow-up timings in minutes (5 to 240). Optional while an older API leaves them out. */
+  request_remind_minutes?: number;
+  request_backup_minutes?: number;
+  escalation_realert_minutes?: number;
+  escalation_takeover_minutes?: number;
 }
 
 // ---------- audit log, a student's record ----------
@@ -535,6 +562,47 @@ export interface Escalation {
   last_seen: LastSeen | null;
   resolved_by: string | null;
   resolved_at: string | null;
+  note: string | null;
+  /** Who said "I'm on it" (null: nobody yet). */
+  claimed_by?: string | null;
+  claimed_by_me?: boolean;
+  claimed_at?: string | null;
+  /** When nobody claimed it in time and it went to the head wardens. */
+  handed_over_at?: string | null;
+  /** How many times the office was alerted again while nobody had it. */
+  realerts?: number;
+  /** The office's calls, oldest first. */
+  calls?: EscalationCall[];
+}
+
+export type CallOutcomeName = "reached_student" | "reached_contact" | "no_answer" | "left_message";
+
+export interface EscalationCall {
+  at: string;
+  /** The staff member's name (null once their account is gone). */
+  by: string | null;
+  outcome: CallOutcomeName;
+  note: string | null;
+}
+
+/** GET /admin/help: a student who pressed Help while out. */
+export interface HelpRequest {
+  id: string;
+  created_at: string;
+  student_id: string;
+  name: string;
+  roll_no: string | null;
+  phone: string | null;
+  hostel: string | null;
+  /** The one fix sent with it; null if none, or a day after. */
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  mocked: boolean;
+  /** The outing it was sent from has ended. */
+  returned: boolean;
+  handled_by: string | null;
+  handled_at: string | null;
   note: string | null;
 }
 

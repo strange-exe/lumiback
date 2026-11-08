@@ -58,7 +58,8 @@ export default async function RulesPage(): Promise<ReactNode> {
           </h2>
           <p className="max-w-[65ch] text-sm text-muted">
             Students choose their hostel from a list grouped like this. The warden&apos;s number is
-            shown when a late student doesn&apos;t answer.
+            shown to the office when a late student doesn&apos;t answer, to students while
+            they&apos;re out, and in the email their emergency contact gets when they press Help.
           </p>
         </div>
         {sets.length === 0 ? (

@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { pathId } from "@/features/admin/form";
+import { CALL_ME_SENT, callMeError, helpError, helpFix } from "@/features/outings/alerts";
 import { correctionBody } from "@/features/outings/corrections";
 import { safeReturnShareToSend } from "@/features/outings/safe-return";
 import { ApiError, callBackend } from "@/lib/backend";
 import { accessToken } from "@/lib/session";
-import type { FormState, Outing } from "@/lib/types";
+import type { FormState, HelpSent, Outing } from "@/lib/types";
 
 /** Every action re-checks the session itself (never trust that a page was protected). */
 async function tokenOrSignIn(): Promise<string> {
@@ -85,6 +86,52 @@ export async function replyLate(_: FormState, form: FormData): Promise<FormState
   return run(() =>
     callBackend("/outings/current/late-reply", { method: "POST", token, body: { reply } }),
   );
+}
+
+// ---------- reaching the hostel office while out ----------
+
+/** "Ask the office to call me", for a hostel with no office number (3 an hour). */
+export async function askOfficeToCall(_: FormState): Promise<FormState> {
+  const token = await tokenOrSignIn();
+  try {
+    await callBackend("/outings/current/call-me", { method: "POST", token });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401) redirect("/sign-in");
+      return { error: callMeError(error.status, error.detail) };
+    }
+    throw error;
+  }
+  return { error: null, notice: CALL_ME_SENT };
+}
+
+/** What a help alert hands back: who was told, and the office number to call. */
+export interface HelpState extends FormState {
+  sent?: HelpSent | null;
+}
+
+/**
+ * The Help button, after the student confirmed: an urgent alert to the hostel office, the
+ * people they share their location with and their emergency contact, with the one location
+ * fix the browser gave (lat, lng, accuracy_m; none if it gave none). 5 an hour.
+ */
+export async function askForHelp(_: HelpState, form: FormData): Promise<HelpState> {
+  const token = await tokenOrSignIn();
+  const location = helpFix(text(form, "lat"), text(form, "lng"), text(form, "accuracy_m"));
+  try {
+    const sent = await callBackend<HelpSent>("/outings/current/help", {
+      method: "POST",
+      token,
+      body: { location },
+    });
+    return { error: null, sent };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401) redirect("/sign-in");
+      return { error: helpError(error.status, error.detail) };
+    }
+    throw error;
+  }
 }
 
 // ---------- outing request (days that need approval) ----------

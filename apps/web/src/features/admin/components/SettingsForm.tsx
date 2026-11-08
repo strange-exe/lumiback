@@ -1,10 +1,12 @@
 "use client";
 
+import { CaretRight } from "@phosphor-icons/react";
 import { useActionState, useState, type ReactNode } from "react";
 
 import { Field, FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { saveSettings } from "@/features/admin/actions";
+import { TIMING_FIELDS } from "@/features/admin/alerts";
 import type { CampusSettings, FormState } from "@/lib/types";
 
 const EMPTY: FormState = { error: null };
@@ -68,6 +70,48 @@ export function SettingsForm({ current }: { current: CampusSettings }): ReactNod
           />
         </div>
       </fieldset>
+      {/* Closed by default (rarely changed), so Save stays in the first screen. Opens itself
+          when the browser refuses a value in it (the same 5 to 240 the API checks), so the
+          message can point at the field. */}
+      <details
+        className="group border-t border-line pt-3"
+        onInvalidCapture={(event) => {
+          event.currentTarget.open = true;
+        }}
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 font-bold text-ink">
+          <CaretRight
+            size={16}
+            weight="bold"
+            aria-hidden="true"
+            className="transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          />
+          Follow-up timings
+        </summary>
+        <p className="mt-2 text-sm text-muted">
+          When to nudge someone about a request nobody has decided, and about a late student nobody
+          in the office has taken on. Whole minutes, from 5 to 240.
+        </p>
+        <div className="mt-4 grid gap-4">
+          {TIMING_FIELDS.map((timing) => (
+            <Field
+              key={timing.name}
+              label={timing.label}
+              name={timing.name}
+              type="number"
+              inputMode="numeric"
+              min={5}
+              max={240}
+              step={1}
+              required
+              hint={timing.hint}
+              defaultValue={
+                state.fields?.[timing.name] ?? String(current[timing.name] ?? timing.fallback)
+              }
+            />
+          ))}
+        </div>
+      </details>
       <FormError message={state.error} />
       <div className="flex flex-wrap items-center gap-3">
         <SubmitButton pendingLabel="Saving…">Save settings</SubmitButton>

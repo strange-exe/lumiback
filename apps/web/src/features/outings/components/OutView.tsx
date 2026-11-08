@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { LedStage } from "@/components/led/LedBoard";
+import { OfficeHelp } from "@/features/outings/components/OfficeHelp";
 import { OutBoard } from "@/features/outings/components/OutBoard";
 import { LateReply, ReturnButton } from "@/features/outings/components/OutingControls";
 import { SafeReturnNote, type SafeReturnState } from "@/features/outings/components/SafeReturnNote";
@@ -74,6 +75,7 @@ export function OutView({
           Forgot to tap in?
         </Link>
       )}
+      <OfficeHelp office={outing.office} />
     </section>
   );
 }

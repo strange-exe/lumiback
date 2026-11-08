@@ -22,3 +22,11 @@ test("actions read as area and verb", () => {
   assert.equal(actionLabel("account:password_reset"), "Accounts: password reset");
   assert.equal(actionLabel("mystery:thing"), "mystery: thing");
 });
+
+test("alerts' actions read in plain words", () => {
+  assert.equal(actionLabel("help:handle"), "Help requests: handle");
+  assert.equal(actionLabel("notice:send"), "Notices: send");
+  assert.equal(actionLabel("notice:recall"), "Notices: recall");
+  assert.equal(actionLabel("escalation:claim"), "Late follow-ups: claim");
+  assert.equal(actionLabel("escalation:call"), "Late follow-ups: call");
+});

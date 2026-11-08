@@ -1,14 +1,21 @@
 "use client";
 
 import { CheckCircle, MapPin, Warning } from "@phosphor-icons/react";
-import { useActionState, type ReactNode } from "react";
+import { useActionState, useId, type ReactNode } from "react";
 
+import { FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
+import {
+  claimEscalation,
+  logEscalationCall,
+  releaseEscalation,
+} from "@/features/admin/alert-actions";
+import { CALL_OUTCOMES, canGiveBack, OUTCOME_LABELS } from "@/features/admin/alerts";
 import { Contact } from "@/features/admin/components/Contact";
 import { formatWhen } from "@/features/admin/format";
 import { resolveEscalation } from "@/features/admin/rules-actions";
 import { formatMinutes } from "@/features/outings/time";
-import type { Escalation, FormState } from "@/lib/types";
+import type { Escalation, FormState, Role } from "@/lib/types";
 
 const EMPTY: FormState = { error: null };
 
@@ -16,11 +23,19 @@ const REPLY = { on_my_way: "Answered: on the way", safe: "Answered: safe" } as c
 
 /**
  * A late student who didn't answer the "are you OK?" alert (a notification in the app, or an
- * email if they only use the website): who to call, and where they were last seen.
+ * email if they only use the website): who to call, and where they were last seen. `role`: the
+ * viewer's, for who may give back someone else's claim (the API decides again).
  */
-export function EscalationCard({ escalation: e }: { escalation: Escalation }): ReactNode {
+export function EscalationCard({
+  escalation: e,
+  role,
+}: {
+  escalation: Escalation;
+  role: Role;
+}): ReactNode {
   const [state, action] = useActionState(resolveEscalation, EMPTY);
   const open = e.resolved_at === null;
+  const calls = e.calls ?? [];
   return (
     <article
       aria-labelledby={`escalation-${e.id}`}
@@ -37,14 +52,21 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
             {[e.roll_no, e.hostel ?? "No hostel chosen", e.email].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${
-            e.returned_at ? "bg-good-soft text-good" : "bg-danger-soft text-danger"
-          }`}
-        >
-          {e.returned_at
-            ? `Back at ${formatWhen(e.returned_at)}`
-            : `${formatMinutes(e.late_minutes)} late`}
+        <span className="flex flex-wrap gap-1.5">
+          {open && e.handed_over_at ? (
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-sm font-bold text-accent">
+              With the head warden
+            </span>
+          ) : null}
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${
+              e.returned_at ? "bg-good-soft text-good" : "bg-danger-soft text-danger"
+            }`}
+          >
+            {e.returned_at
+              ? `Back at ${formatWhen(e.returned_at)}`
+              : `${formatMinutes(e.late_minutes)} late`}
+          </span>
         </span>
       </header>
 
@@ -89,6 +111,35 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
 
       {open && !e.returned_at ? <LastSeen escalation={e} /> : null}
 
+      {open ? <Claim escalation={e} role={role} /> : null}
+
+      {calls.length > 0 || open ? (
+        <section aria-labelledby={`calls-${e.id}`} className="flex flex-col gap-3">
+          <h3 id={`calls-${e.id}`} className="font-bold text-ink">
+            Calls
+          </h3>
+          {calls.length > 0 ? (
+            <ol className="flex flex-col divide-y divide-line border-y border-line text-sm">
+              {calls.map((call, index) => (
+                <li key={`${call.at}-${index}`} className="flex flex-col gap-0.5 py-2">
+                  <p className="text-ink">
+                    <strong>{OUTCOME_LABELS[call.outcome]}</strong>
+                    <span className="text-muted">
+                      {" "}
+                      · {formatWhen(call.at)}, {call.by ?? "a former staff member"}
+                    </span>
+                  </p>
+                  {call.note ? <p className="text-muted">{call.note}</p> : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted">No calls logged yet.</p>
+          )}
+          {open ? <LogCall escalationId={e.id} /> : null}
+        </section>
+      ) : null}
+
       {open ? (
         <form action={action} className="flex flex-col gap-3 border-t border-line pt-4">
           <input type="hidden" name="escalation_id" value={e.id} />
@@ -117,6 +168,123 @@ export function EscalationCard({ escalation: e }: { escalation: Escalation }): R
         </p>
       )}
     </article>
+  );
+}
+
+/** "I'm on it" and "Give back": who is following this up, so two people don't both call. */
+function Claim({ escalation: e, role }: { escalation: Escalation; role: Role }): ReactNode {
+  // One state for both, so the line below always says what happened last.
+  const [state, action] = useActionState(
+    (previous: FormState, form: FormData) =>
+      form.get("intent") === "release"
+        ? releaseEscalation(previous, form)
+        : claimEscalation(previous, form),
+    EMPTY,
+  );
+  const claimedBy = e.claimed_by ?? null;
+  const giveBack = canGiveBack(
+    { claimed_by: claimedBy, claimed_by_me: Boolean(e.claimed_by_me) },
+    role,
+  );
+  const realerts = e.realerts ?? 0;
+  return (
+    <form action={action} className="flex flex-col gap-3 border-t border-line pt-4">
+      <input type="hidden" name="escalation_id" value={e.id} />
+      <p className="text-sm text-ink">
+        {claimedBy ? (
+          <>
+            <strong>Claimed by {e.claimed_by_me ? "you" : claimedBy}</strong>
+            {e.claimed_at ? `, ${formatWhen(e.claimed_at)}` : ""}.
+          </>
+        ) : (
+          <>Nobody has said they&apos;re on it yet.</>
+        )}
+        {realerts > 0 && !claimedBy
+          ? ` The office was alerted again ${realerts === 1 ? "once" : `${realerts} times`}.`
+          : ""}
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        {claimedBy ? null : (
+          <SubmitButton name="intent" value="claim" pendingLabel="Saving…">
+            I&apos;m on it
+          </SubmitButton>
+        )}
+        {giveBack ? (
+          <SubmitButton name="intent" value="release" variant="secondary" pendingLabel="Saving…">
+            Give back
+          </SubmitButton>
+        ) : null}
+        <p aria-live="polite" className="text-sm empty:hidden">
+          {state.error ? (
+            <span className="font-bold text-danger">{state.error}</span>
+          ) : state.notice ? (
+            <span className="text-good">{state.notice}</span>
+          ) : null}
+        </p>
+      </div>
+    </form>
+  );
+}
+
+/** A call the office made: how it went, and a short note. Logging one also claims it. */
+function LogCall({ escalationId }: { escalationId: string }): ReactNode {
+  const [state, action] = useActionState(logEscalationCall, EMPTY);
+  const id = useId();
+  const input =
+    "min-h-12 rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none";
+  return (
+    <form
+      action={action}
+      aria-label="Log a call"
+      className="flex flex-col gap-3 rounded-control border border-line p-4"
+    >
+      <input type="hidden" name="escalation_id" value={escalationId} />
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={`${id}-outcome`} className="text-sm font-bold text-ink">
+            How the call went
+          </label>
+          <select
+            id={`${id}-outcome`}
+            name="outcome"
+            required
+            defaultValue={state.fields?.outcome ?? ""}
+            className={input}
+          >
+            <option value="" disabled>
+              Choose…
+            </option>
+            {CALL_OUTCOMES.map((outcome) => (
+              <option key={outcome} value={outcome}>
+                {OUTCOME_LABELS[outcome]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <label htmlFor={`${id}-note`} className="text-sm font-bold text-ink">
+            Note (optional)
+          </label>
+          <input
+            id={`${id}-note`}
+            name="note"
+            maxLength={200}
+            defaultValue={state.fields?.note}
+            placeholder="Mother says the bus is stuck at Clock Tower"
+            className={`${input} px-4`}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton variant="secondary" pendingLabel="Saving…">
+          Log call
+        </SubmitButton>
+        <p aria-live="polite" className="text-sm text-good empty:hidden">
+          {state.notice ?? ""}
+        </p>
+      </div>
+      <FormError message={state.error} />
+    </form>
   );
 }
 

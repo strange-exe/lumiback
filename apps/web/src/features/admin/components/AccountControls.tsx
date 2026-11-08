@@ -148,7 +148,7 @@ function EditDetails({
                 name="email"
                 type="email"
                 label="University email"
-                hint="They sign in with it. If they've set up, tell them it changed."
+                hint="They sign in with it. A new address signs them out and ends their password: we email it a link to choose a new one."
                 defaultValue={state.fields?.email ?? person.email}
                 maxLength={254}
                 required

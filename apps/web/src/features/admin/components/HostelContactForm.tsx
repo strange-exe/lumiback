@@ -9,7 +9,7 @@ import type { FormState, Hostel } from "@/lib/types";
 
 const EMPTY: FormState = { error: null };
 
-/** The warden contact the hostel office calls about a late student (shown on escalations). */
+/** The warden contact: shown on escalations, to students while out, and in Help emails. */
 export function HostelContactForm({ hostel }: { hostel: Hostel }): ReactNode {
   const [state, action] = useActionState(saveHostelContact, EMPTY);
   const value = (field: string, fallback: string | null): string =>

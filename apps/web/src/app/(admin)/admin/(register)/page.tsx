@@ -8,6 +8,7 @@ import { FormError } from "@/components/ui/Field";
 import { adminApi } from "@/features/admin/api";
 import { AutoRefresh } from "@/features/admin/components/AutoRefresh";
 import { CorrectionDialog } from "@/features/admin/components/CorrectionForms";
+import { NoticeForm } from "@/features/admin/components/NoticeForm";
 import { exportDate, exportMessage } from "@/features/admin/export";
 import { Via } from "@/features/admin/components/Via";
 import { formatWhen, istToday } from "@/features/admin/format";
@@ -91,6 +92,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           </p>
         </div>
         <NeedsAction
+          help={overview.open_help ?? 0}
           escalations={overview.open_escalations ?? 0}
           requests={overview.pending_requests ?? 0}
           corrections={overview.corrections ?? 0}
@@ -178,6 +180,8 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
           <OutingsTable outings={outings} nowIso={nowIso} />
         )}
       </section>
+
+      <NoticeForm hostels={mine.map((h) => ({ id: h.id, name: h.name }))} />
 
       <LateToday late={late} nowIso={nowIso} where={where} />
 
@@ -399,19 +403,33 @@ function LateToday({
   );
 }
 
-/** What can't wait: late students who didn't answer, and requests waiting for a decision. */
+/**
+ * What can't wait: students who pressed Help, late students who didn't answer, and requests
+ * waiting for a decision.
+ */
 function NeedsAction({
+  help,
   escalations,
   requests,
   corrections,
 }: {
+  help: number;
   escalations: number;
   requests: number;
   corrections: number;
 }): ReactNode {
-  if (!escalations && !requests && !corrections) return null;
+  if (!help && !escalations && !requests && !corrections) return null;
   return (
-    <div className="flex flex-col gap-2 sm:flex-row">
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      {help ? (
+        <Link
+          href="/admin/escalations"
+          className="flex min-h-12 flex-1 items-center justify-between gap-3 rounded-control bg-danger px-4 font-bold text-surface hover:brightness-110"
+        >
+          {help} {help === 1 ? "student asked" : "students asked"} for help
+          <span aria-hidden="true">→</span>
+        </Link>
+      ) : null}
       {escalations ? (
         <Link
           href="/admin/escalations"

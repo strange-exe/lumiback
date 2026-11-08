@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { accountFilter, editBody, personBody } from "@/features/admin/accounts";
+import { readTimings, TIMING_FIELDS, type TimingName } from "@/features/admin/alerts";
 import {
   bulkIds,
   bulkOp,
@@ -130,11 +131,15 @@ export async function newKioskLink(_: GateFormState, form: FormData): Promise<Ga
 export async function saveSettings(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const quietOn = form.get("quiet") === "on";
+  const typedTimings = Object.fromEntries(
+    TIMING_FIELDS.map(({ name }) => [name, text(form, name)]),
+  ) as Record<TimingName, string>;
   const fields = {
     retention: text(form, "retention"),
     quiet: quietOn ? "on" : "",
     quiet_from: text(form, "quiet_from"),
     quiet_until: text(form, "quiet_until"),
+    ...typedTimings,
   };
   const days = number(form, "retention");
   if (days === null || days < 7 || days > 730) {
@@ -142,6 +147,8 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   }
   const quiet = readQuietHours(quietOn, fields.quiet_from, fields.quiet_until);
   if (!quiet.ok) return { error: quiet.error, fields };
+  const timings = readTimings(typedTimings);
+  if (!timings.ok) return { error: timings.error, fields };
   const result = await attempt(
     () =>
       callBackend("/admin/settings", {
@@ -151,6 +158,7 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
           scan_retention_days: Math.round(days),
           kiosk_quiet_from: quiet.from,
           kiosk_quiet_until: quiet.until,
+          ...timings.values,
         },
       }),
     fields,
@@ -366,7 +374,13 @@ export async function editAccount(_: FormState, form: FormData): Promise<FormSta
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/people");
-  return { error: null, notice: "Details saved." };
+  const email = checked.body.email;
+  return {
+    error: null,
+    notice: email
+      ? `Details saved. ${email} was sent a link to choose a password.`
+      : "Details saved.",
+  };
 }
 
 /** Turns an account off (signed out everywhere, history kept) or back on. */
