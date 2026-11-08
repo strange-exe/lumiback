@@ -204,7 +204,8 @@ test.describe("as an admin", () => {
         // Their name in People opens the record.
         await page.goto(`/admin/people?q=${person.id}`);
         await page.getByRole("link", { name: person.name }).click();
-        await expect(page).toHaveURL(UUID);
+        // The first visit compiles the record route in the dev server (slow on CI runners).
+        await expect(page).toHaveURL(UUID, { timeout: 30_000 });
         urls.push(new URL(page.url()).pathname);
       }
 
