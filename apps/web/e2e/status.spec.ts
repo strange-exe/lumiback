@@ -112,6 +112,75 @@ test("a developer announces an update, confirmed first, twice in a row", async (
   }
 });
 
+// Wave 5: a kind, an audience by role, a banner for a feature launch, a preview, a history.
+test("a developer launches a feature to chosen roles, with a banner and a preview", async ({
+  browser,
+}) => {
+  const page = await asDeveloper(browser);
+  const errors = watchForErrors(page);
+  try {
+    await page.goto("/admin/status");
+    const form = page.getByRole("region", { name: "Announce an update" });
+    // The chips' radios are visually hidden: pick them as a person does, on their labels.
+    const pick = async (group: string, name: string): Promise<void> => {
+      const set = form.getByRole("group", { name: group });
+      await set.getByText(name, { exact: true }).click();
+      await expect(set.getByRole("radio", { name })).toBeChecked();
+    };
+    // The current release is a feature launch (changelog.json kind), so that kind starts chosen.
+    await expect(form.getByRole("radio", { name: "Release" })).toBeChecked();
+    await pick("Kind", "Patch");
+    // A banner is for feature launches only: no picker for a patch.
+    await expect(form.getByRole("group", { name: "Banner (optional)" })).toHaveCount(0);
+    await pick("Kind", "Release");
+    const banners = form.getByRole("group", { name: "Banner (optional)" });
+    await expect(banners.getByRole("radio", { name: "No banner" })).toBeChecked();
+    await pick("Banner (optional)", "Lantern");
+
+    const title = "Now live: Wave five e2e";
+    await form.getByLabel("Title").fill(title);
+    await expect(form).toContainText("23 characters. Best under 40 (up to 50).");
+    await form.getByLabel("What's new").fill("Role chips on People. The office list is quicker.");
+
+    // The preview: closed and opened, with the banner and the two buttons.
+    const preview = form.getByRole("figure", { name: "Preview (Android)" });
+    await expect(preview.getByText(title)).toHaveCount(2);
+    // Decorative (alt ""): the banner's name is the choice's label above.
+    await expect(preview.locator('img[src$="/app/banners/lantern.png"]')).toHaveCount(1);
+    await expect(preview).toContainText("Changelog");
+    await expect(preview).toContainText("Update");
+    await expect(preview.getByRole("button")).toHaveCount(0); // a picture: nothing to press
+
+    // Choose roles: none ticked is refused before anything is sent.
+    await pick("Send to", "Choose roles");
+    await form.getByRole("button", { name: "Announce" }).click();
+    await expect(form.getByRole("alert")).toHaveText("Choose at least one role, or Everyone.");
+    // The fullest form: banner preview, the role list and the refusal, at both widths and schemes.
+    await designMatrix(page, "announce-feature");
+    await form.getByRole("checkbox", { name: "Wardens", exact: true }).check();
+    await form.getByRole("checkbox", { name: "Head wardens" }).check();
+    await form.getByRole("button", { name: "Announce" }).click();
+    const confirm = page.getByRole("dialog", { name: "Send this to wardens and head wardens?" });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Send to wardens and head wardens" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(
+      form.getByText(/^(Sending to \d+ phones?|Announced, but no phones)/),
+    ).toBeVisible();
+    await expect(form.getByLabel("Title")).toHaveValue("");
+
+    // The history lists it, newest first, with its kind and audience.
+    const history = form.getByRole("region", { name: "Sent recently" });
+    const row = history.getByRole("row").filter({ hasText: title });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("Release");
+    await expect(row).toContainText("Wardens, head wardens");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+});
+
 test("while viewing as a role, Status is that role's: gone", async ({ browser }) => {
   const page = await asDeveloper(browser);
   try {

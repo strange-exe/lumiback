@@ -20,6 +20,7 @@ import type {
   RecordOutingPage,
   RecordRequestPage,
   Report,
+  Role,
   RuleSet,
   ScanResult,
   StudentRecord,
@@ -71,6 +72,8 @@ export const adminApi = {
     filters: {
       before?: string;
       gate?: string;
+      /** One of the office's hostels (else a 404): its students' scans only. */
+      hostel?: string;
       result?: ScanResult;
       q?: string;
       from?: string;
@@ -80,6 +83,7 @@ export const adminApi = {
     const query = new URLSearchParams({ limit: "50" });
     if (filters.before) query.set("before", filters.before);
     if (filters.gate) query.set("gate_id", filters.gate);
+    if (filters.hostel) query.set("hostel_id", filters.hostel);
     if (filters.result) query.set("result", filters.result);
     if (filters.q) query.set("q", filters.q);
     if (filters.from) query.set("from", filters.from);
@@ -122,23 +126,32 @@ export const adminApi = {
     return callBackend<CampusSettings>("/admin/settings", { token });
   },
 
-  users(token: string, q: string): Promise<AdminUser[]> {
-    return callBackend<AdminUser[]>(`/admin/users?q=${encodeURIComponent(q)}`, { token });
+  /**
+   * Admins' people search: `q` (2+ letters) and/or one role. With a role, the first 50 by name;
+   * a search alone, the best 20.
+   */
+  users(token: string, filters: { q?: string; role?: Role }): Promise<AdminUser[]> {
+    const query = new URLSearchParams();
+    if (filters.q) query.set("q", filters.q);
+    if (filters.role) query.set("role", filters.role);
+    return callBackend<AdminUser[]>(`/admin/users?${query.toString()}`, { token });
   },
 
   /**
    * People the office looks after, with their phone numbers: a warden's own hostels' students,
    * or (for an admin) anyone matching `q`. `account`: only those who haven't set up, or only
-   * accounts turned off (for an admin, staff too). `hostel`: one hostel's people only.
+   * accounts turned off (for an admin, staff too). `hostel`: one hostel's people only. `role`:
+   * one role's people (admins only; the API ignores it for anyone else).
    */
   students(
     token: string,
-    filters: { q?: string; account?: "invited" | "off"; hostel?: string },
+    filters: { q?: string; account?: "invited" | "off"; hostel?: string; role?: Role },
   ): Promise<OfficeStudent[]> {
     const query = new URLSearchParams();
     if (filters.hostel) query.set("hostel_id", filters.hostel);
     if (filters.q) query.set("q", filters.q);
     if (filters.account) query.set("account", filters.account);
+    if (filters.role) query.set("role", filters.role);
     const search = query.toString();
     return callBackend<OfficeStudent[]>(`/admin/students${search ? `?${search}` : ""}`, { token });
   },

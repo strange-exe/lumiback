@@ -16,6 +16,7 @@ interface PageProps {
   searchParams: Promise<{
     before?: string;
     gate?: string;
+    hostel?: string;
     result?: string;
     q?: string | string[];
     from?: string;
@@ -35,21 +36,27 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
   const typed = typeof params.q === "string" ? params.q.trim() : "";
   const backwards = Boolean(from && to && to < from);
   const before = params.before && /^\d+$/.test(params.before) ? params.before : undefined;
-  const gates = await adminApi.gates(token);
-  // A remembered gate that's since been removed is simply not applied.
+  const [gates, mine] = await Promise.all([adminApi.gates(token), adminApi.myHostels(token)]);
+  // A remembered gate that's since been removed, or a hostel that is no longer theirs, is
+  // simply not applied (the API would answer 404 for someone else's hostel).
   const gate = gates.some((g) => g.id === values.gate) ? values.gate : undefined;
+  const hostel = mine.some((h) => h.id === values.hostel) ? values.hostel : undefined;
   const page = backwards
     ? { items: [], next_before: null }
-    : await adminApi.scans(token, { before, gate, result, q: q || undefined, from, to });
+    : await adminApi.scans(token, { before, gate, hostel, result, q: q || undefined, from, to });
 
-  const chosen = { ...(gate ? { gate } : {}), ...(result ? { result } : {}) };
+  const chosen = {
+    ...(gate ? { gate } : {}),
+    ...(result ? { result } : {}),
+    ...(hostel ? { hostel } : {}),
+  };
   const extras = { q, from, to };
   const here = pageHref("scans", chosen, extras);
   const older =
     page.next_before === null
       ? null
       : `${here}${here.includes("?") ? "&" : "?"}before=${page.next_before}`;
-  const filtered = Boolean(gate || result || q || from || to);
+  const filtered = Boolean(gate || hostel || result || q || from || to);
   const today = istToday();
 
   const select = "min-h-11 rounded-control border border-line bg-surface px-3 text-sm text-ink";
@@ -67,8 +74,8 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
         </p>
       </div>
 
-      {/* Sent to /admin/filter, which remembers the gate and result (not the search or dates)
-          and opens this page with them. */}
+      {/* Sent to /admin/filter, which remembers the gate, hostel and result (not the search or
+          dates) and opens this page with them. */}
       <form
         method="get"
         action="/admin/filter"
@@ -110,6 +117,20 @@ export default async function ScansPage({ searchParams }: PageProps): Promise<Re
               ))}
             </select>
           </label>
+          {/* The hostels this person looks after: one hostel's students' scans. */}
+          {mine.length > 1 && (
+            <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
+              Hostel
+              <select name="hostel" defaultValue={hostel ?? ""} className={select}>
+                <option value="">All hostels</option>
+                {mine.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex flex-col gap-1.5 text-sm font-bold text-ink">
             Result
             <select name="result" defaultValue={result ?? ""} className={select}>

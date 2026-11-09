@@ -70,6 +70,10 @@ export default async function StatusPage(): Promise<ReactNode> {
       <AnnounceForm
         last={last ?? "Couldn't check when the last update was announced."}
         draft={announceDraft(CURRENT)}
+        history={
+          announced?.history?.map((sent) => ({ ...sent, when: formatWhen(sent.at) })) ?? null
+        }
+        banners={announced?.banners ?? []}
       />
     </div>
   );

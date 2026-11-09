@@ -9,9 +9,10 @@ import { AddPersonForm } from "@/features/admin/components/AddPersonForm";
 import { BULK_FORM, BulkActions, SelectAllShown } from "@/features/admin/components/BulkActions";
 import { MoveForm } from "@/features/admin/components/MoveForm";
 import { PasswordLinkForm } from "@/features/admin/components/PasswordLinkForm";
+import { listSource, resultCount, ROLE_CHIPS, type ChipRole } from "@/features/admin/people-roles";
 import { recordHref } from "@/features/admin/record";
 import { RoleForm } from "@/features/admin/components/RoleForm";
-import { filterHref, resolveFilters } from "@/lib/filters";
+import { extrasFrom, filterHref, resolveFilters } from "@/lib/filters";
 import { rememberedFilters, requireStaff } from "@/lib/session";
 import {
   isAdminRole,
@@ -33,6 +34,7 @@ interface PageProps {
     q?: string | string[];
     account?: string | string[];
     hostel?: string | string[];
+    role?: string | string[];
     cancelled?: string | string[];
   }>;
 }
@@ -66,9 +68,13 @@ function fromStudent(s: OfficeStudent): Row {
   };
 }
 
+/** The API's admin search answers at most this many: by role (ROLE_PAGE), by name alone. */
+const ROLE_LIMIT = 50;
+const SEARCH_LIMIT = 20;
+
 /**
  * Who's listed: everyone in the hostels the viewer looks after (every hostel for an admin, as
- * in the app), one hostel, a filter, or an admin's search, which also finds staff.
+ * in the app), one hostel, a filter, or an admin's search or role chip, which also find staff.
  */
 async function load(
   token: string,
@@ -76,21 +82,24 @@ async function load(
   q: string,
   account: Account,
   hostel: string | undefined,
-): Promise<Row[]> {
+  role: ChipRole | undefined,
+): Promise<{ rows: Row[]; cap: number }> {
   const search = q.length >= 2 ? q : undefined;
-  if (!isAdmin || account || hostel || !search) {
-    return (await adminApi.students(token, { q: search, account, hostel })).map(fromStudent);
+  if (listSource({ isAdmin, search, role, account, hostel }) === "students") {
+    const students = await adminApi.students(token, { q: search, account, hostel, role });
+    return { rows: students.map(fromStudent), cap: LIST_LIMIT };
   }
   // The search knows roles and a warden's hostels; the students list knows phone numbers.
   const [users, students] = await Promise.all([
-    adminApi.users(token, search),
-    adminApi.students(token, { q: search }),
+    adminApi.users(token, { q: search, role }),
+    adminApi.students(token, { q: search, role }),
   ]);
   const phones = new Map(students.map((s) => [s.id, s.phone]));
-  return users.map((u) => ({
+  const rows = users.map((u) => ({
     person: phones.has(u.id) ? { ...u, phone: phones.get(u.id) } : u,
     full: true,
   }));
+  return { rows, cap: role ? ROLE_LIMIT : SEARCH_LIMIT };
 }
 
 export default async function PeoplePage({ searchParams }: PageProps): Promise<ReactNode> {
@@ -109,7 +118,10 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   const account = accountFilter(values.account);
   // A hostel that isn't (or is no longer) one of theirs is simply not applied.
   const hostel = mine.some((h) => h.id === values.hostel) ? values.hostel : undefined;
-  const rows = await load(token, isAdmin, q, account, hostel);
+  // The role chips are for admins and developers only; anyone else's ?role= is ignored (and
+  // the API ignores it from them too).
+  const role = isAdmin ? (extrasFrom("people", params).role as ChipRole | undefined) : undefined;
+  const { rows, cap } = await load(token, isAdmin, q, account, hostel, role);
   const back = { q, account: account ?? "" };
 
   // Who each row's checkbox may act on (the same tests as the row's own controls).
@@ -172,6 +184,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         <form method="get" role="search" className="flex flex-wrap items-end gap-3">
           {account && <input type="hidden" name="account" value={account} />}
           {hostel && <input type="hidden" name="hostel" value={hostel} />}
+          {role && <input type="hidden" name="role" value={role} />}
           <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-bold text-ink">
             Name, email or roll number
             <input
@@ -190,8 +203,13 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
             Search
           </button>
         </form>
-        {mine.length > 1 && <HostelFilter q={q} account={account} hostel={hostel} hostels={mine} />}
-        <Filters q={q} account={account} hostel={hostel} isAdmin={isAdmin} />
+        {mine.length > 1 && (
+          <HostelFilter q={q} account={account} hostel={hostel} role={role} hostels={mine} />
+        )}
+        <Filters q={q} account={account} hostel={hostel} role={role} isAdmin={isAdmin} />
+        {/* Last: on a phone the six chips take two rows, and the account filter above stays
+            in the first screen. */}
+        {isAdmin && <RoleFilter q={q} account={account} hostel={hostel} role={role} />}
       </div>
 
       {/* Always mounted: its results must outlive the rows they changed (everyone turned off,
@@ -200,15 +218,11 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
 
       {rows.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
-          {emptyMessage(q, account, isAdmin, mine.find((h) => h.id === hostel)?.name)}
+          {emptyMessage(q, account, isAdmin, mine.find((h) => h.id === hostel)?.name, role)}
         </p>
       ) : (
         <>
-          {rows.length >= LIST_LIMIT && (
-            <p className="text-sm text-muted">
-              Showing the first {LIST_LIMIT}. Search to find someone else.
-            </p>
-          )}
+          <p className="text-sm text-muted">{resultCount(rows.length, cap)}</p>
           {anyTickable && <SelectAllShown />}
           <ul
             aria-labelledby="people-heading"
@@ -278,9 +292,19 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   );
 }
 
-function emptyMessage(q: string, account: Account, isAdmin: boolean, hostel?: string) {
+function emptyMessage(
+  q: string,
+  account: Account,
+  isAdmin: boolean,
+  hostel?: string,
+  role?: ChipRole,
+) {
   const matching = q.length >= 2 ? ` matching "${q}"` : "";
   const where = hostel ? ` in ${hostel}` : "";
+  if (role && !account) {
+    const who = ROLE_CHIPS.find((c) => c.value === role)!.label.toLowerCase();
+    return `No ${who}${matching}${where}.`;
+  }
   if (account === "invited") return `Everyone${matching}${where} has set up their account.`;
   if (account === "off") return `No accounts${matching}${where} are turned off.`;
   if (isAdmin && q.length >= 2 && !hostel) {
@@ -369,20 +393,59 @@ function Chip({
   );
 }
 
+/** Admins and developers: everyone, or one role's people (with or without a search). */
+function RoleFilter({
+  q,
+  account,
+  hostel,
+  role,
+}: {
+  q: string;
+  account: Account;
+  hostel: string | undefined;
+  role: ChipRole | undefined;
+}): ReactNode {
+  return (
+    <nav aria-label="Role">
+      <ul className="flex flex-wrap gap-1">
+        {ROLE_CHIPS.map((chip) => (
+          <Chip
+            key={chip.label}
+            href={filterHref(
+              "people",
+              { ...(hostel ? { hostel } : {}), ...(account ? { account } : {}) },
+              { q, role: chip.value },
+            )}
+            current={chip.value === role}
+          >
+            {chip.label}
+          </Chip>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 /** All of the viewer's hostels, or one. */
 function HostelFilter({
   q,
   account,
   hostel,
+  role,
   hostels,
 }: {
   q: string;
   account: Account;
   hostel: string | undefined;
+  role: ChipRole | undefined;
   hostels: Hostel[];
 }): ReactNode {
   const href = (id: string | undefined) =>
-    filterHref("people", { ...(id ? { hostel: id } : {}), ...(account ? { account } : {}) }, { q });
+    filterHref(
+      "people",
+      { ...(id ? { hostel: id } : {}), ...(account ? { account } : {}) },
+      { q, role },
+    );
   return (
     <nav aria-label="Hostel">
       <ul className="flex flex-wrap gap-1">
@@ -404,17 +467,24 @@ function Filters({
   q,
   account,
   hostel,
+  role,
   isAdmin,
 }: {
   q: string;
   account: Account;
   hostel: string | undefined;
+  role: ChipRole | undefined;
   isAdmin: boolean;
 }): ReactNode {
   const options = [
     {
       value: undefined,
-      label: isAdmin && q.length >= 2 && !hostel ? "Search results" : "All students",
+      label:
+        isAdmin && role
+          ? "All accounts"
+          : isAdmin && q.length >= 2 && !hostel
+            ? "Search results"
+            : "All students",
     },
     { value: "invited", label: "Hasn't set up" },
     { value: "off", label: "Turned off" },
@@ -428,7 +498,7 @@ function Filters({
             href={filterHref(
               "people",
               { ...(hostel ? { hostel } : {}), ...(option.value ? { account: option.value } : {}) },
-              { q },
+              { q, role },
             )}
             current={option.value === account}
           >

@@ -8,6 +8,7 @@ import { text, tokenOrSignIn } from "@/features/admin/form";
 import {
   announceBody,
   announceError,
+  announceOptions,
   reachedLine,
   type Announced,
 } from "@/features/developer/announce";
@@ -38,13 +39,14 @@ export async function chooseViewAs(choice: string): Promise<void> {
 }
 
 /**
- * "Announce an update": a push to every phone with Lumiback (developers only; the API
- * enforces it and audits each one). Plain text, checked here too before it is sent.
+ * "Announce an update": a push to every phone with Lumiback, or to chosen roles (developers
+ * only; the API enforces it, checks the kind, roles and banner, and audits each one). Plain
+ * text, checked here too before it is sent.
  */
 export async function announceUpdate(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();
   const fields = { title: text(form, "title"), body: text(form, "body") };
-  const checked = announceBody(fields.title, fields.body);
+  const checked = announceBody(fields.title, fields.body, announceOptions(form));
   if (!checked.ok) return { error: checked.error, fields };
   let sent: Announced;
   try {

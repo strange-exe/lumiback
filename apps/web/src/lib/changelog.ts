@@ -11,6 +11,11 @@ export interface Release {
   title: string;
   /** One line (at most 140 characters) for the update announcement push. */
   summary?: string;
+  /**
+   * What the announcement for it is: "feature" | "fix" | "maintenance" | "notice"
+   * (changelog.test.ts checks). Typed as a string because JSON imports widen it.
+   */
+  kind?: string;
   points: string[];
 }
 

@@ -206,6 +206,39 @@ test("scans carry a search and real dates only", () => {
   assert.equal(isExplicit("scans", params("to=2026-11-07")), true);
 });
 
+test("scans remember a hostel too (wave 5)", () => {
+  assert.deepEqual(chosenFrom("scans", params(`hostel=${HOSTEL}&gate=${GATE}`)), {
+    gate: GATE,
+    hostel: HOSTEL,
+  });
+  assert.deepEqual(chosenFrom("scans", params("hostel=all")), {});
+  assert.deepEqual(chosenFrom("scans", params("hostel=../x")), {});
+  assert.equal(
+    pageHref("scans", { hostel: HOSTEL.toUpperCase(), result: "accepted" }),
+    `/admin/scans?result=accepted&hostel=${HOSTEL}`,
+  );
+  assert.deepEqual(parseFilters(JSON.stringify({ scans: { hostel: HOSTEL } })), {
+    scans: { hostel: HOSTEL },
+  });
+});
+
+test("people carry a role chip in the address, never remembered (wave 5)", () => {
+  assert.deepEqual(extrasFrom("people", params("role=head_warden&q=ri")), {
+    q: "ri",
+    role: "head_warden",
+  });
+  for (const bad of ["all", "superuser", "Student", ""]) {
+    assert.deepEqual(extrasFrom("people", { role: bad }), {}, bad);
+  }
+  assert.deepEqual(chosenFrom("people", params("role=warden")), {});
+  assert.equal(isExplicit("people", params("role=warden")), true);
+  assert.equal(
+    filterHref("people", { account: "off" }, { q: "kabir", role: "student" }),
+    "/admin/filter?view=people&account=off&q=kabir&role=student",
+  );
+  assert.deepEqual(parseFilters(JSON.stringify({ people: { role: "admin" } })), {});
+});
+
 test("the audit log remembers an area from the fixed list", () => {
   assert.equal(filterView("audit"), "audit");
   assert.equal(filterView("__proto__"), null);

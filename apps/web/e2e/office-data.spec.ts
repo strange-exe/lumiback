@@ -203,9 +203,14 @@ test.describe("as an admin", () => {
 
         // Their name in People opens the record.
         await page.goto(`/admin/people?q=${person.id}`);
-        await page.getByRole("link", { name: person.name }).click();
-        // The first visit compiles the record route in the dev server (slow on CI runners).
-        await expect(page).toHaveURL(UUID, { timeout: 30_000 });
+        // A click while People hydrates is swallowed by the link (no navigation starts), so
+        // click again while still on the list. The first visit compiles the record route in
+        // the dev server (slow on CI runners), hence the long overall budget.
+        const link = page.getByRole("link", { name: person.name });
+        await expect(async () => {
+          if (!UUID.test(page.url())) await link.click({ timeout: 2_000 });
+          await expect(page).toHaveURL(UUID, { timeout: 10_000 });
+        }).toPass({ timeout: 45_000 });
         urls.push(new URL(page.url()).pathname);
       }
 

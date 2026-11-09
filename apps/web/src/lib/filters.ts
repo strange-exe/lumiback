@@ -82,7 +82,8 @@ export const VIEWS: Readonly<Record<FilterView, ViewSpec>> = {
   people: {
     path: "/admin/people",
     fields: { hostel: uuid, account: oneOf("invited", "off") },
-    extras: { q: text(1) },
+    // The role chips (admins only): an address value, never remembered, like the search.
+    extras: { q: text(1), role: oneOf("student", "warden", "head_warden", "admin", "developer") },
     explicit: [],
   },
   scans: {
@@ -98,6 +99,7 @@ export const VIEWS: Readonly<Record<FilterView, ViewSpec>> = {
         "mock_gps",
         "not_allowed",
       ),
+      hostel: uuid,
     },
     extras: { q: SEARCH, ...RANGE },
     explicit: ["before"],
