@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  type DimensionValue,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
@@ -515,14 +516,23 @@ export function Chips<V extends string>({
   value,
   onChange,
   onHero = false,
+  columns,
 }: {
   label: string;
   options: { value: V; label: string }[];
   value: V;
   onChange: (value: V) => void;
   onHero?: boolean;
+  /** Options per row, for labels too long to share one row ("Maintenance"). */
+  columns?: number;
 }): ReactNode {
   const c = useColors();
+  // Up to four share one row; more wrap, three to a row, so labels stay readable.
+  const basis: DimensionValue = columns
+    ? `${Math.floor(100 / columns) - 5}%`
+    : options.length > 4
+      ? "30%"
+      : 0;
   return (
     <View style={{ gap: space(2) }}>
       <T tone="label" style={onHero ? { color: c.heroMuted } : undefined}>
@@ -539,11 +549,7 @@ export function Chips<V extends string>({
           const fg = selected ? (onHero ? c.hero : c.onAccent) : onHero ? c.onHero : c.ink;
           const border = selected ? bg : onHero ? c.heroLine : c.line;
           return (
-            // Up to four share one row; more wrap, three to a row, so labels stay readable.
-            <View
-              key={option.value}
-              style={{ flexGrow: 1, flexShrink: 1, flexBasis: options.length > 4 ? "30%" : 0 }}
-            >
+            <View key={option.value} style={{ flexGrow: 1, flexShrink: 1, flexBasis: basis }}>
               <Press
                 onPress={() => onChange(option.value)}
                 accessibilityRole="radio"
@@ -551,6 +557,7 @@ export function Chips<V extends string>({
                 accessibilityLabel={option.label}
                 style={{
                   minHeight: 48,
+                  paddingHorizontal: space(2),
                   borderRadius: radius.control,
                   borderCurve: "continuous",
                   borderWidth: 1,

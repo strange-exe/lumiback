@@ -185,6 +185,7 @@ export default function Announce(): ReactNode {
                 options={ANNOUNCE_KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
                 value={kind}
                 onChange={setKind}
+                columns={2}
               />
               <Chips
                 label="Send to"
