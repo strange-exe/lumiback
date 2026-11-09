@@ -12,6 +12,7 @@ import {
   APP_UPDATES_CHANNEL,
   endedMessage,
   followRequestNotice,
+  isDataOnlyUpdate,
   RETURN_DUE,
   RETURN_SOON,
   returnReminders,
@@ -37,19 +38,29 @@ const CHANNELS = {
   status: "share-status",
 } as const;
 
-// Show banners while the app is open too: a join request matters even on another tab.
+// Show banners while the app is open too: a join request matters even on another tab. A
+// data-only update push is the exception: it has no title or body of its own, and the
+// background task (update-task.ts) draws the notice for it in the foreground too, so showing
+// the push as well would show a blank notice. Read in expo-notifications 57.0.25:
+// android/.../service/delegates/FirebaseMessagingDelegate.kt onMessageReceived passes every
+// push to this handler (ExpoHandlingDelegate.kt, app in the foreground only) AND runs the
+// registered task (runTaskManagerTasks, whatever the app's state).
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const show = !isDataOnlyUpdate(notification.request.content.data);
+    return {
+      shouldShowBanner: show,
+      shouldShowList: show,
+      shouldPlaySound: show,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 let channels: Promise<void> | null = null;
 
-function ensureChannels(): Promise<void> {
+/** Exported for the update task, which can run before anything else in the app has. */
+export function ensureChannels(): Promise<void> {
   if (Platform.OS !== "android") return Promise.resolve();
   channels ??= (async () => {
     await Notifications.setNotificationChannelAsync(CHANNELS.requests, {
@@ -89,8 +100,9 @@ let categories: Promise<void> | null = null;
  * The update announcement's Changelog and Update buttons (the push names this category). JS
  * only: no native change, so it reaches build 3 phones over the air. Apart from the channels:
  * if it fails, notifications still arrive (without the buttons) and reminders still work.
+ * Never rejects. Exported for the update task.
  */
-function ensureCategories(): Promise<void> {
+export function ensureCategories(): Promise<void> {
   categories ??= Promise.resolve()
     .then(() =>
       Notifications.setNotificationCategoryAsync(APP_UPDATE_CATEGORY, [...APP_UPDATE_ACTIONS]),

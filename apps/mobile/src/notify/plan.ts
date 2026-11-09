@@ -166,6 +166,69 @@ export const APP_UPDATE_ACTIONS = [
   { identifier: "update", buttonTitle: "Update", options: { opensAppToForeground: true } },
 ] as const;
 
+/** The update notice's tag (backend UPDATE_TAG): a newer notice replaces the one shown. */
+export const APP_UPDATE_TAG = "lumiback-update";
+// The announce form's limits (backend AnnouncementIn): a longer push isn't one we sent.
+const UPDATE_TITLE_MAX = 50;
+const UPDATE_BODY_MAX = 140;
+const TAG = /^[A-Za-z0-9:_-]{1,64}$/;
+
+/** The update notice the app draws itself, from a data-only push (see updateFromTask). */
+export interface DrawnUpdate {
+  identifier: string;
+  title: string;
+  body: string;
+  /** The same tap data the visible push carries, so tapTarget routes both alike. */
+  data: { kind?: string; url?: string };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function clip(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  // By code point, so an emoji is never cut in half.
+  return text ? Array.from(text).slice(0, max).join("") : null;
+}
+
+/**
+ * A data-only update push (backend push.py `_data_only_fields`): the push itself shows
+ * nothing; the app draws it. Read by the notification handler, which hides the push while
+ * the app is open, because the background task draws it then too.
+ */
+export function isDataOnlyUpdate(data: unknown): boolean {
+  return isRecord(data) && data.lumiback === APP_UPDATE_CATEGORY;
+}
+
+/**
+ * What the background task should draw for what it was handed (update-task.ts). Expo hands
+ * the push's data as `data.dataString`, a JSON string (lead's spike, 2026-11-09). Null for
+ * anything else: a button tap (also handed to the task), another app's or an older push, bad
+ * JSON, or a notice without a title and a body. The task then draws nothing.
+ */
+export function updateFromTask(taskData: unknown): DrawnUpdate | null {
+  const payload = isRecord(taskData) ? taskData.data : undefined;
+  const raw = isRecord(payload) ? payload.dataString : undefined;
+  if (typeof raw !== "string") return null;
+  let sent: unknown;
+  try {
+    sent = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(sent) || !isDataOnlyUpdate(sent)) return null;
+  const title = clip(sent.title, UPDATE_TITLE_MAX);
+  const body = clip(sent.body, UPDATE_BODY_MAX);
+  if (!title || !body) return null;
+  const data: DrawnUpdate["data"] = {};
+  if (typeof sent.kind === "string") data.kind = sent.kind;
+  if (typeof sent.url === "string") data.url = sent.url;
+  const tag = typeof sent.tag === "string" && TAG.test(sent.tag) ? sent.tag : APP_UPDATE_TAG;
+  return { identifier: tag, title, body, data };
+}
+
 /** A tap on the notification itself (expo-notifications DEFAULT_ACTION_IDENTIFIER). */
 export const DEFAULT_TAP = "expo.modules.notifications.actions.DEFAULT";
 

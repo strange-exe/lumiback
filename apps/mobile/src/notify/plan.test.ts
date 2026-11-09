@@ -1,18 +1,21 @@
 import {
   APP_UPDATE_ACTIONS,
   APP_UPDATE_CATEGORY,
+  APP_UPDATE_TAG,
   APP_UPDATES_CHANNEL,
   DEFAULT_TAP,
   tapTarget,
   endedMessage,
   followRequestNotice,
   isAppUpdate,
+  isDataOnlyUpdate,
   mutedChannels,
   notificationRoute,
   newRequests,
   RETURN_DUE,
   RETURN_SOON,
   returnReminders,
+  updateFromTask,
 } from "@/notify/plan";
 
 describe("app update announcements", () => {
@@ -193,6 +196,87 @@ describe("notificationRoute", () => {
     for (const data of [undefined, null, {}, { url: null }, { url: "/admin" }, { url: 3 }, "x"]) {
       expect(notificationRoute(data)).toBe("/today");
     }
+  });
+});
+
+describe("updateFromTask: the update notice a data-only push asks the app to draw", () => {
+  // What the background task is handed: the push's data as a JSON string (spike 2026-11-09).
+  const sent = {
+    lumiback: "app_update",
+    title: "Lumiback 1.21.0",
+    body: "Tell the office you're running late.",
+    tag: "lumiback-update",
+    kind: "app-update",
+    image: "https://lumiback.test/app/banners/lantern.png",
+  };
+  const handed = (data: unknown): unknown => ({
+    notification: null,
+    data: { dataString: JSON.stringify(data), body: JSON.stringify(data) },
+  });
+
+  test("a well-formed notice is drawn with the visible push's tap data", () => {
+    expect(updateFromTask(handed(sent))).toEqual({
+      identifier: "lumiback-update",
+      title: "Lumiback 1.21.0",
+      body: "Tell the office you're running late.",
+      data: { kind: "app-update" },
+    });
+    // Tapped, it does what the visible push does: checks for the update, or What's new.
+    const drawn = updateFromTask(handed(sent));
+    expect(tapTarget(drawn?.data, DEFAULT_TAP)).toEqual({ to: "update" });
+    expect(tapTarget(drawn?.data, "changelog")).toEqual({ to: "whats-new" });
+    // The drawn notice is never mistaken for the push itself (the handler shows it).
+    expect(isDataOnlyUpdate(drawn?.data)).toBe(false);
+    expect(isDataOnlyUpdate(sent)).toBe(true);
+    // A url the push names travels too (tapTarget checks it).
+    expect(updateFromTask(handed({ ...sent, url: "/today" }))?.data.url).toBe("/today");
+  });
+
+  test("anything that isn't one of our update notices draws nothing", () => {
+    const button = { actionIdentifier: "update", notification: { request: { content: {} } } };
+    for (const taskData of [
+      undefined,
+      null,
+      "x",
+      [],
+      {},
+      { data: null },
+      { data: {} }, // no dataString
+      { data: { dataString: 3 } },
+      { data: { dataString: "{not json" } },
+      { data: { dataString: "null" } },
+      { data: { dataString: "[1, 2]" } },
+      { data: { dataString: '"a string"' } },
+      button, // a button tap is handed to the task too
+      handed({ ...sent, lumiback: "something-else" }),
+      handed({ ...sent, lumiback: undefined }),
+      handed({ ...sent, title: "" }),
+      handed({ ...sent, title: "   " }),
+      handed({ ...sent, body: "" }),
+      handed({ ...sent, title: 50 }),
+      handed({ ...sent, body: null }),
+      handed({ kind: "app-update", title: "x", body: "y" }), // a visible push's data
+    ]) {
+      expect(updateFromTask(taskData)).toBeNull();
+    }
+  });
+
+  test("an over-long title or body is cut to the announce form's limits", () => {
+    const emoji = String.fromCodePoint(0x1f680);
+    const drawn = updateFromTask(
+      handed({ ...sent, title: "t".repeat(49) + emoji + "more", body: "b".repeat(200) }),
+    );
+    // By code point: the emoji is kept whole, never half a surrogate pair.
+    expect(drawn?.title).toBe("t".repeat(49) + emoji);
+    expect(drawn?.body).toBe("b".repeat(140));
+    expect(updateFromTask(handed({ ...sent, title: "  Spaced  " }))?.title).toBe("Spaced");
+  });
+
+  test("a missing or odd tag falls back to the one update tag", () => {
+    for (const tag of [undefined, "", "../x", "a b", 7, "x".repeat(65)]) {
+      expect(updateFromTask(handed({ ...sent, tag }))?.identifier).toBe(APP_UPDATE_TAG);
+    }
+    expect(updateFromTask(handed({ ...sent, kind: 3 }))?.data).toEqual({});
   });
 });
 

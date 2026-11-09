@@ -39,7 +39,10 @@ async function register(): Promise<void> {
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
   const muted = mutedChannels(await loadPrefs()); // the switches in Profile -> Notifications
-  await api("/devices/push-token", { method: "POST", body: { token, platform: "android", muted } });
+  // This app draws the update announcement itself (update-task.ts), so the server sends it
+  // data-only here and the notice keeps its buttons with the app closed.
+  const body = { token, platform: "android", muted, draws_updates: true };
+  await api("/devices/push-token", { method: "POST", body });
   await SecureStore.setItemAsync(KEY, token);
 }
 
