@@ -14,10 +14,8 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { installErrorReporting, setErrorRoute } from "@/lib/error-handler";
 import { loadPrefs } from "@/lib/prefs";
 import { useWakeOnForeground } from "@/lib/wake-server";
-// Registers the background location task at startup (TaskManager needs it at module scope).
-import "@/location/task";
-// And the task that draws the update announcement from a data-only push (same reason).
-import "@/notify/update-task";
+// The background tasks (location, update announcements) are defined in index.ts, not here: a
+// background launch never loads this layout.
 import { AppError } from "@/screens/app-error";
 import { OfflineStart } from "@/screens/offline-start";
 import { StartingScreen } from "@/screens/StartingScreen";
