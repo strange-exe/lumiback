@@ -1,15 +1,15 @@
 [
   {
     "version": "1.20.0",
-    "date": "2026-11-09",
+    "date": "2026-11-10",
     "kind": "feature",
     "title": "Now live: role search and update buttons",
     "summary": "Office search now shows only the people your role covers. Update alerts open the changelog or start the update in one tap.",
     "points": [
       "For the hostel office: search on the website and in the app shows only the people your role covers. Admins can filter People by role, and Scans by hostel.",
-      "Update notifications now have Changelog and Update buttons, so you can read what changed or update straight from the notification.",
+      "Update notifications now have Changelog and Update buttons, even when the app is closed, so you can read what changed or update straight from the notification.",
       "A repeat escalation alert now replaces the earlier one for the same student instead of stacking up, and safety alerts are still delivered if your phone is offline for up to a day.",
-      "For developers: an announcement now has a kind, a choice of who receives it, and a banner for releases, with a preview and a list of recent sends."
+      "For developers: an announcement now has a kind, a choice of who receives it, and a banner for releases, with a preview and a list of recent sends. Phones on this version show the buttons in place of the banner."
     ]
   },
   {
