@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.19.0",
+    "date": "2026-11-09",
+    "title": "Hostel reports and error reporting",
+    "summary": "Hostel office: outing, late-return and request reports with a CSV export. App and website errors are now reported for faster fixes.",
+    "points": [
+      "For the hostel office: Reports shows outings, gate and self-logged exits, late returns, escalations and requests for your hostels over any date range, week by week, with a CSV download. Counts only, never names.",
+      "When the app or the website hits an error, it sends a short report with personal details removed, so problems get fixed sooner. If the app crashes, the report waits and is sent the next time you open it.",
+      "If the app hits an error it can't recover from, you now see a Try again screen instead of a blank one.",
+      "For developers: an Errors page groups reports, a daily digest email lists new ones, and update announcements no longer have a daily limit."
+    ]
+  },
+  {
     "version": "1.18.1",
     "date": "2026-11-09",
     "title": "Update announcements, written for you",
