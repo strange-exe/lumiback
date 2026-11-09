@@ -35,6 +35,12 @@ test("every release says what changed", () => {
   }
 });
 
+test("a release's kind, when it has one, is one the announcement knows; the newest has one", () => {
+  const kinds = ["feature", "fix", "maintenance", "notice"];
+  for (const r of CHANGELOG) if (r.kind !== undefined) expect(kinds).toContain(r.kind);
+  expect(kinds).toContain(CURRENT.kind);
+});
+
 test("what's new shows once per newer release, not on a fresh install", () => {
   const show = (seen: string | null, isEmbeddedLaunch = false) =>
     shouldShowWhatsNew({ seen, current: "1.3.0", isEmbeddedLaunch });

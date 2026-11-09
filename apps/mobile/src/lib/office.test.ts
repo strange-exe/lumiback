@@ -10,11 +10,15 @@ import {
   isDeveloper,
   isStaff,
   kioskLink,
+  outingsQuery,
   parseHolidayDate,
   passwordLinkCopy,
+  ROLE_CHIPS,
   ROLE_LABEL,
   scanDistance,
   scanQuery,
+  searchAfterTyping,
+  shownLine,
 } from "@/lib/office";
 
 describe("scanQuery", () => {
@@ -24,6 +28,50 @@ describe("scanQuery", () => {
       "limit=30&before=120&gate_id=g+1&result=too_far",
     );
     expect(scanQuery({ before: null, gateId: null, result: null })).toBe("limit=30");
+  });
+
+  it("carries a search of 2+ letters and a hostel (wave 5)", () => {
+    expect(scanQuery({ q: "  ri ", hostelId: "h1" })).toBe("limit=30&hostel_id=h1&q=ri");
+    expect(scanQuery({ q: "r", hostelId: null })).toBe("limit=30");
+  });
+});
+
+describe("outingsQuery (wave 5: search the office's outings)", () => {
+  it("adds a search of 2+ letters, and the state when asked", () => {
+    expect(outingsQuery({})).toBe("");
+    expect(outingsQuery({ q: " riya " })).toBe("?q=riya");
+    expect(outingsQuery({ q: "r" })).toBe("");
+    expect(outingsQuery({ state: "back", q: "22CS" })).toBe("?state=back&q=22CS");
+  });
+});
+
+describe("role chips (wave 5: admins and developers only)", () => {
+  it("All first, then each role", () => {
+    expect(ROLE_CHIPS.map((c) => [c.value, c.label])).toEqual([
+      ["all", "All"],
+      ["student", "Students"],
+      ["warden", "Wardens"],
+      ["head_warden", "Head wardens"],
+      ["admin", "Admins"],
+      ["developer", "Developers"],
+    ]);
+  });
+
+  it("counts what is shown, and says when the list is cut", () => {
+    expect(shownLine(0, 300)).toBe("No one shown.");
+    expect(shownLine(1, 300)).toBe("1 person shown.");
+    expect(shownLine(12, 300)).toBe("12 people shown.");
+    expect(shownLine(300, 300)).toBe("The first 300 shown. Search to narrow it down.");
+  });
+});
+
+describe("searchAfterTyping (a cleared box clears its search)", () => {
+  it("drops the applied search once the box is empty, and keeps it while typing", () => {
+    expect(searchAfterTyping("", "riya")).toBe("");
+    expect(searchAfterTyping("   ", "riya")).toBe("");
+    // Typing waits for the keyboard's search key: the applied one stays until then.
+    expect(searchAfterTyping("riy", "riya")).toBe("riya");
+    expect(searchAfterTyping("a", "")).toBe("");
   });
 });
 

@@ -155,6 +155,33 @@ export function isAppUpdate(data: unknown): boolean {
   );
 }
 
+/**
+ * The update announcement's buttons (wave 5): the push names this category (backend
+ * UPDATE_CATEGORY, Expo `categoryId`), and the app registers it at start. Android drops ':'
+ * and '-' in category ids, hence the underscore.
+ */
+export const APP_UPDATE_CATEGORY = "app_update";
+export const APP_UPDATE_ACTIONS = [
+  { identifier: "changelog", buttonTitle: "Changelog", options: { opensAppToForeground: true } },
+  { identifier: "update", buttonTitle: "Update", options: { opensAppToForeground: true } },
+] as const;
+
+/** A tap on the notification itself (expo-notifications DEFAULT_ACTION_IDENTIFIER). */
+export const DEFAULT_TAP = "expo.modules.notifications.actions.DEFAULT";
+
+export type TapTarget =
+  { to: "update" } | { to: "whats-new" } | { to: "route"; route: NotificationRoute };
+
+/**
+ * Where a tapped notification (or one of its buttons) goes, by kind: an update announcement
+ * checks for the update (a plain tap or Update) or opens What's new (Changelog); anything else
+ * opens its own screen.
+ */
+export function tapTarget(data: unknown, action: string): TapTarget {
+  if (isAppUpdate(data)) return action === "changelog" ? { to: "whats-new" } : { to: "update" };
+  return { to: "route", route: notificationRoute(data) };
+}
+
 /** Server push channels (match the Android channels and backend PushMessage.channel). */
 export type PushChannel = "follow-requests" | "return-reminders" | "share-status";
 

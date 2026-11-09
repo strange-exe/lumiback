@@ -1,5 +1,9 @@
 import {
+  APP_UPDATE_ACTIONS,
+  APP_UPDATE_CATEGORY,
   APP_UPDATES_CHANNEL,
+  DEFAULT_TAP,
+  tapTarget,
   endedMessage,
   followRequestNotice,
   isAppUpdate,
@@ -29,6 +33,36 @@ describe("app update announcements", () => {
     ]) {
       expect(isAppUpdate(data)).toBe(false);
     }
+  });
+
+  test("the Changelog and Update buttons: the category the server names (wave 5)", () => {
+    // backend/app/api/admin.py UPDATE_CATEGORY; Android drops ':' and '-' in category ids.
+    expect(APP_UPDATE_CATEGORY).toBe("app_update");
+    expect(APP_UPDATE_ACTIONS).toEqual([
+      {
+        identifier: "changelog",
+        buttonTitle: "Changelog",
+        options: { opensAppToForeground: true },
+      },
+      { identifier: "update", buttonTitle: "Update", options: { opensAppToForeground: true } },
+    ]);
+  });
+
+  test("a tap routes by kind: Changelog opens What's new, Update and a plain tap check", () => {
+    const update = { kind: "app-update" };
+    expect(tapTarget(update, DEFAULT_TAP)).toEqual({ to: "update" });
+    expect(tapTarget(update, "update")).toEqual({ to: "update" });
+    expect(tapTarget(update, "changelog")).toEqual({ to: "whats-new" });
+    // Any other push opens its own screen, whichever button.
+    expect(tapTarget({ url: "/office/escalations" }, DEFAULT_TAP)).toEqual({
+      to: "route",
+      route: "/office/escalations",
+    });
+    expect(tapTarget({ url: "/office/requests" }, "changelog")).toEqual({
+      to: "route",
+      route: "/office/requests",
+    });
+    expect(tapTarget(null, DEFAULT_TAP)).toEqual({ to: "route", route: "/today" });
   });
 
   test("its own Android channel, apart from the student's in-app switches", () => {

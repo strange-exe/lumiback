@@ -2,7 +2,7 @@
  * warden to their own hostels' students. */
 import { api } from "@/lib/api";
 import type { ContactBody } from "@/lib/hostel-contact";
-import { scanQuery, studentsQuery } from "@/lib/office";
+import { outingsQuery, scanQuery, studentsQuery } from "@/lib/office";
 import { recordPath } from "@/lib/record";
 import type {
   AccountEdit,
@@ -69,9 +69,11 @@ export const office = {
   /** A one-line notice (or "come back now") to the students out now in this office's hostels. */
   notice: (message: string, recall: boolean) =>
     api<{ sent: number }>("/admin/notices", { method: "POST", body: { message, recall } }),
-  outings: () => api<OfficeOuting[]>("/admin/outings"),
+  /** `q`: a student's name or roll number (2+ letters), within the office's own hostels. */
+  outings: (q?: string | null) => api<OfficeOuting[]>(`/admin/outings${outingsQuery({ q })}`),
   /** Outings that ended today (IST), latest first: to correct a return time or a mistaken tap. */
-  backToday: () => api<OfficeOuting[]>("/admin/outings?state=back"),
+  backToday: (q?: string | null) =>
+    api<OfficeOuting[]>(`/admin/outings${outingsQuery({ state: "back", q })}`),
 
   /** Students' correction asks (oldest first) and returns the gate never saw. */
   corrections: () => api<CorrectionQueue>("/admin/corrections"),
@@ -105,6 +107,8 @@ export const office = {
     q?: string;
     /** Only people who haven't set up, or only accounts turned off (staff too, for admins). */
     account?: AccountFilter | null;
+    /** One role's people (admins only; the API ignores it from anyone else). */
+    role?: Role | null;
   }) => api<OfficeStudent[]>(`/admin/students${studentsQuery(filter)}`),
 
   /** Correct someone's details: only the fields in `body` change (email: admins only). */
@@ -155,8 +159,13 @@ export const office = {
     api<void>(`/admin/holidays/${encodeURIComponent(day)}`, { method: "DELETE" }),
 
   /** Gate scans, newest first, a page at a time; a warden sees their hostels' students only. */
-  scans: (filter: { before?: number | null; gateId?: string | null; result?: ScanResult | null }) =>
-    api<OfficeScanPage>(`/admin/scans?${scanQuery(filter)}`),
+  scans: (filter: {
+    before?: number | null;
+    gateId?: string | null;
+    result?: ScanResult | null;
+    hostelId?: string | null;
+    q?: string | null;
+  }) => api<OfficeScanPage>(`/admin/scans?${scanQuery(filter)}`),
 
   /** One student's history: a 404 for anyone who isn't a student this office looks after. */
   studentRecord: (id: string) => api<StudentRecord>(`/admin/students/${encodeURIComponent(id)}`),

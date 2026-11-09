@@ -7,19 +7,20 @@ import { loadPrefs } from "@/lib/prefs";
 import type { Viewer } from "@/lib/types";
 import { loadViewAs } from "@/lib/view-as";
 import {
+  APP_UPDATE_ACTIONS,
+  APP_UPDATE_CATEGORY,
   APP_UPDATES_CHANNEL,
   endedMessage,
   followRequestNotice,
-  isAppUpdate,
-  notificationRoute,
   RETURN_DUE,
   RETURN_SOON,
   returnReminders,
   sendProblemNotice,
+  tapTarget,
   type NotificationRoute,
 } from "@/notify/plan";
 import { registerPush } from "@/notify/push";
-import { openAnnouncedUpdate } from "@/updates/announced";
+import { openAnnouncedUpdate, WHATS_NEW } from "@/updates/announced";
 
 /**
  * Local notifications for what this phone knows itself: the location service that runs while
@@ -82,9 +83,31 @@ function ensureChannels(): Promise<void> {
   return channels;
 }
 
+let categories: Promise<void> | null = null;
+
+/**
+ * The update announcement's Changelog and Update buttons (the push names this category). JS
+ * only: no native change, so it reaches build 3 phones over the air. Apart from the channels:
+ * if it fails, notifications still arrive (without the buttons) and reminders still work.
+ */
+function ensureCategories(): Promise<void> {
+  categories ??= Promise.resolve()
+    .then(() =>
+      Notifications.setNotificationCategoryAsync(APP_UPDATE_CATEGORY, [...APP_UPDATE_ACTIONS]),
+    )
+    .then(
+      () => undefined,
+      () => {
+        categories = null; // try again at the next launch or sign-in
+      },
+    );
+  return categories;
+}
+
 /** Asks once (Android 13+ shows the system prompt); later calls just report the answer. */
 export async function allowNotifications(): Promise<boolean> {
   await ensureChannels();
+  await ensureCategories();
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) {
     void registerPush();
@@ -99,6 +122,7 @@ export async function allowNotifications(): Promise<boolean> {
 /** After sign-in and at launch: register for server push if notifications are already allowed. */
 export async function syncPush(): Promise<void> {
   await ensureChannels().catch(() => undefined); // Android needs a channel before a token
+  await ensureCategories();
   await registerPush();
 }
 
@@ -181,8 +205,9 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
 /**
  * Opens the screen a tapped notification points at, including the tap that launched the app.
  * Waits until signed in, so a tap that launched the app is handled after sign-in, not lost.
- * A notification without a known `url` (the escalation push has none) opens Today. An "app
- * updated" announcement checks for the update instead (see UpdatePrompt).
+ * Every server push names its screen in `url` (escalations open Escalations); one without a
+ * known `url` opens Today. An "app updated" announcement checks for the update instead (see
+ * UpdatePrompt), and its Changelog button opens What's new.
  */
 export function useNotificationRoutes(enabled: boolean): void {
   useEffect(() => {
@@ -190,12 +215,13 @@ export function useNotificationRoutes(enabled: boolean): void {
     const open = (response: Notifications.NotificationResponse | null): void => {
       if (!response) return;
       Notifications.clearLastNotificationResponse(); // handled: don't reopen on the next mount
-      const data = response.notification.request.content.data;
-      if (isAppUpdate(data)) {
-        openAnnouncedUpdate();
-        return;
-      }
-      router.navigate(notificationRoute(data));
+      const target = tapTarget(
+        response.notification.request.content.data,
+        response.actionIdentifier,
+      );
+      if (target.to === "update") openAnnouncedUpdate();
+      else if (target.to === "whats-new") router.navigate(WHATS_NEW);
+      else router.navigate(target.route);
     };
     open(Notifications.getLastNotificationResponse());
     const subscription = Notifications.addNotificationResponseReceivedListener(open);

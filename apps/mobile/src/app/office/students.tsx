@@ -11,7 +11,16 @@ import {
 } from "@/lib/accounts";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { accountLabel, everyHostel, isAdmin, passwordLinkCopy, ROLE_LABEL } from "@/lib/office";
+import {
+  accountLabel,
+  everyHostel,
+  isAdmin,
+  passwordLinkCopy,
+  ROLE_CHIPS,
+  ROLE_LABEL,
+  searchAfterTyping,
+  shownLine,
+} from "@/lib/office";
 import { office } from "@/lib/office-api";
 import { known, loadOfficeFilters, rememberOfficeFilter } from "@/lib/office-filters";
 import type { AccountFilter, OfficeHostel, OfficeStudent, Role } from "@/lib/types";
@@ -42,6 +51,8 @@ export default function Students(): ReactNode {
   const [editFor, setEditFor] = useState<OfficeStudent | null>(null);
   const [adding, setAdding] = useState(false);
   const [account, setAccount] = useState<"all" | AccountFilter>("all");
+  // Admins and developers: one role's people (not remembered, like the search).
+  const [role, setRole] = useState<"all" | Role>("all");
   // What the last account change did, in words (also announced to screen readers).
   const [done, setDone] = useState<string | null>(null);
   const viewer = user?.role ? { id: user.id, role: user.role } : null;
@@ -53,13 +64,14 @@ export default function Students(): ReactNode {
         hostelId: hostelId === "all" ? null : hostelId,
         q: search,
         account: account === "all" ? null : account,
+        role: admin && role !== "all" ? role : null,
       }),
-    [hostelId, search, account],
+    [hostelId, search, account, admin, role],
   );
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
   useEffect(() => {
     void refetch();
-  }, [hostelId, search, account, refetch]);
+  }, [hostelId, search, account, role, refetch]);
 
   // The last hostel and "Show" choice, once the hostels are known (a hostel no longer in the
   // list is "All"). A choice made before the stored one is read wins.
@@ -144,12 +156,18 @@ export default function Students(): ReactNode {
       {choices.length > 1 ? (
         <Chips label="Hostel" options={choices} value={hostelId} onChange={pickHostel} />
       ) : null}
+      {admin ? (
+        <Chips label="Role" options={[...ROLE_CHIPS]} value={role} onChange={setRole} />
+      ) : null}
       <Chips label="Show" options={ACCOUNT_FILTERS} value={account} onChange={pickAccount} />
       <Field
         label="Search"
         placeholder="Name, email or roll number"
         value={query}
-        onChangeText={setQuery}
+        onChangeText={(text) => {
+          setQuery(text);
+          setSearch((applied) => searchAfterTyping(text, applied));
+        }}
         // The API ignores searches under 2 letters; don't show one as applied when it isn't.
         onSubmitEditing={() => setSearch(query.trim().length >= 2 ? query.trim() : "")}
         returnKeyType="search"
@@ -157,6 +175,10 @@ export default function Students(): ReactNode {
         autoCorrect={false}
         hint="Press search on the keyboard. At least 2 letters."
       />
+      {data && data.length > 0 ? (
+        // The API lists at most 300 (backend services/admin.py students).
+        <T tone="muted">{shownLine(data.length, 300)}</T>
+      ) : null}
       {error && !data ? (
         <T tone="muted" accessibilityRole="alert">
           {error} Pull down to try again.

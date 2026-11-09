@@ -1,10 +1,10 @@
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { everyHostel } from "@/lib/office";
+import { everyHostel, searchAfterTyping } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import type { Escalation, HelpRequest, OfficeOuting, OfficeRequest } from "@/lib/types";
 import { useData } from "@/lib/use-data";
@@ -13,7 +13,7 @@ import { EscalationCard } from "@/screens/office/EscalationCard";
 import { HelpList } from "@/screens/office/HelpList";
 import { OutList } from "@/screens/office/OutList";
 import { RequestCard } from "@/screens/office/RequestCard";
-import { Heading, Screen, Segmented, T } from "@/ui/kit";
+import { Field, Heading, Screen, Segmented, T } from "@/ui/kit";
 import { space, useColors } from "@/ui/theme";
 
 type SectionName = "requests" | "escalations" | "out";
@@ -39,7 +39,9 @@ function sectionOf(value: unknown): SectionName {
   return SECTIONS.some((s) => s.value === value) ? (value as SectionName) : "requests";
 }
 
-async function load(section: SectionName): Promise<Loaded> {
+/** `search`: Who's out only, a student's name or roll number (the API keeps it to the office's
+ * own hostels). */
+async function load(section: SectionName, search: string): Promise<Loaded> {
   switch (section) {
     case "requests":
       return { section, items: await office.requests() };
@@ -57,7 +59,10 @@ async function load(section: SectionName): Promise<Loaded> {
       return { section, items, help: help.list, helpError: help.error };
     }
     case "out": {
-      const [items, back] = await Promise.all([office.outings(), office.backToday()]);
+      const [items, back] = await Promise.all([
+        office.outings(search || null),
+        office.backToday(search || null),
+      ]);
       return { section, items, back };
     }
   }
@@ -69,13 +74,15 @@ export default function OfficeScreen(): ReactNode {
   const section = sectionOf(params.section);
   const { user } = useAuth();
   const c = useColors();
-  const loader = useCallback(() => load(section), [section]);
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const loader = useCallback(() => load(section, search), [section, search]);
   const { data, error, loading, refreshing, reload, refetch } = useData(loader);
 
-  // A new section: load it now (focus already loaded the first one).
+  // A new section or search: load it now (focus already loaded the first one).
   useEffect(() => {
     void refetch();
-  }, [section, refetch]);
+  }, [section, search, refetch]);
 
   // Keep it current while it's on screen, like the website's register.
   useFocusEffect(
@@ -120,7 +127,24 @@ export default function OfficeScreen(): ReactNode {
           lede={`Students who pressed Help, then late students who didn't answer the "are you OK?" alert within 10 minutes, or answered but still aren't back an hour later. Call them, their emergency contact or their warden. ${scope}`}
         />
       ) : (
-        <Heading title="Who's out" lede={`Late first. ${scope}`} />
+        <>
+          <Heading title="Who's out" lede={`Late first. ${scope}`} />
+          <Field
+            label="Search"
+            placeholder="Student name or roll number"
+            value={query}
+            onChangeText={(text) => {
+              setQuery(text);
+              setSearch((applied) => searchAfterTyping(text, applied));
+            }}
+            // The API refuses searches under 2 letters; don't show one as applied when it isn't.
+            onSubmitEditing={() => setSearch(query.trim().length >= 2 ? query.trim() : "")}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+            hint="Press search on the keyboard. At least 2 letters."
+          />
+        </>
       )}
 
       {error && !current ? (

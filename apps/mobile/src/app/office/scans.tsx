@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
-import { SCAN_RESULT_LABEL, scanDistance } from "@/lib/office";
+import { SCAN_RESULT_LABEL, scanDistance, searchAfterTyping } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import { known, loadOfficeFilters, rememberOfficeFilter } from "@/lib/office-filters";
 import { formatDay, formatTime } from "@/lib/time";
@@ -11,6 +11,7 @@ import { useData } from "@/lib/use-data";
 import {
   Button,
   Chips,
+  Field,
   FormError,
   Heading,
   LoadFailed,
@@ -41,6 +42,9 @@ export default function Scans(): ReactNode {
   const c = useColors();
   const [gateId, setGateId] = useState("all");
   const [result, setResult] = useState<ResultFilter>("any");
+  // A student's name or roll number (wave 5); never remembered, like the website's.
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
 
   const gates = useData(useCallback(() => office.gates(), []));
   // The page keeps the filter it was loaded with, so "older" asks for the same filter even
@@ -49,15 +53,16 @@ export default function Scans(): ReactNode {
     const filter = {
       gateId: gateId === "all" ? null : gateId,
       result: result === "any" ? null : result,
+      q: search || null,
     };
     return { filter, page: await office.scans(filter) };
-  }, [gateId, result]);
+  }, [gateId, result, search]);
   const { data: loaded, error, loading, refreshing, reload, refetch } = useData(load);
   const data = loaded?.page;
   // A new filter: load it now (focus already loaded the first one).
   useEffect(() => {
     void refetch();
-  }, [gateId, result, refetch]);
+  }, [gateId, result, search, refetch]);
 
   // The last gate and result, once the gates are known (a gate no longer listed is "All").
   // A choice made before the stored one is read wins.
@@ -123,7 +128,7 @@ export default function Scans(): ReactNode {
     }
   };
 
-  const filtered = gateId !== "all" || result !== "any";
+  const filtered = gateId !== "all" || result !== "any" || search !== "";
   const gateChoices = [
     { value: "all", label: "All gates" },
     ...(gates.data ?? []).map((g) => ({ value: g.id, label: g.name })),
@@ -149,6 +154,21 @@ export default function Scans(): ReactNode {
         <Chips label="Gate" options={gateChoices} value={gateId} onChange={pickGate} />
       ) : null}
       <Chips label="Result" options={RESULT_CHIPS} value={result} onChange={pickResult} />
+      <Field
+        label="Search"
+        placeholder="Student name or roll number"
+        value={query}
+        onChangeText={(text) => {
+          setQuery(text);
+          setSearch((applied) => searchAfterTyping(text, applied));
+        }}
+        // The API refuses searches under 2 letters; don't show one as applied when it isn't.
+        onSubmitEditing={() => setSearch(query.trim().length >= 2 ? query.trim() : "")}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+        hint="Press search on the keyboard. At least 2 letters."
+      />
 
       {!data && loading ? (
         <T tone="muted">Loading…</T>

@@ -2,6 +2,7 @@
   {
     "version": "1.19.0",
     "date": "2026-11-09",
+    "kind": "feature",
     "title": "Hostel reports and error reporting",
     "summary": "Hostel office: outing, late-return and request reports with a CSV export. App and website errors are now reported for faster fixes.",
     "points": [

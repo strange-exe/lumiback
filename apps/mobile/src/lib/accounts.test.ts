@@ -195,6 +195,10 @@ describe("the students list filter", () => {
       "?hostel_id=h1&q=as&account=invited",
     );
     expect(studentsQuery({ q: "a", account: null })).toBe("");
+    // Wave 5: one role (admins; the API ignores it from anyone else).
+    expect(studentsQuery({ role: "warden" })).toBe("?role=warden");
+    expect(studentsQuery({ q: "ri", role: "head_warden" })).toBe("?q=ri&role=head_warden");
+    expect(studentsQuery({ role: null })).toBe("");
   });
 
   it("says why the list is empty", () => {

@@ -21,32 +21,82 @@ export const SCAN_RESULT_LABEL: Record<ScanResult, string> = {
 
 const SCANS_PER_PAGE = 30;
 
+/** A search the API takes (2+ letters, trimmed), or null. */
+function searchTerm(q: string | null | undefined): string | null {
+  const term = q?.trim() ?? "";
+  return term.length >= 2 ? term : null;
+}
+
 /** The query for one page of the scan log; filters left unset are left out. */
 export function scanQuery(filter: {
   before?: number | null;
   gateId?: string | null;
   result?: ScanResult | null;
+  /** One of the office's hostels: its students' scans only. */
+  hostelId?: string | null;
+  /** A student's name or roll number (2+ letters). */
+  q?: string | null;
 }): string {
   const query = new URLSearchParams({ limit: String(SCANS_PER_PAGE) });
   if (filter.before != null) query.set("before", String(filter.before));
   if (filter.gateId) query.set("gate_id", filter.gateId);
   if (filter.result) query.set("result", filter.result);
+  if (filter.hostelId) query.set("hostel_id", filter.hostelId);
+  const q = searchTerm(filter.q);
+  if (q) query.set("q", q);
   return query.toString();
 }
 
+/** The office's outings list ("" or "?..."): a state ("back" for back today) and a search. */
+export function outingsQuery(filter: { state?: "back" | null; q?: string | null }): string {
+  const query = new URLSearchParams();
+  if (filter.state) query.set("state", filter.state);
+  const q = searchTerm(filter.q);
+  if (q) query.set("q", q);
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
+
 /** The students list's query string ("" or "?..."); searches under 2 letters are left out, as
- * the API ignores them. */
+ * the API ignores them. `role`: one role's people (admins only; ignored for anyone else). */
 export function studentsQuery(filter: {
   hostelId?: string | null;
   q?: string;
   account?: AccountFilter | null;
+  role?: Role | null;
 }): string {
   const query = new URLSearchParams();
   if (filter.hostelId) query.set("hostel_id", filter.hostelId);
-  if (filter.q && filter.q.trim().length >= 2) query.set("q", filter.q.trim());
+  const q = searchTerm(filter.q);
+  if (q) query.set("q", q);
   if (filter.account) query.set("account", filter.account);
+  if (filter.role) query.set("role", filter.role);
   const qs = query.toString();
   return qs ? `?${qs}` : "";
+}
+
+/** The search a list applies as its box is typed in (`applied` is the one in use): none once
+ * the box is cleared, so no search stays applied that no one can see; otherwise the applied
+ * one stays until the keyboard's search key. */
+export function searchAfterTyping(text: string, applied: string): string {
+  return text.trim() === "" ? "" : applied;
+}
+
+/** The Students screen's role chips (admins and developers only; owner D1, 2026-11-09). */
+export const ROLE_CHIPS: readonly { value: "all" | Role; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "student", label: "Students" },
+  { value: "warden", label: "Wardens" },
+  { value: "head_warden", label: "Head wardens" },
+  { value: "admin", label: "Admins" },
+  { value: "developer", label: "Developers" },
+];
+
+/** The line above a list: how many are shown, and whether it was cut at `cap`. */
+export function shownLine(shown: number, cap: number): string {
+  if (shown >= cap) return `The first ${cap} shown. Search to narrow it down.`;
+  if (shown === 0) return "No one shown.";
+  return `${shown} ${shown === 1 ? "person" : "people"} shown.`;
 }
 
 /** "12 m from the gate (GPS ±9 m)"; null when the scan had no position (a bad code). */
