@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # Where replies go (e.g. support@lumiback.abhinesh.codes, forwarded by Cloudflare Email
     # Routing). Unset: no Reply-To, and no email invites a reply.
     email_reply_to: str | None = Field(default=None, pattern=r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
+    # Where the daily error digest goes (services/error_reports.py). Unset: no digest; the
+    # reports are still kept 30 days for the developer's Errors page.
+    error_digest_email: str | None = Field(
+        default=None, pattern=r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$"
+    )
 
     # Shared with the web server, which sends the visitor's IP in X-Client-IP alongside this
     # secret. Without it, a header any caller can set would decide who gets rate-limited.
@@ -77,7 +82,7 @@ class Settings(BaseSettings):
             return None
         return v.strip().lower()
 
-    @field_validator("email_reply_to", mode="before")
+    @field_validator("email_reply_to", "error_digest_email", mode="before")
     @classmethod
     def _blank_reply_to(cls, v: object) -> object:
         # EMAIL_REPLY_TO= (left empty in a dashboard) means unset, not a broken address.

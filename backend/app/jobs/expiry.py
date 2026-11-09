@@ -42,6 +42,7 @@ from app.security.rate_limit import delete_old_hits
 from app.services import (
     account_links,
     alerts,
+    error_reports,
     escalations,
     followers,
     outbox,
@@ -98,6 +99,8 @@ class SweepResult:
     alerts: Delivery = Delivery()  # what the outbox sent this sweep
     deleted_alerts: int = 0
     deleted_help: int = 0
+    deleted_error_reports: int = 0
+    error_digest_queued: bool = False
 
 
 class SweepHealth:
@@ -126,6 +129,23 @@ class SweepHealth:
         return "stale" if self._clock() - self._last_ok > self._stale_after else "ok"
 
 
+async def _error_upkeep(
+    session: AsyncSession, now: datetime, digest_to: str | None, web_url: str
+) -> tuple[int, int | None]:
+    """Error reports: kept 30 days after the error was last seen; the day's digest (once per
+    IST day, only with errors to report) goes out through the outbox. In a savepoint of its
+    own: a failure here is logged and undone alone, never taking the sweep's late alerts and
+    escalations down with it. Returns (reports deleted, the digest's outbox id or None)."""
+    try:
+        async with session.begin_nested():
+            old = await error_reports.delete_old(session, now)
+            digest = await error_reports.queue_digest(session, now, digest_to, web_url)
+    except Exception:
+        logger.exception("error report upkeep failed")  # tried again next sweep
+        return 0, None
+    return old, digest
+
+
 async def sweep(
     sessionmaker: async_sessionmaker[AsyncSession],
     hub: Hub,
@@ -133,6 +153,8 @@ async def sweep(
     mailer: Mailer | None = None,
     web_url: str = "",
     pepper: str | None = None,  # the code pepper: safe-return watch links (none without it)
+    *,
+    digest_to: str | None = None,  # ERROR_DIGEST_EMAIL: the daily error digest (none without)
 ) -> SweepResult:
     now = datetime.now(UTC)
     async with sessionmaker() as session:
@@ -268,6 +290,7 @@ async def sweep(
             )
         )
         old_alerts = await outbox.delete_old(session)
+        old_errors, digest = await _error_upkeep(session, now, digest_to, web_url)
         await session.commit()
 
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
@@ -300,6 +323,8 @@ async def sweep(
         alerts=delivered,
         deleted_alerts=old_alerts,
         deleted_help=old_help.rowcount,
+        deleted_error_reports=old_errors,
+        error_digest_queued=digest is not None,
         deleted_scans=scans.rowcount,
         deleted_views=views.rowcount,
         deleted_requests=old_requests.rowcount,
@@ -321,10 +346,13 @@ async def run_forever(
     interval: float = INTERVAL_SECONDS,
     health: SweepHealth | None = None,
     pepper: str | None = None,
+    digest_to: str | None = None,
 ) -> None:
     while True:
         try:
-            result = await sweep(sessionmaker, hub, push, mailer, web_url, pepper)
+            result = await sweep(
+                sessionmaker, hub, push, mailer, web_url, pepper, digest_to=digest_to
+            )
             if health is not None:
                 health.mark_ok()
             if result.expired_sessions or result.closed_tabs:

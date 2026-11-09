@@ -1,7 +1,8 @@
 """Announce an update (owner 2026-11-08): a developer, and only a developer, sends one push to
-every phone with the app on the "App updates" channel, at most once a day, audited, never
-emailed. Owner: "add an option on dev roles which allows them to send the notification of the
-released update don't send it directly": nothing sends it on its own (no release, deploy,
+every phone with the app on the "App updates" channel, audited, never emailed. The daily limit
+was dropped on 2026-11-09 (owner: "No timeout in announcements, it's just better for dev").
+Owner: "add an option on dev roles which allows them to send the notification of the released
+update don't send it directly": nothing sends it on its own (no release, deploy,
 start-up, sweep or script path), only the developer's own request.
 """
 
@@ -48,9 +49,7 @@ def test_only_a_developer_may_announce(client, db, push, admin, office, anna):
     assert updates(push) == []
 
 
-def test_an_announcement_goes_to_every_phone_once_a_day(
-    client, db, push, mailer, admin, office, anna, bina
-):
+def test_an_announcement_goes_to_every_phone(client, db, push, mailer, admin, office, anna, bina):
     dev = developer(client, db)
     assert client.get("/admin/announcements", headers=dev).json() == {
         "last_at": None,
@@ -62,7 +61,7 @@ def test_an_announcement_goes_to_every_phone_once_a_day(
     mailed = len(mailer.outbox)
     r = client.post("/admin/announcements", json=NOTE, headers=dev)
     assert r.status_code == 200, r.text  # the clients read this body; they drop a 202's
-    assert r.json()["devices"] == 6 and r.json()["next_at"]
+    assert r.json()["devices"] == 6 and r.json()["next_at"] is None
     [(tokens, m)] = updates(push)
     assert set(tokens) == {DEV, ANNA, ADMIN, HEAD, WARDEN_A, WARDEN_B}
     assert (m.title, m.body, m.kind, m.url, m.urgent) == (
@@ -77,19 +76,26 @@ def test_an_announcement_goes_to_every_phone_once_a_day(
         text("SELECT target FROM admin_audit WHERE action = 'announce:update'")
     ).scalars().all() == [NOTE["title"]]
     status = client.get("/admin/announcements", headers=dev).json()
-    assert status["last_at"] and status["next_at"]
-
-    r = client.post("/admin/announcements", json=NOTE, headers=dev)
-    assert r.status_code == 409
-    assert r.json()["detail"].startswith("An update was already announced in the last 24 hours.")
-    assert len(updates(push)) == 1
-    db.execute(text("UPDATE admin_audit SET at = at - interval '25 hours'"))
-    db.commit()
-    assert client.post("/admin/announcements", json=NOTE, headers=dev).status_code == 200
-    assert len(updates(push)) == 2
+    # next_at stays in the answer, always null: 1.18.x apps read it to show the form.
+    assert status["last_at"] and status["next_at"] is None
 
 
-def test_a_server_without_push_refuses_and_keeps_the_days_announcement(client, db, push):
+def test_two_announcements_in_a_row_both_send(client, db, push, admin, office, anna):
+    """Owner, 2026-11-09: "No timeout in announcements, it's just better for dev"."""
+    dev = developer(client, db)
+    second = {"title": "Lumiback 1.18.1", "body": "A fix for the announcement form."}
+    for note in (NOTE, second):
+        r = client.post("/admin/announcements", json=note, headers=dev)
+        assert r.status_code == 200, r.text
+        assert r.json()["next_at"] is None
+    assert [m.title for _, m in updates(push)] == [NOTE["title"], second["title"]]
+    assert db.execute(
+        text("SELECT target FROM admin_audit WHERE action = 'announce:update' ORDER BY at, id")
+    ).scalars().all() == [NOTE["title"], second["title"]]
+    assert client.get("/admin/announcements", headers=dev).json()["next_at"] is None
+
+
+def test_a_server_without_push_refuses_and_logs_nothing(client, db, push):
     dev = developer(client, db)
     client.app.state.push = None
     r = client.post("/admin/announcements", json=NOTE, headers=dev)

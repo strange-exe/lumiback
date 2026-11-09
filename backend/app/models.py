@@ -787,6 +787,39 @@ class AdminAudit(Base):
     at: Mapped[datetime] = created_at()
 
 
+class ErrorReport(Base):
+    """One group of the same error from the website or the app (services/error_reports.py).
+
+    Everything here was scrubbed before it was stored (emails, phone and roll numbers, names
+    of the signed-in person, coordinates, tokens, query strings). The sample fields (stack,
+    route, version, platform, who) are the latest report's. Deleted 30 days after the error
+    was last seen."""
+
+    __tablename__ = "error_reports"
+    __table_args__ = (
+        hash_len_check("fingerprint"),
+        CheckConstraint("count >= 1", name="count_positive"),
+        Index("ix_error_reports_last_seen_at", "last_seen_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    # SHA-256 of the scrubbed message and top frame (numbers left out), the group's key.
+    fingerprint: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    message: Mapped[str] = mapped_column(String(500))
+    top_frame: Mapped[str | None] = mapped_column(String(500))
+    stack: Mapped[str | None] = mapped_column(Text)
+    route: Mapped[str | None] = mapped_column(String(300))
+    platform: Mapped[str] = mapped_column(String(16))
+    app_version: Mapped[str | None] = mapped_column(String(32))
+    count: Mapped[int] = mapped_column(server_default=text("1"))
+    # The latest report's account, when it came from a valid session; never shown or emailed.
+    last_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    first_seen_at: Mapped[datetime] = created_at()
+    last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class RateLimitHit(Base):
     """One rate-limited attempt. key_hash = HMAC(pepper, scope:key); no readable personal data."""
 

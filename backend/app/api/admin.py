@@ -48,6 +48,7 @@ from app.schemas import (
     GatePatch,
     PasswordLinkOut,
     PersonIn,
+    Report,
     RoleIn,
     StudentHostelIn,
     StudentImportIn,
@@ -60,9 +61,8 @@ from app.schemas import (
 )
 from app.security.gate_codes import new_kiosk_token
 from app.security.rate_limit import Limit
-from app.services import account_links, accounts, rules, student_import
+from app.services import account_links, accounts, reports, rules, student_import
 from app.services import admin as svc
-from app.services.followers import hhmm
 from app.services.gates import (
     QuietHours,
     campus_settings,
@@ -156,7 +156,66 @@ async def outings_csv(
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="outings-{start}-to-{end}.csv"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="outings-{start}-to-{end}.csv"',
+            **NO_STORE,
+        },
+    )
+
+
+def report_range(start: date | None, end: date | None) -> tuple[date, date]:
+    """Both ends or neither (the last 30 IST days, today included); at most a year."""
+    if start is None and end is None:
+        end = rules.ist_date(datetime.now(UTC))
+        return end - timedelta(days=reports.DEFAULT_DAYS - 1), end
+    if start is None or end is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose both a start and an end date"
+        )
+    first, last = day_range(start, end) or (start, end)
+    if (last - first).days >= reports.MAX_DAYS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Choose a range of at most {reports.MAX_DAYS} days",
+        )
+    return first, last
+
+
+ReportFrom = Annotated[date | None, Query(alias="from")]
+ReportTo = Annotated[date | None, Query(alias="to")]
+# The office's records leave the API only for the person who asked: no shared or browser cache
+# keeps a copy (a hostel PC's next user, a proxy).
+NO_STORE = {"Cache-Control": "private, no-store"}
+
+
+@router.get("/reports")
+async def report(
+    staff: StaffUser,
+    session: SessionDep,
+    response: Response,
+    start: ReportFrom = None,
+    end: ReportTo = None,
+) -> Report:
+    """Per-hostel numbers and a weekly trend for a range of IST days (default: the last 30).
+    Every hostel for admins, head wardens and developers; a warden's own for a warden."""
+    first, last = report_range(start, end)
+    response.headers.update(NO_STORE)
+    return await reports.build(session, staff, first, last)
+
+
+@router.get("/reports.csv")
+async def report_csv(
+    staff: StaffUser, session: SessionDep, start: ReportFrom = None, end: ReportTo = None
+) -> Response:
+    first, last = report_range(start, end)
+    body = reports.to_csv(await reports.build(session, staff, first, last))
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="report-{first}-to-{last}.csv"',
+            **NO_STORE,
+        },
     )
 
 
@@ -388,11 +447,11 @@ async def audit_log(
 # Owner, 2026-11-08: "add an option on dev roles which allows them to send the notification
 # of the released update don't send it directly". So this request is the only way one goes
 # out: a developer types it and confirms it. Nothing sends it on its own (no release, deploy,
-# start-up, sweep or script), at most one a day (checked here under a lock), audited, never
-# emailed.
+# start-up, sweep or script), one at a time (under a lock), audited, never emailed. The daily
+# limit was dropped on 2026-11-09 (owner: "No timeout in announcements, it's just better for
+# dev").
 
 UPDATES_CHANNEL = "app-updates"  # the app's "App updates" Android channel (mutable)
-ANNOUNCE_EVERY = timedelta(hours=24)
 ANNOUNCE_ACTION = "announce:update"
 ANNOUNCE_LOCK = 7_316_011  # pg_advisory_xact_lock key: one announcement checked at a time
 
@@ -406,21 +465,13 @@ async def get_developer(user: CurrentUser) -> User:
 DeveloperUser = Annotated[User, Depends(get_developer)]
 
 
-async def _announced(session: SessionDep) -> tuple[datetime | None, datetime]:
-    """(the last announcement, the database's now)."""
+@router.get("/announcements")
+async def announcements(_: DeveloperUser, session: SessionDep) -> AnnouncementStatus:
+    # next_at stays in the answer, always null (allowed now): 1.18.x apps read it.
     last = await session.scalar(
         select(func.max(AdminAudit.at)).where(AdminAudit.action == ANNOUNCE_ACTION)
     )
-    now = await session.scalar(select(func.now()))
-    assert now is not None
-    return last, now
-
-
-@router.get("/announcements")
-async def announcements(_: DeveloperUser, session: SessionDep) -> AnnouncementStatus:
-    last, now = await _announced(session)
-    soonest = last + ANNOUNCE_EVERY if last else None
-    return AnnouncementStatus(last_at=last, next_at=soonest if soonest and soonest > now else None)
+    return AnnouncementStatus(last_at=last, next_at=None)
 
 
 # 200, not 202: the clients read the body (how many phones), and both treat 202 as empty.
@@ -434,24 +485,17 @@ async def announce(
 ) -> AnnouncementSent:
     """One push to every phone with the app, on the "App updates" channel, tapped to fetch the
     update. Sent after the response, in Expo's batches. A server without push refuses before
-    the day's one announcement is used up."""
+    anything is logged. No daily limit (owner, 2026-11-09: "No timeout in announcements, it's
+    just better for dev"); the confirm step in each client is the guard."""
     sender = request.app.state.push
     if sender is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Push notifications aren't set up on this server, so nothing was sent.",
         )
+    # Held until this transaction ends: a second request waits for this one's audit row and
+    # count, so two at once are two whole announcements, one after the other.
     await session.execute(select(func.pg_advisory_xact_lock(ANNOUNCE_LOCK)))
-    last, now = await _announced(session)
-    if last is not None and last + ANNOUNCE_EVERY > now:
-        soonest = (last + ANNOUNCE_EVERY).astimezone(rules.IST)
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=(
-                "An update was already announced in the last 24 hours. You can announce again "
-                f"after {hhmm(soonest)} IST on {soonest:%a} {soonest.day} {soonest:%b}."
-            ),
-        )
     svc.audit(session, me, ANNOUNCE_ACTION, body.title)
     devices = await count_everyone(session, UPDATES_CHANNEL)
     await session.commit()
@@ -461,7 +505,7 @@ async def announce(
         sender,
         PushMessage(title=body.title, body=body.body, channel=UPDATES_CHANNEL, kind="app-update"),
     )
-    return AnnouncementSent(devices=devices, next_at=now + ANNOUNCE_EVERY)
+    return AnnouncementSent(devices=devices, next_at=None)
 
 
 # ---------- people ----------

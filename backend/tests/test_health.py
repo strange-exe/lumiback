@@ -47,7 +47,7 @@ def test_run_forever_marks_only_successful_sweeps(monkeypatch):
     ran = []
     marks = []
 
-    async def fake_sweep(*_args):
+    async def fake_sweep(*_args, **_kwargs):  # the real one also takes digest_to=
         outcome = planned[len(ran) % len(planned)]
         ran.append(outcome is None)
         if outcome is not None:

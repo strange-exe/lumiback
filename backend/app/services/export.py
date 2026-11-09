@@ -17,6 +17,7 @@ from sqlalchemy.orm import aliased
 from app.models import (
     AccessLog,
     Contact,
+    ErrorReport,
     Escalation,
     EscalationCall,
     Gate,
@@ -281,6 +282,22 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             select(GateScan).where(GateScan.user_id == user.id).order_by(GateScan.scanned_at)
         )
     ]
+    # Error reports whose latest report came from their session (scrubbed when received).
+    error_reports = [
+        {
+            "message": e.message,
+            "page": e.route,
+            "platform": e.platform,
+            "app_version": e.app_version,
+            "first_seen_at": e.first_seen_at,
+            "last_seen_at": e.last_seen_at,
+        }
+        for e in await session.scalars(
+            select(ErrorReport)
+            .where(ErrorReport.last_user_id == user.id)
+            .order_by(ErrorReport.last_seen_at)
+        )
+    ]
     devices = [
         {
             "platform": t.platform,
@@ -323,4 +340,5 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
         "shares_watched": watching,
         "gate_scans": scans,
         "push_devices": devices,
+        "error_reports": error_reports,
     }

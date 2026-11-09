@@ -1390,9 +1390,129 @@ class AnnouncementIn(Input):
 
 class AnnouncementSent(BaseModel):
     devices: int  # phones it is going to
-    next_at: datetime  # when the next announcement is allowed
+    # Always None since the daily limit went (2026-11-09); kept so 1.18.x apps still parse it.
+    next_at: datetime | None
 
 
 class AnnouncementStatus(BaseModel):
     last_at: datetime | None
-    next_at: datetime | None  # None: allowed now
+    next_at: datetime | None  # always None (allowed now), kept for 1.18.x apps
+
+
+# ---------- wave 4: reports (the office) ----------
+
+
+class ReportStats(BaseModel):
+    """One hostel's numbers (or the campus's) for a range of IST days. Counts only: never a
+    student's name, roll number or anything else that says who."""
+
+    outings: int  # left in the range (a cancelled mistaken tap isn't one)
+    gate_out: int  # left through a gate scan
+    self_out: int  # logged in the app or on the website
+    back: int  # came back with a recorded time (not still out, not "not recorded")
+    returned_late: int  # of `back`, at least a minute after their due time
+    late_rate: float | None  # returned_late / back, 0 to 1; None with nobody back
+    median_minutes_late: int | None  # among the late ones
+    escalations: int  # opened in the range
+    requests_approved: int  # outing requests for days in the range
+    requests_declined: int
+    running_late: int  # outings where the student moved their due time
+
+
+class ReportHostel(ReportStats):
+    hostel_id: uuid.UUID | None  # None: students who hadn't chosen a hostel
+    hostel: str
+
+
+class ReportWeek(BaseModel):
+    week_start: date  # the Monday (IST)
+    days: int  # how many of its days are inside the range (1 to 7)
+    outings: int
+    returned_late: int
+
+
+class Report(BaseModel):
+    start: date
+    end: date
+    # False for a warden: `total` then covers their hostels only, not the campus.
+    every_hostel: bool
+    hostels: list[ReportHostel]
+    total: ReportStats
+    weeks: list[ReportWeek]
+
+
+# ---------- wave 4: error reports (the website and the app) ----------
+
+
+def _strip_controls(value: object, keep: str = "") -> object:
+    """Removes control and invisible formatting characters (Cc, Cf, Cs, Co, Zl, Zp: NUL, bidi
+    overrides, zero-width spaces) except those in `keep`. Error text is stored, emailed and
+    shown on the developer's page, so none of it may reorder or hide what is shown."""
+    if not isinstance(value, str):
+        return value
+    return "".join(
+        c
+        for c in value
+        if c in keep or unicodedata.category(c) not in ("Cc", "Cf", "Cs", "Co", "Zl", "Zp")
+    )
+
+
+def _one_line(value: object) -> object:
+    """A message is one line: breaks and tabs become spaces, other controls are dropped."""
+    if isinstance(value, str):
+        value = re.sub(r"[\r\n\t]+", " ", value)
+    return _strip_controls(value)
+
+
+class ErrorReportIn(Input):
+    """What the website or the app sends when something breaks (POST /errors). Hard caps on
+    every field; the body as a whole is capped before it is read (api/errors.py)."""
+
+    message: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+        BeforeValidator(_one_line),
+    ]
+    stack: (
+        Annotated[
+            str,
+            StringConstraints(max_length=8000),
+            BeforeValidator(lambda v: _strip_controls(v, keep="\n\t")),
+        ]
+        | None
+    ) = None
+    route: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, max_length=300),
+            BeforeValidator(_one_line),
+        ]
+        | None
+    ) = None
+    app_version: Annotated[str, StringConstraints(pattern=r"^[0-9A-Za-z.+-]{1,32}$")] | None = None
+    platform: Literal["web", "android", "ios"]
+
+
+class ErrorGroup(BaseModel):
+    """One group of the same error, scrubbed (services/error_reports.py). Who reported it is
+    never shown: only whether the latest report came from a signed-in session."""
+
+    id: int
+    message: str
+    top_frame: str | None
+    stack: str | None
+    route: str | None
+    platform: str
+    app_version: str | None
+    count: int
+    first_seen_at: datetime
+    last_seen_at: datetime
+    signed_in: bool
+
+    @field_serializer("first_seen_at", "last_seen_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class ErrorGroupList(BaseModel):
+    items: list[ErrorGroup]

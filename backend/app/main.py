@@ -23,6 +23,7 @@ from app.api import (
     codes,
     contacts,
     devices,
+    errors,
     gates,
     meta,
     outings,
@@ -85,6 +86,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                     settings.web_url,
                     health=app.state.sweep_health,
                     pepper=settings.code_pepper.get_secret_value(),
+                    digest_to=settings.error_digest_email,
                 )
             )
             if start_jobs
@@ -189,5 +191,6 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(profile.router)
     app.include_router(devices.router)
     app.include_router(meta.router)
+    app.include_router(errors.router)
 
     return app
