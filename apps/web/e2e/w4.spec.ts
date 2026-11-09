@@ -3,11 +3,21 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { ADMIN_STATE, DEVELOPER_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
-import { ADMIN, API, checkOut, designMatrix, ensureIn, watchForErrors } from "./helpers";
+import { API, checkOut, designMatrix, ensureIn, watchForErrors } from "./helpers";
 
 // Wave 4 on the website: the office's Reports page (counts per hostel, never names) and the
 // developers' Errors page (scrubbed reports from the website and the app). The numbers, the
 // scoping and the scrubbing are covered by the backend's tests; here: the pages. Lean on purpose.
+
+/** An access token from a session the setup project saved. */
+function tokenFrom(file: string): string {
+  const state = JSON.parse(readFileSync(file, "utf8")) as {
+    cookies: { name: string; value: string }[];
+  };
+  const cookie = state.cookies.find((c) => c.name === "outing_at");
+  if (!cookie) throw new Error(`${file} has no access token`);
+  return cookie.value;
+}
 
 const officeNav = (page: Page) => page.getByRole("navigation", { name: "Hostel office" });
 
@@ -95,12 +105,9 @@ test("a warden's report lists only their own hostel", async ({ browser, request 
   // A second hostel for this test only (the plain seed has Hostel 3 alone): the admin's report
   // lists it, the warden of Hostel 3's must not. A report lists every hostel in scope even with
   // nothing in it, so the rows are known whatever earlier specs did.
-  const login = await request.post(`${API}/auth/login`, {
-    data: { email: ADMIN.email, password: ADMIN.password },
-  });
-  expect(login.status()).toBe(200);
-  const { access_token } = (await login.json()) as { access_token: string };
-  const headers = { Authorization: `Bearer ${access_token}` };
+  // The admin's saved session, not a fresh password login: by this point in a full run the
+  // login rate limit can answer 429 (it did on CI).
+  const headers = { Authorization: `Bearer ${tokenFrom(ADMIN_STATE)}` };
   const ruleSets = (await (await request.get(`${API}/admin/rule-sets`, { headers })).json()) as {
     id: string;
   }[];
