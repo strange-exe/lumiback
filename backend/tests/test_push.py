@@ -1,6 +1,7 @@
 """Push: device tokens, who gets notified for what, the Expo sender, and the overdue sweep."""
 
 import asyncio
+import dataclasses
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -24,13 +25,18 @@ def push(client) -> MemoryPushSender:
     return sender
 
 
-def register_token(client, headers, token=TOKEN, muted=()):
-    r = client.post(
-        "/devices/push-token",
-        json={"token": token, "platform": "android", "muted": list(muted)},
-        headers=headers,
-    )
+def register_token(client, headers, token=TOKEN, muted=(), draws_updates=None):
+    body = {"token": token, "platform": "android", "muted": list(muted)}
+    if draws_updates is not None:  # apps up to 1.20.0 don't send it
+        body["draws_updates"] = draws_updates
+    r = client.post("/devices/push-token", json=body, headers=headers)
     assert r.status_code == 204, r.text
+
+
+def draws_updates(db, token=TOKEN) -> bool:
+    return db.execute(
+        text("SELECT draws_updates FROM push_tokens WHERE token = :t"), {"t": token}
+    ).scalar_one()
 
 
 def tokens(db) -> list[tuple[str, str]]:
@@ -105,6 +111,24 @@ def test_malformed_tokens_are_refused(client, token):
 def test_registering_needs_an_account(client):
     body = {"token": TOKEN, "platform": "android"}
     assert client.post("/devices/push-token", json=body).status_code == 401
+
+
+def test_registration_says_whether_the_app_draws_update_notices(client, db):
+    """An app that can draw the update notice itself (its background task) says so each time
+    it registers; an older app, or the same phone back on older JS, doesn't, and loses it."""
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya)
+    assert draws_updates(db) is False
+    register_token(client, riya, draws_updates=True)
+    assert draws_updates(db) is True
+    register_token(client, riya)  # re-registered without it: an update rolled back
+    assert draws_updates(db) is False
+    r = client.post(
+        "/devices/push-token",
+        json={"token": TOKEN, "platform": "android", "draws_updates": "sometimes"},
+        headers=riya,
+    )
+    assert r.status_code == 422
 
 
 # ---------- who gets notified ----------
@@ -332,6 +356,72 @@ def test_expo_sender_sends_tag_category_image_and_ttl():
         "richContent": {"image": "https://lumiback.test/app/banners/lantern.png"},
         "ttl": 259200,
     }
+
+
+def expo_json(message: PushMessage, to: str = TOKEN) -> dict:
+    """The JSON the Expo sender posts for one phone."""
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.extend(json.loads(request.content))
+        return httpx.Response(200, json={"data": [{"status": "ok", "id": "x"}]})
+
+    sender = ExpoPushSender(None, transport=httpx.MockTransport(handler))
+    assert asyncio.run(sender.send([to], message)).accepted == {to}
+    [one] = sent
+    return one
+
+
+UPDATE = PushMessage(
+    title="Now live: Running late",
+    body="Shift your due-back time once per outing.",
+    channel="app-updates",
+    kind="app-update",
+    tag="lumiback-update",
+    category="app_update",
+    image="https://lumiback.test/app/banners/lantern.png",
+    ttl=3 * 24 * 3600,
+)
+
+
+def test_a_data_only_push_carries_nothing_android_would_draw_itself():
+    """Lead's spike, 2026-11-09: any title, body, channelId (or category, sound) makes Android
+    draw the push itself, without the buttons, and the app's task never runs. Data-only, the
+    app's task draws it, with the Changelog and Update buttons, even with the app closed."""
+    message = dataclasses.replace(UPDATE, data_only=True)
+    assert expo_json(message) == {
+        "to": TOKEN,
+        "data": {
+            "lumiback": "app_update",
+            "title": "Now live: Running late",
+            "body": "Shift your due-back time once per outing.",
+            "tag": "lumiback-update",
+            "kind": "app-update",
+            "image": "https://lumiback.test/app/banners/lantern.png",
+        },
+        "priority": "high",
+        "ttl": 259200,
+    }
+    # Whatever else the message names, nothing visible ever reaches Expo.
+    loud = dataclasses.replace(message, url="/today", urgent=True)
+    sent = expo_json(loud)
+    visible = {"title", "body", "channelId", "categoryId", "sound", "richContent", "subtitle"}
+    assert visible & set(sent) == set()
+    assert sent["data"]["url"] == "/today"
+    # No picture, no ttl: neither is sent.
+    bare = expo_json(dataclasses.replace(message, image=None, ttl=None))
+    assert set(bare) == {"to", "data", "priority"} and "image" not in bare["data"]
+
+
+def test_a_saved_message_comes_back_the_same_in_either_shape():
+    """The outbox saves messages with dataclasses.asdict and rebuilds them with from_saved."""
+    for message in (UPDATE, dataclasses.replace(UPDATE, data_only=True)):
+        assert PushMessage.from_saved(dataclasses.asdict(message)) == message
+    # Saved before data_only existed: visible, as it was. Saved by a newer version with a field
+    # this one doesn't know: the field is dropped and the message still goes out.
+    old = {k: v for k, v in dataclasses.asdict(UPDATE).items() if k != "data_only"}
+    assert PushMessage.from_saved(old) == UPDATE
+    assert PushMessage.from_saved({**old, "newer": 1}) == UPDATE
 
 
 def test_every_push_names_a_tag_and_a_ttl():

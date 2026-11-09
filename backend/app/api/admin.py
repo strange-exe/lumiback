@@ -613,6 +613,8 @@ async def announce(
             ttl=UPDATE_TTL,
         ),
         roles,
+        # Apps that draw it themselves keep the buttons with the app closed (push.py).
+        drawn_by_app=True,
     )
     return AnnouncementSent(devices=devices, next_at=None)
 

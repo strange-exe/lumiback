@@ -745,6 +745,10 @@ class PushToken(Base):
     # The sign-in (refresh-token family) that registered it: signing that device out drops it,
     # so a lost phone stops getting notifications. Null for apps that registered before.
     family_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    # The app draws the update announcement itself (its background task, apps after 1.20.0),
+    # so it gets a data-only push and the notice keeps its buttons with the app closed. Older
+    # apps have no task: they get the visible push. Set again at every registration.
+    draws_updates: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = created_at()
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

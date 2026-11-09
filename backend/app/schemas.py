@@ -1069,6 +1069,9 @@ class PushTokenIn(Input):
     muted: list[Literal["follow-requests", "return-reminders", "share-status"]] = Field(
         default_factory=list, max_length=3
     )
+    # The app draws the update announcement itself (apps after 1.20.0), so it can be sent
+    # data-only. Older apps don't send it: they get the visible push.
+    draws_updates: bool = False
 
 
 # ---------- admin: outing rules, hostels, holidays, weekend requests ----------

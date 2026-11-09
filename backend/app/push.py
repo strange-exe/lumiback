@@ -20,7 +20,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Collection
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -86,6 +86,9 @@ class PushMessage:
     # An https picture for the expanded notification (only the website's own banners).
     image: str | None = None
     ttl: int | None = None  # seconds Expo may keep trying to deliver it
+    # Sent as data only, for the app's background task to draw (the update announcement to
+    # phones with draws_updates): see _data_only_fields.
+    data_only: bool = False
 
     @classmethod
     def from_saved(cls, saved: dict[str, Any]) -> "PushMessage":
@@ -240,6 +243,8 @@ class ExpoPushSender:
 
 def _fields(message: PushMessage) -> dict[str, Any]:
     """The Expo message, without `to` (docs.expo.dev/push-notifications/sending-notifications)."""
+    if message.data_only:
+        return _data_only_fields(message)
     fields: dict[str, Any] = {
         "title": message.title,
         "body": message.body,
@@ -254,6 +259,25 @@ def _fields(message: PushMessage) -> dict[str, Any]:
         fields["categoryId"] = message.category
     if message.image:
         fields["richContent"] = {"image": message.image}
+    if message.ttl is not None:
+        fields["ttl"] = message.ttl
+    return fields
+
+
+def _data_only_fields(message: PushMessage) -> dict[str, Any]:
+    """A push the app draws itself. Lead's spike, 2026-11-09: with a title, body or channelId
+    Android (Firebase) draws a backgrounded or closed app's push itself, without the category's
+    buttons, and the app's task never runs. So only `data`, `priority` (high: wakes the app)
+    and `ttl` are sent, whatever else the message names; what to show travels in `data`, which
+    the app's task reads (apps/mobile/src/notify/plan.ts updateFromTask)."""
+    data: dict[str, str] = {**_data(message), "title": message.title, "body": message.body}
+    if message.category:
+        data["lumiback"] = message.category  # what the app draws it as, e.g. "app_update"
+    if message.tag:
+        data["tag"] = message.tag
+    if message.image:
+        data["image"] = message.image
+    fields: dict[str, Any] = {"data": data, "priority": "high"}
     if message.ttl is not None:
         fields["ttl"] = message.ttl
     return fields
@@ -351,23 +375,39 @@ async def push_everyone(
     sender: PushSender,
     message: PushMessage,
     roles: Collection[UserRole] | None = None,
+    *,
+    drawn_by_app: bool = False,
 ) -> PushOutcome:
     """One message to every phone with the app (accounts that are on; phones that muted the
     channel skipped), or only to people with one of `roles`, in Expo's batches. Only the
     developer's "Announce update" calls this (api/admin.py): nothing sends it on its own. Safe
-    as a background task: failures are logged, not raised."""
+    as a background task: failures are logged, not raised.
+
+    `drawn_by_app`: phones whose app draws the update notice itself (draws_updates) get the
+    message data-only, the rest get it visible. Each phone gets one of the two."""
     try:
         async with sessionmaker() as session:
-            tokens = list(
-                await session.scalars(
-                    select(PushToken.token)
+            rows = (
+                await session.execute(
+                    select(PushToken.token, PushToken.draws_updates)
                     .join(User, User.id == PushToken.user_id)
                     .where(*_everyone(message.channel, roles))
                 )
-            )
-            if not tokens:
+            ).all()
+            if not rows:
                 return PushOutcome()
-            result = await sender.send(tokens, message)
+            drawn = {token for token, draws in rows if draws and drawn_by_app}
+            result = SendResult()
+            for tokens, shape in (
+                ([t for t, _ in rows if t not in drawn], message),
+                ([t for t, _ in rows if t in drawn], replace(message, data_only=True)),
+            ):
+                if not tokens:
+                    continue
+                sent = await sender.send(tokens, shape)
+                result.tickets.update(sent.tickets)
+                result.dead |= sent.dead
+                result.failed |= sent.failed
             if result.dead:
                 await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
             tickets = [{"id": i, "token": t} for i, t in result.tickets.items()]
@@ -378,7 +418,7 @@ async def push_everyone(
                     .on_conflict_do_nothing()
                 )
             await session.commit()
-            return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
+            return PushOutcome(len(rows), len(result.accepted), len(result.failed))
     except Exception:
         logger.exception("push to every device failed")
         return PushOutcome()

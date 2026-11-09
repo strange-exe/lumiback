@@ -6,6 +6,7 @@ update don't send it directly": nothing sends it on its own (no release, deploy,
 start-up, sweep or script path), only the developer's own request.
 """
 
+import dataclasses
 import pathlib
 
 import pytest
@@ -14,6 +15,7 @@ from sqlalchemy import text
 from tests import test_alerts as base
 from tests.helpers import signup
 from tests.test_alerts import ADMIN, ANNA, BINA, HEAD, WARDEN_A, WARDEN_B, run_sweep, token
+from tests.test_push import expo_json
 from tests.test_view_as import as_, make_developer
 
 # The wave 2 fixtures (two hostels, their office with phones, Anna and Bina with phones).
@@ -92,6 +94,53 @@ def test_an_announcement_goes_to_every_phone(client, db, push, mailer, admin, of
         "devices": 6,
         "image": None,
     }
+
+
+def test_phones_that_draw_the_notice_get_it_data_only(
+    client, db, push, settings, admin, office, anna, bina
+):
+    """Android draws a visible push itself, without the buttons, when the app is closed. Apps
+    that can draw the notice themselves (draws_updates) get a data-only push their background
+    task turns into the notice with the buttons; every other phone gets the visible push, as
+    before (an older app has no task, so a data-only push would show nothing there). Each
+    phone gets one of the two, and is counted once."""
+    dev = developer(client, db)
+    for headers, phone in ((anna, ANNA), (office["head"], HEAD)):
+        r = client.post(
+            "/devices/push-token",
+            json={"token": phone, "platform": "android", "draws_updates": True},
+            headers=headers,
+        )
+        assert r.status_code == 204, r.text
+    body = {**NOTE, "kind": "feature", "image": "lantern"}
+    r = client.post("/admin/announcements", json=body, headers=dev)
+    assert (r.status_code, r.json()["devices"]) == (200, 7), r.text
+    sent = updates(push)
+    shown = [(set(t), m) for t, m in sent if not m.data_only]
+    drawn = [(set(t), m) for t, m in sent if m.data_only]
+    assert [t for t, _ in drawn] == [{ANNA, HEAD}]
+    assert [t for t, _ in shown] == [{DEV, ADMIN, WARDEN_A, WARDEN_B, BINA}]
+    [(_, visible)], [(_, data_only)] = shown, drawn
+    # The same notice in both shapes; the visible one is exactly what every phone got before.
+    assert dataclasses.replace(data_only, data_only=False) == visible
+    assert (visible.tag, visible.category, visible.ttl) == ("lumiback-update", "app_update", 259200)
+    banner = f"{settings.web_url}/app/banners/lantern.png"
+    assert expo_json(data_only, ANNA) == {
+        "to": ANNA,
+        "data": {
+            "lumiback": "app_update",
+            "title": NOTE["title"],
+            "body": NOTE["body"],
+            "tag": "lumiback-update",
+            "kind": "app-update",
+            "image": banner,
+        },
+        "priority": "high",
+        "ttl": 259200,
+    }
+    assert expo_json(visible, BINA)["title"] == NOTE["title"]
+    [sent_row] = client.get("/admin/announcements", headers=dev).json()["history"]
+    assert sent_row["devices"] == 7
 
 
 BANNER_DIR = BACKEND.parent / "apps" / "web" / "public" / "app" / "banners"
