@@ -35,7 +35,6 @@ describe("announceDraft", () => {
 });
 
 const fmt = (iso: string): string => `<${iso}>`;
-const NOW = Date.parse("2026-11-08T20:00:00+05:30");
 
 describe("announceBody", () => {
   test("trims and sends a title and one line", () => {
@@ -91,29 +90,17 @@ describe("announceBody", () => {
 });
 
 describe("announceTiming", () => {
-  test("never announced: allowed now", () => {
-    expect(announceTiming({ last_at: null, next_at: null }, NOW, fmt)).toEqual({
-      last: "No update announced yet.",
-      next: "You can announce now.",
-      allowed: true,
-    });
+  test("never announced", () => {
+    expect(announceTiming({ last_at: null, next_at: null }, fmt)).toBe("No update announced yet.");
   });
 
-  test("announced in the last day: says when the next is allowed", () => {
-    const next = "2026-11-09T09:00:00+05:30";
-    expect(
-      announceTiming({ last_at: "2026-11-08T09:00:00+05:30", next_at: next }, NOW, fmt),
-    ).toEqual({
-      last: "Last announced <2026-11-08T09:00:00+05:30>.",
-      next: `You can announce again after <${next}>.`,
-      allowed: false,
-    });
-  });
-
-  test("a next time already passed, or unreadable, allows it", () => {
-    const past = { last_at: "2026-11-07T09:00:00+05:30", next_at: "2026-11-08T09:00:00+05:30" };
-    expect(announceTiming(past, NOW, fmt).allowed).toBe(true);
-    expect(announceTiming({ last_at: null, next_at: "soon" }, NOW, fmt).allowed).toBe(true);
+  test("says only when the last one went out: no daily limit", () => {
+    const last = "2026-11-08T09:00:00+05:30";
+    expect(announceTiming({ last_at: last, next_at: null }, fmt)).toBe(`Last announced <${last}>.`);
+    // An older API's next_at changes nothing.
+    expect(announceTiming({ last_at: last, next_at: "2026-11-09T09:00:00+05:30" }, fmt)).toBe(
+      `Last announced <${last}>.`,
+    );
   });
 });
 
@@ -124,16 +111,15 @@ test("reachedLine says how many phones it went to", () => {
 });
 
 test("the server's refusals are shown as given", () => {
-  const once =
-    "An update was already announced in the last 24 hours. You can announce again after 9:00 AM.";
-  expect(announceError(409, once)).toBe(once);
+  const noPush = "Push notifications aren't set up on this server, so nothing was sent.";
+  expect(announceError(503, noPush)).toBe(noPush);
   expect(announceError(403, "Developers only")).toBe("Developers only");
   expect(announceError(500, "")).toBe("Something went wrong. Try again.");
 });
 
 test("the confirm step asks before anything is sent", () => {
   expect(ANNOUNCE_CONFIRM).toBe(
-    "Send this to every phone with Lumiback? You can announce once a day.",
+    "Send this to every phone with Lumiback? It goes out as soon as you send it.",
   );
 });
 

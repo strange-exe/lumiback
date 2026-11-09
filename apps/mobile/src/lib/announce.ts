@@ -1,6 +1,6 @@
 /**
- * "Announce an update" (developers only): a push to every phone with Lumiback, at most once a
- * day, sent only when a developer confirms it here. This module checks the form and shapes the
+ * "Announce an update" (developers only): a push to every phone with Lumiback, sent only when a
+ * developer confirms it here (no daily limit since 2026-11-09). This module checks the form and shapes the
  * wording; the API enforces every rule. Same rules and words as the website's
  * (apps/web/src/features/developer/announce.ts). Pure, so it is unit-tested.
  */
@@ -10,19 +10,19 @@ export const MAX_ANNOUNCE_TITLE = 50;
 export const MAX_ANNOUNCE_BODY = 140;
 
 export const ANNOUNCE_CONFIRM =
-  "Send this to every phone with Lumiback? You can announce once a day.";
+  "Send this to every phone with Lumiback? It goes out as soon as you send it.";
 
 /** GET /admin/announcements */
 export interface AnnounceState {
   last_at: string | null;
-  /** When the next announcement is allowed; null if allowed now. */
+  /** Always null since the daily limit went (2026-11-09); the API keeps it for 1.18.x apps. */
   next_at: string | null;
 }
 
 /** POST /admin/announcements (200) */
 export interface Announced {
   devices: number;
-  next_at: string;
+  next_at: string | null;
 }
 
 /** What the form starts with: the newest release's title and its one-line summary. */
@@ -79,18 +79,9 @@ export function announceBody(rawTitle: string, rawBody: string): AnnounceBody {
   return { ok: true, body: { title, body } };
 }
 
-/** When the last one went out, and whether (or when) the next is allowed. */
-export function announceTiming(
-  state: AnnounceState,
-  now: number,
-  fmt: (iso: string) => string,
-): { last: string; next: string; allowed: boolean } {
-  const last = state.last_at ? `Last announced ${fmt(state.last_at)}.` : "No update announced yet.";
-  const nextAt = state.next_at ? Date.parse(state.next_at) : NaN;
-  if (state.next_at && Number.isFinite(nextAt) && nextAt > now) {
-    return { last, next: `You can announce again after ${fmt(state.next_at)}.`, allowed: false };
-  }
-  return { last, next: "You can announce now.", allowed: true };
+/** When the last one went out. There is no daily limit any more, so `next_at` is ignored. */
+export function announceTiming(state: AnnounceState, fmt: (iso: string) => string): string {
+  return state.last_at ? `Last announced ${fmt(state.last_at)}.` : "No update announced yet.";
 }
 
 export function reachedLine(devices: number): string {
@@ -99,7 +90,7 @@ export function reachedLine(devices: number): string {
   return `Sending to ${devices} ${devices === 1 ? "phone" : "phones"}.`;
 }
 
-/** The server's refusal (409 once a day, 403 developers only) as it gave it. */
+/** The server's refusal (403 developers only, 503 no push on the server) as it gave it. */
 export function announceError(_status: number, detail: string): string {
   return detail.trim() || "Something went wrong. Try again.";
 }

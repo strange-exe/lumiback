@@ -133,7 +133,7 @@ export default function Profile(): ReactNode {
             <Row
               leading={icon("megaphone-outline")}
               title="Announce an update"
-              detail="Tell every phone a new version is out, once a day"
+              detail="Tell every phone a new version is out"
               trailing={chevron}
               onPress={() => router.push("/profile/announce")}
             />

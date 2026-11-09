@@ -11,16 +11,20 @@ import { useColorScheme } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { installErrorReporting, setErrorRoute } from "@/lib/error-handler";
 import { loadPrefs } from "@/lib/prefs";
 import { useWakeOnForeground } from "@/lib/wake-server";
 // Registers the background location task at startup (TaskManager needs it at module scope).
 import "@/location/task";
+import { AppError } from "@/screens/app-error";
 import { OfflineStart } from "@/screens/offline-start";
 import { StartingScreen } from "@/screens/StartingScreen";
 import { useColors } from "@/ui/theme";
 import { UpdatePrompt } from "@/updates/UpdatePrompt";
 
 void SplashScreen.preventAutoHideAsync();
+// Uncaught errors go to POST /errors (scrubbed there), then on to React Native as before.
+installErrorReporting();
 
 function Navigator(): ReactNode {
   const { status, user } = useAuth();
@@ -31,6 +35,7 @@ function Navigator(): ReactNode {
   const [handedOff, setHandedOff] = useState(false);
   if (status === "offline" && !handedOff) setHandedOff(true);
   const pathname = usePathname();
+  useEffect(() => setErrorRoute(pathname), [pathname]);
   const colors = useColors();
   const scheme = useColorScheme();
   const [fontsLoaded] = useFonts({
@@ -95,6 +100,12 @@ function Navigator(): ReactNode {
     </>
   );
 }
+
+/**
+ * Anything that throws while drawing, the layout itself included (expo-router wraps this
+ * route, layout and all, in it): reported, then a plain "Try again" screen.
+ */
+export const ErrorBoundary = AppError;
 
 export default function RootLayout(): ReactNode {
   return (

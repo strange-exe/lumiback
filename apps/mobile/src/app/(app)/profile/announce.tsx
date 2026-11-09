@@ -19,7 +19,6 @@ import { useAuth } from "@/lib/auth";
 import { formatStamp } from "@/lib/time";
 import { CURRENT } from "@/updates/changelog";
 import { useData } from "@/lib/use-data";
-import { useNow } from "@/lib/use-now";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Field, FormError, LoadFailed, Notice, Screen, T } from "@/ui/kit";
 import { space } from "@/ui/theme";
@@ -28,9 +27,9 @@ const fmt = (iso: string): string => formatStamp(new Date(iso));
 const DRAFT = announceDraft(CURRENT);
 
 /**
- * Developers only: tell every phone with Lumiback that a new version is out, at most once a day.
- * Nothing is sent until the developer confirms; the server checks the role and the daily limit
- * again. Like the website's Announce an update.
+ * Developers only: tell every phone with Lumiback that a new version is out. Nothing is sent
+ * until the developer confirms; the server checks the role again. No daily limit (owner,
+ * 2026-11-09). Like the website's Announce an update.
  */
 export default function Announce(): ReactNode {
   const { user } = useAuth();
@@ -41,9 +40,7 @@ export default function Announce(): ReactNode {
     [allowedHere],
   );
   const { data, error: loadError, loading, reload } = useData(load);
-  // Re-read every 30 s, so the form opens again once the daily limit has passed.
-  const now = useNow(30_000);
-  // After a send, the server's new limit (until the next load).
+  // After a send: when it went out (until the next load).
   const [sent, setSent] = useState<AnnounceState | null>(null);
   // Starts with this release's title and summary (the changelog), ready to edit.
   const [title, setTitle] = useState(DRAFT.title);
@@ -62,7 +59,7 @@ export default function Announce(): ReactNode {
   }
 
   const state = sent ?? data;
-  const timing = state ? announceTiming(state, now, fmt) : null;
+  const last = state ? announceTiming(state, fmt) : null;
 
   const next = (): void => {
     const checked = announceBody(title, line);
@@ -87,7 +84,7 @@ export default function Announce(): ReactNode {
       });
       haptic.success();
       const done = reachedLine(result.devices);
-      setSent({ last_at: new Date().toISOString(), next_at: result.next_at });
+      setSent({ last_at: new Date().toISOString(), next_at: null });
       setReached(done);
       setConfirming(null);
       setTitle("");
@@ -120,14 +117,11 @@ export default function Announce(): ReactNode {
           busy={loading}
           onRetry={reload}
         />
-      ) : !timing ? (
+      ) : !last ? (
         <T tone="muted">Loading…</T>
       ) : (
         <>
-          <View accessible style={{ gap: space(1) }}>
-            <T tone="body">{timing.last}</T>
-            <T tone="muted">{timing.next}</T>
-          </View>
+          <T tone="body">{last}</T>
           {reached ? <Notice>{reached}</Notice> : null}
 
           {confirming ? (
@@ -151,7 +145,7 @@ export default function Announce(): ReactNode {
                 )}
               </View>
             </Card>
-          ) : timing.allowed ? (
+          ) : (
             <Card flat>
               <Field
                 label="Title"
@@ -173,7 +167,7 @@ export default function Announce(): ReactNode {
               <FormError message={error} />
               <Button label="Continue" onPress={next} />
             </Card>
-          ) : null}
+          )}
         </>
       )}
     </Screen>

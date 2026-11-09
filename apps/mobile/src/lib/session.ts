@@ -73,6 +73,14 @@ export async function accessToken(): Promise<string | null> {
 }
 
 /**
+ * The access token in memory if it is still valid, else null. Never refreshes: for the error
+ * reporter, which must not touch the session (a refresh that fails could sign the student out).
+ */
+export function currentAccessToken(): string | null {
+  return access && access.expiresAt > Date.now() ? access.token : null;
+}
+
+/**
  * Exactly one refresh at a time. The backend rotates refresh tokens and treats a reused one as
  * theft (it revokes the whole login), so two screens refreshing at once must share one request.
  * Resolves to null only when the backend refused the token (or there is none); offline or server
