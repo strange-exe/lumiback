@@ -20,7 +20,7 @@ VALID_ENV = {
     "SMTP_PASSWORD": "fake-smtp-password",
     "EMAIL_FROM": "Lumiback <no-reply@example.com>",
 }
-OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT", "BREACH_CHECK"]
+OPTIONAL = ["APP_ENV", "ALLOWED_EMAIL_DOMAINS", "SMTP_PORT", "BREACH_CHECK", "WEB_URL"]
 
 
 @pytest.fixture
@@ -139,6 +139,20 @@ def test_switching_the_breached_password_check_off_is_refused_in_production(env)
     assert "BREACH_CHECK=off" in str(exc.value)
     env.setenv("APP_ENV", "development")  # as scripts/e2e_server.py sets it
     assert load().breach_check == "off"
+
+
+def test_a_plain_http_website_is_refused_in_production(env):
+    """WEB_URL builds the announcement banner's URL (a picture phones fetch), the links in
+    every email and the gate QR codes: production serves it over https only."""
+    env.setenv("WEB_URL", "http://lumiback.example.com")
+    with pytest.raises(ConfigError) as exc:
+        load()
+    assert "WEB_URL" in str(exc.value)
+    env.setenv("WEB_URL", "https://lumiback.example.com")
+    assert load().web_url == "https://lumiback.example.com"
+    env.setenv("WEB_URL", "http://localhost:3000")  # local servers (scripts/e2e_server.py)
+    env.setenv("APP_ENV", "development")
+    assert load().web_url == "http://localhost:3000"
 
 
 @pytest.mark.parametrize("key", ["SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"])

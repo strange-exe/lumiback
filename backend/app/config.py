@@ -119,6 +119,10 @@ class Settings(BaseSettings):
         if self.breach_check == "off" and self.app_env == "production":
             # Only offline local test servers (scripts/e2e_server.py, APP_ENV=development).
             raise ValueError("BREACH_CHECK=off is not allowed in production")
+        if not self.web_url.startswith("https://") and self.app_env == "production":
+            # It builds the announcement banner's URL (a picture phones fetch), every email's
+            # links and the gate QR codes.
+            raise ValueError("WEB_URL must be https:// in production")
         if self.email_backend == "smtp":
             missing = [
                 name.upper()

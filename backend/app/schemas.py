@@ -1373,8 +1373,21 @@ class HelpHandleIn(Input):
 # ---------- wave 3: update announcements (developers) ----------
 
 
+AnnouncementKind = Literal["feature", "fix", "maintenance", "notice"]
+# The roles an announcement can go to (wave 5): every role there is.
+AudienceRole = Literal["student", "warden", "head_warden", "admin", "developer"]
+
+
+def _unique(roles: list[str]) -> list[str]:
+    if len(set(roles)) != len(roles):
+        raise ValueError("Each role once")
+    return roles
+
+
 class AnnouncementIn(Input):
-    """A short push about a released update: plain text, one line each."""
+    """A short push about a released update: plain text, one line each. Wave 5 adds `kind`,
+    `audience` and a banner (`image`: a name from the website's banner list, feature launches
+    only). 1.18 and 1.19 apps send only title and body: a notice to everyone."""
 
     title: Annotated[
         str,
@@ -1386,6 +1399,19 @@ class AnnouncementIn(Input):
         StringConstraints(strip_whitespace=True, min_length=1, max_length=140),
         BeforeValidator(_no_control_characters),
     ]
+    kind: AnnouncementKind = "notice"
+    audience: (
+        Literal["everyone"]
+        | Annotated[list[AudienceRole], Field(min_length=1, max_length=5), AfterValidator(_unique)]
+    ) = "everyone"
+    # Checked against the banner list in api/admin.py (BANNERS), never used as a URL.
+    image: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,39}$")] | None = None
+
+    @model_validator(mode="after")
+    def _image_for_features_only(self) -> "AnnouncementIn":
+        if self.image is not None and self.kind != "feature":
+            raise ValueError("A banner is for feature launches only")
+        return self
 
 
 class AnnouncementSent(BaseModel):
@@ -1394,9 +1420,29 @@ class AnnouncementSent(BaseModel):
     next_at: datetime | None
 
 
+class AnnouncementOut(BaseModel):
+    """One sent announcement in the history. Those sent before wave 5 went to everyone and kept
+    only `at`, `by` and `title` (kind and devices are None)."""
+
+    at: datetime
+    by: str | None  # the developer's name; None if their account was deleted
+    kind: AnnouncementKind | None
+    title: str
+    audience: Literal["everyone"] | list[str]
+    devices: int | None
+    image: str | None
+
+
+class Banner(BaseModel):
+    name: str
+    url: str  # on the configured website, e.g. https://lumiback.abhinesh.codes/app/banners/x.png
+
+
 class AnnouncementStatus(BaseModel):
     last_at: datetime | None
     next_at: datetime | None  # always None (allowed now), kept for 1.18.x apps
+    history: list[AnnouncementOut] = []  # the last 20, newest first
+    banners: list[Banner] = []  # the pictures a feature launch may carry
 
 
 # ---------- wave 4: reports (the office) ----------

@@ -28,8 +28,18 @@ from app.api.deps import (
     StaffUser,
     enforce,
 )
-from app.models import AdminAudit, CampusSettings, Gate, Hostel, ScanResult, User, UserRole
-from app.push import PushMessage, count_everyone, push_everyone
+from app.config import Settings
+from app.models import (
+    AdminAudit,
+    Announcement,
+    CampusSettings,
+    Gate,
+    Hostel,
+    ScanResult,
+    User,
+    UserRole,
+)
+from app.push import DAY, PushMessage, count_everyone, push_everyone
 from app.realtime import AccessChanged
 from app.schemas import (
     AccountEditIn,
@@ -38,9 +48,11 @@ from app.schemas import (
     AdminOverview,
     AdminScanPage,
     AnnouncementIn,
+    AnnouncementOut,
     AnnouncementSent,
     AnnouncementStatus,
     AuditPage,
+    Banner,
     CampusSettingsIO,
     GateCreated,
     GateIn,
@@ -78,6 +90,10 @@ IMPORT_CHECKS = Limit(max_hits=60, window_seconds=3600)
 IMPORT_CONFIRMS = Limit(max_hits=10, window_seconds=3600)
 PASSWORD_LINKS = Limit(max_hits=30, window_seconds=3600)
 PEOPLE_ADDED = Limit(max_hits=60, window_seconds=3600)
+# Every office search and list that takes a search (people, students, the register, late
+# today, scans, the audit log), per person and per endpoint: far above a person typing or a page
+# refreshing itself, well below a script paging through everyone (wave 5).
+SEARCHES = Limit(max_hits=120, window_seconds=60)
 
 NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 NAME_TAKEN = HTTPException(status.HTTP_409_CONFLICT, detail="A gate with that name already exists")
@@ -89,6 +105,23 @@ async def overview(staff: StaffUser, session: SessionDep) -> AdminOverview:
 
 
 Search = Annotated[str | None, Query(min_length=2, max_length=100)]
+# ?role=warden&role=head_warden: people with any of these roles (admins and developers only).
+Roles = Annotated[list[UserRole] | None, Query()]
+
+
+def role_filter(role: list[UserRole] | None) -> list[UserRole]:
+    """Each role once, and no longer a list than there are roles (a repeat is a 422, not an
+    IN list as long as the query string allows)."""
+    if role and len(role) > len(UserRole):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose each role at most once"
+        )
+    return list(dict.fromkeys(role or ()))
+
+
+async def searching(limiter: LimiterDep, me: User, endpoint: str) -> None:
+    """Counts one search against SEARCHES (read when called, so tests can lower it)."""
+    await enforce(limiter, f"search:{endpoint}", str(me.id), SEARCHES)
 
 
 def own_hostel(staff: Staff, hostel_id: uuid.UUID | None) -> uuid.UUID | None:
@@ -118,11 +151,13 @@ def day_range(start: date | None, end: date | None) -> tuple[date, date] | None:
 async def open_outings(
     staff: StaffUser,
     session: SessionDep,
+    limiter: LimiterDep,
     state: Literal["all", "out", "overdue", "back"] = "all",
     hostel_id: uuid.UUID | None = None,
     q: Search = None,
 ) -> list[AdminOuting]:
     """`hostel_id`: one of the office's hostels (the outing's hostel). `q`: name or roll no."""
+    await searching(limiter, staff.user, "outings")
     return await svc.open_outings(session, staff, state, own_hostel(staff, hostel_id), q)
 
 
@@ -130,10 +165,12 @@ async def open_outings(
 async def late_today(
     staff: StaffUser,
     session: SessionDep,
+    limiter: LimiterDep,
     hostel_id: uuid.UUID | None = None,
     q: Search = None,
 ) -> list[AdminOuting]:
     """Tonight's latecomers: back after their return time, or still out past it."""
+    await searching(limiter, staff.user, "late-today")
     return await svc.late_today(session, staff, own_hostel(staff, hostel_id), q)
 
 
@@ -223,6 +260,7 @@ async def report_csv(
 async def scans(
     staff: StaffUser,
     session: SessionDep,
+    limiter: LimiterDep,
     before: Annotated[int | None, Query(ge=1, le=2**63 - 1)] = None,  # inside BIGINT: 422, not 500
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     gate_id: uuid.UUID | None = None,
@@ -230,8 +268,11 @@ async def scans(
     q: Search = None,
     start: Annotated[date | None, Query(alias="from")] = None,
     end: Annotated[date | None, Query(alias="to")] = None,
+    hostel_id: uuid.UUID | None = None,
 ) -> AdminScanPage:
-    """`q`: a student's name or roll number. `from`/`to`: IST dates, inclusive."""
+    """`q`: a student's name or roll number. `from`/`to`: IST dates, inclusive. `hostel_id`:
+    one of the office's hostels (the student's hostel now; scans don't keep one)."""
+    await searching(limiter, staff.user, "scans")
     return await svc.scans(
         session,
         staff,
@@ -241,6 +282,7 @@ async def scans(
         result=result,
         q=q,
         days=day_range(start, end),
+        hostel_id=own_hostel(staff, hostel_id),
     )
 
 
@@ -426,8 +468,9 @@ async def put_settings(
 
 @router.get("/audit")
 async def audit_log(
-    _: AdminUser,
+    me: AdminUser,
     session: SessionDep,
+    limiter: LimiterDep,
     before: Annotated[int | None, Query(ge=1, le=2**63 - 1)] = None,  # inside BIGINT: 422, not 500
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     area: Literal[svc.AUDIT_AREAS] | None = None,  # type: ignore[valid-type]
@@ -437,6 +480,7 @@ async def audit_log(
 ) -> AuditPage:
     """Who changed what, newest first: admins and developers only, and read-only (nothing
     writes here; every change elsewhere adds its own row)."""
+    await searching(limiter, me, "audit")
     return await svc.audit_log(
         session, before=before, limit=limit, area=area, q=q, days=day_range(start, end)
     )
@@ -454,6 +498,19 @@ async def audit_log(
 UPDATES_CHANNEL = "app-updates"  # the app's "App updates" Android channel (mutable)
 ANNOUNCE_ACTION = "announce:update"
 ANNOUNCE_LOCK = 7_316_011  # pg_advisory_xact_lock key: one announcement checked at a time
+# Wave 5. One update notice on a phone at a time: a new one replaces the last (Android tag).
+UPDATE_TAG = "lumiback-update"
+UPDATE_CATEGORY = "app_update"  # the app's category: Changelog and Update buttons
+UPDATE_TTL = 3 * DAY
+HISTORY = 20  # announcements shown under the form
+# The banners a feature launch may carry: the website serves each at /app/banners/<name>.png
+# (apps/web/public/app/banners; tests/test_announce.py checks the files match). Never a URL
+# from the request: the picture's address is built from the configured website.
+BANNERS = ("gate", "lantern")
+
+
+def banner_url(settings: Settings, name: str) -> str:
+    return f"{settings.web_url}/app/banners/{name}.png"
 
 
 async def get_developer(user: CurrentUser) -> User:
@@ -466,12 +523,37 @@ DeveloperUser = Annotated[User, Depends(get_developer)]
 
 
 @router.get("/announcements")
-async def announcements(_: DeveloperUser, session: SessionDep) -> AnnouncementStatus:
+async def announcements(
+    _: DeveloperUser, session: SessionDep, settings: SettingsDep
+) -> AnnouncementStatus:
     # next_at stays in the answer, always null (allowed now): 1.18.x apps read it.
     last = await session.scalar(
         select(func.max(AdminAudit.at)).where(AdminAudit.action == ANNOUNCE_ACTION)
     )
-    return AnnouncementStatus(last_at=last, next_at=None)
+    rows = await session.execute(
+        select(Announcement, User.name)
+        .outerjoin(User, User.id == Announcement.actor_id)
+        .order_by(Announcement.id.desc())
+        .limit(HISTORY)
+    )
+    history = [
+        AnnouncementOut(
+            at=a.at,
+            by=name,
+            kind=a.kind,  # type: ignore[arg-type]
+            title=a.title,
+            audience=sorted(a.roles) if a.roles else "everyone",
+            devices=a.devices,
+            image=a.image,
+        )
+        for a, name in rows
+    ]
+    banners = [Banner(name=n, url=banner_url(settings, n)) for n in sorted(BANNERS)]
+    return AnnouncementStatus(last_at=last, next_at=None, history=history, banners=banners)
+
+
+def _audience(body: AnnouncementIn) -> list[UserRole] | None:
+    return None if body.audience == "everyone" else sorted(UserRole(r) for r in body.audience)
 
 
 # 200, not 202: the clients read the body (how many phones), and both treat 202 as empty.
@@ -480,30 +562,57 @@ async def announce(
     body: AnnouncementIn,
     me: DeveloperUser,
     session: SessionDep,
+    settings: SettingsDep,
     request: Request,
     tasks: BackgroundTasks,
 ) -> AnnouncementSent:
-    """One push to every phone with the app, on the "App updates" channel, tapped to fetch the
+    """One push to every phone with the app, or to the chosen roles' phones, on the "App
+    updates" channel, with the Changelog and Update buttons; tapped, the app checks for the
     update. Sent after the response, in Expo's batches. A server without push refuses before
     anything is logged. No daily limit (owner, 2026-11-09: "No timeout in announcements, it's
     just better for dev"); the confirm step in each client is the guard."""
+    if body.image is not None and body.image not in BANNERS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown banner")
     sender = request.app.state.push
     if sender is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Push notifications aren't set up on this server, so nothing was sent.",
         )
+    roles = _audience(body)
     # Held until this transaction ends: a second request waits for this one's audit row and
     # count, so two at once are two whole announcements, one after the other.
     await session.execute(select(func.pg_advisory_xact_lock(ANNOUNCE_LOCK)))
-    svc.audit(session, me, ANNOUNCE_ACTION, body.title)
-    devices = await count_everyone(session, UPDATES_CHANNEL)
+    devices = await count_everyone(session, UPDATES_CHANNEL, roles)
+    who = " + ".join(r.value for r in roles) if roles else "everyone"
+    svc.audit(session, me, ANNOUNCE_ACTION, f"{body.title} ({body.kind}, {who}, {devices} devices)")
+    session.add(
+        Announcement(
+            actor_id=me.id,
+            kind=body.kind,
+            title=body.title,
+            body=body.body,
+            image=body.image,
+            roles=[r.value for r in roles] if roles else None,
+            devices=devices,
+        )
+    )
     await session.commit()
     tasks.add_task(
         push_everyone,
         request.app.state.sessionmaker,
         sender,
-        PushMessage(title=body.title, body=body.body, channel=UPDATES_CHANNEL, kind="app-update"),
+        PushMessage(
+            title=body.title,
+            body=body.body,
+            channel=UPDATES_CHANNEL,
+            kind="app-update",
+            tag=UPDATE_TAG,
+            category=UPDATE_CATEGORY,
+            image=banner_url(settings, body.image) if body.image else None,
+            ttl=UPDATE_TTL,
+        ),
+        roles,
     )
     return AnnouncementSent(devices=devices, next_at=None)
 
@@ -513,24 +622,47 @@ async def announce(
 
 @router.get("/users")
 async def search_users(
-    _: AdminUser, session: SessionDep, q: Annotated[str, Query(min_length=2, max_length=100)]
+    me: AdminUser,
+    session: SessionDep,
+    limiter: LimiterDep,
+    q: Search = None,
+    role: Roles = None,
+    after: uuid.UUID | None = None,
 ) -> list[AdminUserOut]:
-    return await svc.search_users(session, q)
+    """Anyone, by name, email or roll number (`q`, 20 at most), or everyone with one of the
+    roles in `role` (repeatable; with `q` too), 50 at a time by name: `after` is the last id of
+    the page before. Admins and developers only."""
+    roles = role_filter(role)
+    if q is None and not roles:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Type at least 2 letters or choose a role"
+        )
+    if after is not None and not roles:  # a search has no pages: never drop it silently
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose a role to page through"
+        )
+    await searching(limiter, me, "users")
+    return await svc.search_users(session, q, roles=roles, after=after)
 
 
 @router.get("/students")
 async def list_students(
     staff: StaffUser,
     session: SessionDep,
+    limiter: LimiterDep,
     hostel_id: uuid.UUID | None = None,
-    q: Annotated[str | None, Query(min_length=2, max_length=100)] = None,
+    q: Search = None,
     account: Literal["invited", "off"] | None = None,
+    role: Roles = None,
 ) -> list[StudentOut]:
     """A hostel's students (a warden: their own hostels only), with contacts and who's out.
-    `account`: only those who haven't set up yet, or only accounts turned off."""
+    `account`: only those who haven't set up yet, or only accounts turned off. `role`: admins
+    and developers only; from anyone else it is ignored (they see students only, never more)."""
+    await searching(limiter, staff.user, "students")
     if hostel_id is not None and staff.hostels is not None and hostel_id not in staff.hostels:
         raise NOT_FOUND
-    return await svc.students(session, staff, hostel_id, q, account)
+    roles = role_filter(role) if staff.user.is_admin else None
+    return await svc.students(session, staff, hostel_id, q, account, roles)
 
 
 @router.post("/students/{user_id}/hostel")

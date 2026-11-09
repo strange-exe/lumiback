@@ -17,7 +17,7 @@ from app.api.deps import (
     too_many,
 )
 from app.models import ShareSession, ViewerStatus
-from app.push import PushMessage
+from app.push import HOUR, PushMessage
 from app.schemas import RedeemIn, RedeemOut
 from app.security.rate_limit import Limit, RateLimited
 from app.services import codes as svc
@@ -82,7 +82,13 @@ async def redeem(
                 about = "Joined with a code, no account. Your emergency contact never has to ask."
             push.to_user(
                 share.sharer_id,
-                PushMessage(title=f"{who} wants to follow you", body=about, url="/live"),
+                PushMessage(
+                    title=f"Follow request: {who}",
+                    body=about,
+                    url="/live",
+                    tag=f"follow-request:{result.viewer_id}",
+                    ttl=HOUR,  # join codes are short-lived
+                ),
             )
     return RedeemOut(
         session_id=result.session_id,

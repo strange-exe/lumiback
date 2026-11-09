@@ -82,7 +82,8 @@ def test_the_alert_reaches_a_student_who_muted_reminders(client, db, push, riya)
     assert run_sweep(client, push).overdue_notified == 1
     tokens, message = push.outbox[-1]
     assert tokens == [STUDENT_PHONE] and message.urgent
-    assert "Are you OK?" in message.title
+    assert message.title.startswith("Return overdue: ")
+    assert message.body.startswith("Are you OK?")  # kept at the start (owner, 2026-11-09)
     assert run_sweep(client, push).overdue_notified == 0  # once per outing
 
 
@@ -315,7 +316,7 @@ def test_the_alert_says_how_late_when_the_sweep_runs_late(client, db, push, riya
     go_out(client, riya)
     late_by(db, 47)  # e.g. the API was asleep at the 30-minute mark
     run_sweep(client, push)
-    assert push.outbox[-1][1].title == "You're 47 min late. Are you OK?"
+    assert push.outbox[-1][1].title == "Return overdue: 47 min"
 
 
 def test_an_alert_to_a_phone_that_is_gone_is_emailed(client, db, push, riya):
@@ -374,8 +375,11 @@ def test_the_admin_push_opens_escalations_in_the_app(client, db, push, riya, war
     late_by(db, 41, alerted_minutes_ago=11)
     run_sweep(client, push)
     message = push.outbox[-1][1]
-    assert message.body == "Open Escalations in Lumiback to follow up."
+    assert message.body == "A late student hasn't replied. Open Escalations to follow up."
     assert message.url == "/office/escalations"
+    # Its own tag (another student's escalation never replaces it) and a day to arrive.
+    eid = db.execute(text("SELECT id FROM escalations")).scalar_one()
+    assert (message.tag, message.ttl) == (f"escalation:{eid}", 24 * 3600)
 
 
 def test_a_student_back_after_the_escalation_shows_when(client, db, push, riya, warden):

@@ -79,8 +79,12 @@ def test_followers_are_told_running_late_late_and_back(client, db, push, anna, f
     due_in(db, -10)
     late(client, anna, 15)
     [m] = sent_to(push, FRIEND)
-    assert m.title == "Anna will be back later" and "was" in m.body
+    assert m.title == "Anna: return time updated"
+    assert m.body.startswith("Due ") and m.body.endswith(". The hostel office has been notified.")
+    assert "(was " in m.body
     assert (m.url, m.channel, m.urgent) == (FOLLOW_URL, "share-status", False)
+    # Every notice about Anna replaces the last one shown about her.
+    assert m.tag.startswith("follow:") and m.ttl == 24 * 3600
     # 31 min past the new time: Anna's own alert, and her followers are told once.
     db.execute(
         text(
@@ -91,13 +95,17 @@ def test_followers_are_told_running_late_late_and_back(client, db, push, anna, f
     db.commit()
     push.outbox.clear()
     run_sweep(client)
-    assert titles(push, FRIEND) == ["Anna isn't back yet"]
+    assert titles(push, FRIEND) == ["Anna: return overdue"]
     run_sweep(client)
-    assert titles(push, FRIEND) == ["Anna isn't back yet"]
-    assert titles(push, ANNA) == ["You're 31 min late. Are you OK?"]
+    assert titles(push, FRIEND) == ["Anna: return overdue"]
+    [m] = sent_to(push, FRIEND)
+    assert m.body.startswith("Due ") and m.body.endswith(". Lumiback has sent a check-in.")
+    assert titles(push, ANNA) == ["Return overdue: 31 min"]
     r = client.post("/outings/current/return", headers=anna)
     assert r.status_code == 200, r.text
-    assert titles(push, FRIEND) == ["Anna isn't back yet", "Anna is back"]
+    assert titles(push, FRIEND) == ["Anna: return overdue", "Anna: returned"]
+    back = sent_to(push, FRIEND)[-1]
+    assert back.body.startswith("Back at the hostel at ") and back.tag == m.tag
 
 
 def test_a_follower_cut_off_before_the_send_gets_nothing(client, db, push, mailer, anna, friend):
@@ -130,6 +138,9 @@ def test_followers_without_the_app_are_emailed_and_muted_phones_respected(
     assert mail_to(mailer, "friend@geu.ac.in") == []
     [mail] = mail_to(mailer, "sam@geu.ac.in")
     assert "Anna" in mail.subject and "/share" in mail.body
+    # The push got the v2 status title; the email keeps its plain-words heading (wave 5 changed
+    # push wording only).
+    assert mail.subject == "Lumiback: Anna will be back later"
 
 
 def test_stopping_a_share_is_told_to_nobody_even_while_out(client, db, push, mailer, anna, friend):
@@ -178,6 +189,8 @@ def test_a_share_that_ends_on_its_own_while_out_tells_its_followers(
     assert (m.url, m.channel) == (FOLLOW_URL, "share-status")
     # Only that it timed out (owner: "Timed out only"): not that she's out, nor when she's due.
     assert m.body == "You can't see their location until they share it again."
+    # Never replaces a "return overdue" notice about her still on the phone.
+    assert m.tag.startswith("follow-share:") and m.ttl == 24 * 3600
     assert mail_to(mailer, "friend@geu.ac.in") == []  # they have the app: pushed, not emailed
     run_sweep(client)
     assert len(sent_to(push, FRIEND)) == 1  # once

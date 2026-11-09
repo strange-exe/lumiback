@@ -326,7 +326,7 @@ async def _send(
     if row.mode is OutboxMode.EMAIL:
         await mailer.send(_email(row, to.email))
         return
-    message = PushMessage(**row.payload["push"])
+    message = PushMessage.from_saved(row.payload["push"])
     # A safety message must not wait out the retries while push is down, and an alert on its
     # last try is better emailed than lost.
     fallback = row.mode is OutboxMode.PUSH_OR_EMAIL and (

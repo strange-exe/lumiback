@@ -104,6 +104,40 @@ def test_0030_quiets_open_escalations_and_moves_staff_out_of_hostels(migrated_en
             conn.execute(text("DELETE FROM rule_sets WHERE name = '0030 test'"))
 
 
+def test_0033_copies_earlier_announcements_into_the_history(migrated_engine, test_db_url):
+    """Announcements sent before wave 5 appear in the history, with what the audit log kept."""
+    cfg = alembic_config(test_db_url)
+    command.downgrade(cfg, "0032")
+    try:
+        with migrated_engine.begin() as conn:
+            dev = conn.execute(
+                text(
+                    "INSERT INTO users (role, name, email, password_hash) "
+                    "VALUES ('developer', 'Dev', 'dev.0033@example.com', 'x') RETURNING id"
+                )
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO admin_audit (actor_id, action, target) VALUES "
+                    "(:d, 'announce:update', 'Lumiback 1.18.0'), (:d, 'gate:create', 'Main')"
+                ),
+                {"d": dev},
+            )
+        command.upgrade(cfg, "head")
+        with migrated_engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT actor_id, kind, title, body, roles, devices FROM announcements")
+            ).all()
+        assert [tuple(r) for r in rows] == [(dev, None, "Lumiback 1.18.0", None, None, None)]
+    finally:
+        command.upgrade(cfg, "head")
+        with migrated_engine.begin() as conn:
+            mine = "SELECT id FROM users WHERE email = 'dev.0033@example.com'"
+            conn.execute(text(f"DELETE FROM announcements WHERE actor_id IN ({mine})"))
+            conn.execute(text(f"DELETE FROM admin_audit WHERE actor_id IN ({mine})"))
+            conn.execute(text("DELETE FROM users WHERE email = 'dev.0033@example.com'"))
+
+
 def test_outing_rules_are_seeded_from_hostel_practice(migrated_engine, test_db_url):
     # The per-test reset replaces the seeds, so rebuild the schema to read them fresh.
     cfg = alembic_config(test_db_url)

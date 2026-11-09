@@ -578,9 +578,10 @@ def test_the_approval_push_matches_the_email(client, riya, warden, push, form_da
     request = send(client, riya).json()
     assert decide(client, warden, request["id"]).status_code == 200
     _, message = push.outbox[-1]
-    assert message.title == "Outing approved"
-    assert message.body == "Tap out at the gate when you leave, or log your trip in Lumiback."
+    assert message.title == "Outing request approved"
+    assert message.body == "Tap out at the gate, or log the trip in Lumiback."
     assert message.channel == "share-status"
+    assert (message.tag, message.ttl) == (f"request:{request['id']}", 24 * 3600)
 
 
 def test_the_limit_shown_is_for_the_requests_own_day(client, db, riya, warden, form_day):

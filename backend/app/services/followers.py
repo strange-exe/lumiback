@@ -37,7 +37,7 @@ from app.models import (
     User,
     ViewerStatus,
 )
-from app.push import PushMessage
+from app.push import DAY, PushMessage
 from app.services import outbox
 from app.services.rules import IST
 
@@ -89,10 +89,15 @@ async def _tell(
     kind: str,
     title: str,
     body: str,
+    heading: str,
     paragraph: str,
     web_url: str,
     viewer_of: uuid.UUID | None = None,
+    tag: str | None = None,
 ) -> list[int]:
+    """`title` and `body`: the push (wave 5's status wording). `heading` and `paragraph`: the
+    email, for followers without the app (its plain-words heading is unchanged). `tag`: by
+    default the latest news about this student replaces the last one shown."""
     ids = []
     for person in people:
         found = await outbox.enqueue(
@@ -101,11 +106,18 @@ async def _tell(
             kind=kind,
             mode=OutboxMode.PUSH_OR_EMAIL,
             user_id=person.id,
-            push=PushMessage(title=title, body=body, url=FOLLOW_URL, channel=CHANNEL),
+            push=PushMessage(
+                title=title,
+                body=body,
+                url=FOLLOW_URL,
+                channel=CHANNEL,
+                tag=tag or f"follow:{student.id}",
+                ttl=DAY,
+            ),
             email=follower_email(
                 to=person.email,
                 student=student.name,
-                heading=title,
+                heading=heading,
                 paragraph=paragraph,
                 web_url=web_url,
             ),
@@ -134,8 +146,9 @@ async def running_late(
         await followers(session, student, now),
         key=f"follower-running-late:{outing.id}",
         kind="follower_running_late",
-        title=f"{student.name} will be back later",
-        body=f"Now due back at {new} (was {was}). They told the hostel office.",
+        title=f"{student.name}: return time updated",
+        body=f"Due {new} (was {was}). The hostel office has been notified.",
+        heading=f"{student.name} will be back later",
         paragraph=(
             f"{student.name} told the hostel office they're running late. They're now due "
             f"back at {new} IST instead of {was} IST."
@@ -155,8 +168,9 @@ async def late(
         _not_the_contact(await followers(session, student, now), outing),
         key=f"follower-late:{outing.id}",
         kind="follower_late",
-        title=f"{student.name} isn't back yet",
-        body=f"They were due back at {due}. Lumiback has asked them if they're OK.",
+        title=f"{student.name}: return overdue",
+        body=f"Due {due}. Lumiback has sent a check-in.",
+        heading=f"{student.name} isn't back yet",
         paragraph=(
             f"{student.name} was due back at the hostel by {due} IST and hasn't checked in "
             "yet. Lumiback has asked them if they're OK. If they don't answer, the hostel "
@@ -189,8 +203,9 @@ async def back(
         people,
         key=f"follower-back:{outing.id}",
         kind="follower_back",
-        title=f"{student.name} is back",
+        title=f"{student.name}: returned",
         body=f"Back at the hostel at {at}.",
+        heading=f"{student.name} is back",
         paragraph=f"{student.name} checked back in at the hostel at {at} IST.",
         web_url=web_url,
     )
@@ -225,8 +240,10 @@ async def timed_out(
         [u for u in viewers if u.id not in still],
         key=f"follower-timed-out:{share_id}",
         kind="follower_timed_out",
+        # Owner-approved wording (2026-11-09), kept word for word in wave 5.
         title=f"{student.name}'s location sharing timed out",
         body="You can't see their location until they share it again.",
+        heading=f"{student.name}'s location sharing timed out",
         paragraph=(
             f"{student.name}'s location sharing with you timed out: its time ran out, or their "
             "phone stopped sending its location. You can't see their location until they share "
@@ -234,4 +251,6 @@ async def timed_out(
         ),
         web_url=web_url,
         viewer_of=share_id,
+        # Its own tag: a timed-out share must never replace a "return overdue" still shown.
+        tag=f"follow-share:{share_id}",
     )

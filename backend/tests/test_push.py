@@ -126,28 +126,34 @@ def test_follow_request_and_approval_are_pushed(client, push):
 
     joined = client.post("/codes/redeem", json={"code": code}, headers=arjun)
     assert joined.status_code == 200, joined.text
+    viewer_id = joined.json()["viewer_id"]
     assert push.outbox == [
         (
             [TOKEN],
             PushMessage(
-                title="Arjun wants to follow you",
+                title="Follow request: Arjun",
                 body="A Lumiback student. Open Lumiback to approve or decline.",
                 url="/live",
+                # A second request from the same viewer replaces this one; a join code is
+                # short-lived, so an hour-old request isn't worth delivering.
+                tag=f"follow-request:{viewer_id}",
+                ttl=3600,
             ),
         )
     ]
 
-    viewer_id = joined.json()["viewer_id"]
     r = client.post(f"/sessions/{share['id']}/viewers/{viewer_id}/approve", headers=riya)
     assert r.status_code == 200, r.text
     assert push.outbox[-1] == (
         [OTHER],
         PushMessage(
-            title="Riya approved you",
-            body="You can see their live location now.",
+            title="Access granted: Riya",
+            body="Live location is now visible.",
             # The follower's own screen, not the sharer's Live tab.
             url="/live?view=follow",
             channel="share-status",
+            tag=f"share:{share['id']}",
+            ttl=24 * 3600,
         ),
     )
 
@@ -159,14 +165,17 @@ def test_a_guest_request_says_it_is_a_guest_and_not_the_contact(client, push):
     share = open_share(client, riya)
     code = client.post(f"/sessions/{share['id']}/codes", headers=riya).json()["code"]
     label = "Sunita (" + chr(0x0435) + "mergency contact)"  # a look-alike of the contact
-    assert client.post("/codes/redeem", json={"code": code, "guest_label": label}).is_success
+    joined = client.post("/codes/redeem", json={"code": code, "guest_label": label})
+    assert joined.is_success
     assert push.outbox == [
         (
             [TOKEN],
             PushMessage(
-                title=f"{label} (guest) wants to follow you",
+                title=f"Follow request: {label} (guest)",
                 body="Joined with a code, no account. Your emergency contact never has to ask.",
                 url="/live",
+                tag=f"follow-request:{joined.json()['viewer_id']}",
+                ttl=3600,
             ),
         )
     ]
@@ -284,6 +293,68 @@ def test_expo_sender_omits_a_missing_url():
     message = PushMessage(title="Hi", body="There", channel="return-reminders")
     assert asyncio.run(sender.send([TOKEN], message)).accepted == {TOKEN}
     assert sent[0]["data"] == {}  # the app then opens its default screen
+    # Nothing optional is sent unless the message asks for it.
+    assert not {"tag", "categoryId", "richContent", "ttl", "subtitle"} & set(sent[0])
+
+
+def test_expo_sender_sends_tag_category_image_and_ttl():
+    """Wave 5: `tag` replaces the notification already shown with the same tag (Android),
+    `categoryId` adds the app's action buttons, `richContent.image` the expanded picture, `ttl`
+    how long Expo may keep trying. `subtitle` is never sent: Android drops it (spike 2026-11-09)."""
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.extend(json.loads(request.content))
+        return httpx.Response(200, json={"data": [{"status": "ok", "id": "x"}]})
+
+    sender = ExpoPushSender(None, transport=httpx.MockTransport(handler))
+    message = PushMessage(
+        title="Now live: Running late",
+        body="Shift your due-back time once per outing.",
+        channel="app-updates",
+        kind="app-update",
+        tag="lumiback-update",
+        category="app_update",
+        image="https://lumiback.test/app/banners/lantern.png",
+        ttl=3 * 24 * 3600,
+    )
+    assert asyncio.run(sender.send([TOKEN], message)).accepted == {TOKEN}
+    assert sent[0] == {
+        "to": TOKEN,
+        "title": "Now live: Running late",
+        "body": "Shift your due-back time once per outing.",
+        "data": {"kind": "app-update"},
+        "sound": "default",
+        "priority": "high",
+        "channelId": "app-updates",
+        "tag": "lumiback-update",
+        "categoryId": "app_update",
+        "richContent": {"image": "https://lumiback.test/app/banners/lantern.png"},
+        "ttl": 259200,
+    }
+
+
+def test_every_push_names_a_tag_and_a_ttl():
+    """Every message the API builds says what it replaces (its tag: a repeat of the same
+    thing replaces the one shown) and how long it is worth delivering (its ttl)."""
+    import ast
+    import pathlib
+
+    app = pathlib.Path(__file__).resolve().parents[1] / "app"
+    calls = []
+    for path in app.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "PushMessage"
+                and node.keywords
+                and node.keywords[0].arg is not None  # PushMessage(**saved): the outbox's copy
+            ):
+                calls.append((path.name, node.lineno, {k.arg for k in node.keywords}))
+    assert len(calls) >= 15, calls  # the walk found them (not a vacuous pass)
+    missing = [(name, line) for name, line, args in calls if not {"tag", "ttl"} <= args]
+    assert missing == []
 
 
 def expo(handler, sleeps: list[float] | None = None) -> ExpoPushSender:

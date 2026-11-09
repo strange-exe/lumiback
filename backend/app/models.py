@@ -787,6 +787,26 @@ class AdminAudit(Base):
     at: Mapped[datetime] = created_at()
 
 
+class Announcement(Base):
+    """An update announcement a developer sent (wave 5): the history under the announce form.
+    Written in the same transaction as its admin_audit row. Rows from before wave 5 were copied
+    from the audit log (title only: no kind, body, audience or count was kept then)."""
+
+    __tablename__ = "announcements"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    kind: Mapped[str | None] = mapped_column(String(16))  # feature, fix, maintenance, notice
+    title: Mapped[str] = mapped_column(String(50))
+    body: Mapped[str | None] = mapped_column(String(140))
+    image: Mapped[str | None] = mapped_column(String(40))  # a banner's name (api/admin.py)
+    roles: Mapped[list[str] | None] = mapped_column(ARRAY(String(16)))  # None: everyone
+    devices: Mapped[int | None]  # phones it was going to when sent
+    at: Mapped[datetime] = created_at()
+
+
 class ErrorReport(Base):
     """One group of the same error from the website or the app (services/error_reports.py).
 

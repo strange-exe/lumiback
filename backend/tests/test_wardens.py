@@ -304,7 +304,7 @@ def test_a_new_request_reaches_the_hostels_wardens(client, db, push, admin, ward
     register_token(client, admin, ADMIN_PHONE)
     client.post("/outings/request", json=FORM, headers=anna)
     assert [(t, m.title, m.body, m.url) for t, m in push.outbox] == [
-        ([WARDEN_PHONE], "New outing request", "Anna asked for today's outing.", "/office/requests")
+        ([WARDEN_PHONE], "New outing request", "Anna requested today's outing.", "/office/requests")
     ]
     push.outbox.clear()
     client.post("/outings/request", json=FORM, headers=bina)  # Hostel B has no warden
@@ -339,8 +339,10 @@ def test_escalations_go_to_admins_and_the_hostels_wardens(
     assert run_sweep(client, push).escalated == 2
 
     escalation_pushes = sorted(
-        t[0] for t, m in push.outbox if m.title == "A late student needs follow-up"
+        t[0] for t, m in push.outbox if m.title == "Escalation: no response in 10 min"
     )
+    [m] = {m for _, m in push.outbox if m.title.startswith("Escalation:")}
+    assert m.body == "A late student hasn't replied. Open Escalations to follow up."
     assert escalation_pushes == sorted([ADMIN_PHONE, WARDEN_PHONE])
     emails = {e.to: e.body for e in mailer.outbox[before:]}
     assert set(emails) == {"office@geu.ac.in", "warden.a@geu.ac.in"}

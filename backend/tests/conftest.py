@@ -140,10 +140,10 @@ class FakeClock:
 
 @pytest.fixture
 def clock(client: TestClient) -> FakeClock:
-    """Swap in a rate limiter driven by a fake clock (same database, same pepper)."""
+    """Swap in a rate limiter driven by a fake clock (same database and pool, same pepper)."""
     fake = FakeClock()
     client.app.state.limiter = RateLimiter(
-        client.app.state.sessionmaker, FAKE_SECRET[::-1], clock=fake
+        client.app.state.limiter_sessionmaker, FAKE_SECRET[::-1], clock=fake
     )
     return fake
 

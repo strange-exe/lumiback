@@ -31,7 +31,7 @@ from app.models import (
     User,
     ViewerStatus,
 )
-from app.push import PushMessage
+from app.push import DAY, PushMessage
 from app.realtime import AccessChanged, LocationUpdated
 from app.schemas import (
     AccessLogEntry,
@@ -245,11 +245,13 @@ async def approve_viewer(
         push.to_user(
             viewer.viewer_user_id,
             PushMessage(
-                title=f"{sharer.name if sharer else 'They'} approved you",
-                body="You can see their live location now.",
+                title=f"Access granted: {sharer.name if sharer else 'a student'}",
+                body="Live location is now visible.",
                 # The follower's screen (the app's Live tab opens the sharer view by default).
                 url="/live?view=follow",
                 channel="share-status",
+                tag=f"share:{share.id}",
+                ttl=DAY,
             ),
         )
     return await svc.sharer_view(session, share)

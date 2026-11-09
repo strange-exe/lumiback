@@ -7,8 +7,10 @@ import asyncio
 import logging
 import sys
 import time
+import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -33,7 +35,7 @@ from app.api import (
     ws,
 )
 from app.config import Settings, load_settings
-from app.db import make_engine, make_sessionmaker
+from app.db import LIMITER_POOL, REQUEST_POOL, make_engine, make_sessionmaker
 from app.email import make_mailer
 from app.email_templates import set_logo, set_reply_to
 from app.jobs import expiry
@@ -44,6 +46,17 @@ from app.security.rate_limit import RateLimiter
 
 HEALTH_CACHE_SECONDS = 5.0
 HEALTH_DB_TIMEOUT_SECONDS = 3.0  # the longest /health waits for the database's answer
+
+
+def package_version() -> str:
+    """The version in pyproject.toml (/meta/status reports it). Read from the file, not package
+    metadata: the project isn't installed as a package (no build system; uv syncs only its
+    dependencies), and Render deploys the backend folder with pyproject.toml in it."""
+    with (Path(__file__).resolve().parents[1] / "pyproject.toml").open("rb") as f:
+        return tomllib.load(f)["project"]["version"]
+
+
+API_VERSION = package_version()
 
 
 def configure_logging() -> None:
@@ -70,10 +83,15 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = make_engine(settings.database_url.get_secret_value())
+        url = settings.database_url.get_secret_value()
+        engine = make_engine(url, **REQUEST_POOL)
         app.state.sessionmaker = make_sessionmaker(engine)
+        # Its own pool: a request holding a connection never waits on its pool for another
+        # (see app/db.py).
+        limiter_engine = make_engine(url, **LIMITER_POOL)
+        app.state.limiter_sessionmaker = make_sessionmaker(limiter_engine)
         app.state.limiter = RateLimiter(
-            app.state.sessionmaker, settings.code_pepper.get_secret_value()
+            app.state.limiter_sessionmaker, settings.code_pepper.get_secret_value()
         )
         app.state.sweep_health = expiry.SweepHealth() if start_jobs else None
         sweeper = (
@@ -101,10 +119,11 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                 with suppress(asyncio.CancelledError):
                     await sweeper
             await engine.dispose()
+            await limiter_engine.dispose()
 
     app = FastAPI(
         title="Lumiback API",
-        version="0.1.0",
+        version=API_VERSION,
         lifespan=lifespan,
         # Interactive docs only outside production.
         docs_url=None if settings.is_production else "/docs",

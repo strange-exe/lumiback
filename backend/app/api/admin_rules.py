@@ -37,7 +37,7 @@ from app.models import (
     User,
     WardenHostel,
 )
-from app.push import PushMessage
+from app.push import DAY, PushMessage
 from app.schemas import (
     AdminOuting,
     AdminRequestOut,
@@ -223,14 +223,16 @@ async def decide_request(
     push.to_user_or_email(
         student.id,
         PushMessage(
-            title="Outing approved" if body.approve else "Outing request declined",
+            title="Outing request approved" if body.approve else "Outing request declined",
             body=(
-                "Tap out at the gate when you leave, or log your trip in Lumiback."
+                "Tap out at the gate, or log the trip in Lumiback."
                 if body.approve
-                else (body.note or "Ask the hostel office if you have questions.")
+                else (body.note or "Contact the hostel office for details.")
             ),
             url="/today",
             channel="share-status",  # the app's "Sharing and requests" switch
+            tag=f"request:{r.id}",
+            ttl=DAY,
         ),
         lambda user: request_decision_email(
             to=user.email,
@@ -717,10 +719,12 @@ async def correct_outing(
         push.to_user(
             done.student_id,
             PushMessage(
-                title="Your outing was updated",
-                body="The hostel office corrected one of your outings. See History.",
+                title="Outing record updated",
+                body="The hostel office corrected an outing. Details in History.",
                 url="/history",
                 channel="share-status",
+                tag=f"outing:{outing_id}",
+                ttl=DAY,
             ),
         )
     return done.outing
@@ -756,12 +760,14 @@ async def decide_correction(
             PushMessage(
                 title="Correction approved" if body.approve else "Correction declined",
                 body=(
-                    "The hostel office fixed your outing. See History."
+                    "Your outing record is corrected. Details in History."
                     if body.approve
-                    else (body.note or "Ask the hostel office if you have questions.")
+                    else (body.note or "Contact the hostel office for details.")
                 ),
                 url="/history",
                 channel="share-status",
+                tag=f"correction:{correction_id}",
+                ttl=DAY,
             ),
         )
     return done.correction

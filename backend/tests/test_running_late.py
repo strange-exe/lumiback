@@ -158,7 +158,7 @@ def test_the_late_alert_and_escalation_run_from_the_new_time(client, db, push, o
     push.outbox.clear()
     assert run_sweep(client).overdue_notified == 1
     [m] = sent_to(push, ANNA)
-    assert m.title == "You're 35 min late. Are you OK?"
+    assert m.title == "Return overdue: 35 min"
     db.execute(text("UPDATE outings SET overdue_notified_at = now() - interval '11 minutes'"))
     db.commit()
     assert run_sweep(client).escalated == 1
@@ -174,9 +174,9 @@ def test_the_office_is_told_not_urgently_and_by_email_without_the_app(
     due = at(current(client, anna)["expected_return_at"])
     assert late(client, anna, 15, "Missed the bus").status_code == 200
     [m] = sent_to(push, WARDEN_A)
-    assert m.title == "Anna is running late"
+    assert m.title == "Return time updated: Anna"
     new = (due + timedelta(minutes=15)).strftime("%I:%M %p").lstrip("0")
-    assert new in m.body and "Missed the bus" in m.body
+    assert m.body.startswith(f"Due {new} (was ") and "Missed the bus" in m.body
     assert not m.urgent and m.channel == "share-status"
     # The hostel's wardens only (the head wardens step in for a hostel with none).
     assert sent_to(push, WARDEN_B) == [] and sent_to(push, HEAD) == []

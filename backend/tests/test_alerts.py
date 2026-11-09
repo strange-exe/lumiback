@@ -254,11 +254,38 @@ def test_a_late_alert_is_saved_with_the_outing_and_sent_after(client, db, push, 
     assert row.payload["push"]["urgent"] is True
     # The next sweep sends it, once, and forgets the message.
     assert run_sweep(client).alerts.sent == 1
-    assert [m.title for m in sent_to(push, ANNA)] == ["You're 31 min late. Are you OK?"]
+    [m] = sent_to(push, ANNA)
+    assert m.title == "Return overdue: 31 min"
+    assert m.body == (
+        "Are you OK? Tap to confirm. No response in 10 min escalates to the hostel office."
+    )
+    # A late alert sent twice (a retry that did reach the phone) shows once; after an hour it
+    # is no longer worth delivering (the office has followed up by then).
+    assert (m.tag, m.ttl) == (f"late:{row.key.split(':')[1]}", 3600)
     [row] = rows(db)
     assert row.sent_at is not None and row.payload == {}
     assert run_sweep(client).alerts.sent == 0
     assert len(sent_to(push, ANNA)) == 1
+
+
+def test_a_saved_push_field_this_version_lacks_is_dropped_not_fatal(client, db, push, anna):
+    """A row a newer version queued (then rolled back) may name a push field this one doesn't
+    know: the alert is still sent, without it."""
+    go_out(client, anna)
+    db.execute(text(LATE_31))
+    db.commit()
+    state = client.app.state
+    client.portal.call(sweep, state.sessionmaker, state.hub, None, None, "")  # queued only
+    db.execute(
+        text(
+            "UPDATE alert_outbox "
+            "SET payload = jsonb_set(payload, '{push,badge}', CAST('3' AS jsonb))"
+        )
+    )
+    db.commit()
+    assert run_sweep(client).alerts.sent == 1
+    [m] = sent_to(push, ANNA)
+    assert m.title == "Return overdue: 31 min" and m.urgent
 
 
 def test_a_failed_push_is_retried_with_backoff_not_lost(client, db, push, office, anna):
@@ -385,12 +412,16 @@ def test_resend_gets_the_idempotency_key():
 def test_unclaimed_it_is_re_alerted_to_its_hostel_then_handed_over(
     client, db, push, office, anna, bina
 ):
-    escalate(client, db, push, anna)
+    eid = escalate(client, db, push, anna)
     assert run_sweep(client).followed_up == 0  # just opened
     opened_ago(db, 16)
     assert run_sweep(client).followed_up == 1
     [m] = sent_to(push, WARDEN_A)
-    assert m.urgent and m.title == "A late student still needs follow-up"
+    assert m.urgent and m.title == "Escalation still unclaimed"
+    assert m.body == "No one has claimed it. Open Escalations and choose I'm on it."
+    # A follow-up replaces this escalation's last push, never another student's; a phone that
+    # was off for hours still gets it (a day to arrive).
+    assert (m.tag, m.ttl) == (f"escalation:{eid}", 24 * 3600)
     assert sent_to(push, HEAD) == [] and sent_to(push, WARDEN_B) == []
     assert run_sweep(client).followed_up == 0  # the next one is 15 min after this
     opened_ago(db, 25, realerted=16)
@@ -401,7 +432,9 @@ def test_unclaimed_it_is_re_alerted_to_its_hostel_then_handed_over(
     opened_ago(db, 31, realerted=6)
     assert run_sweep(client).followed_up == 1
     [m] = sent_to(push, HEAD)
-    assert m.title == "A late student needs you to take over" and "30 min" in m.body
+    assert m.title == "Escalation unclaimed: 30 min"
+    assert m.body == "Open Escalations and choose I'm on it to take over."
+    assert (m.tag, m.ttl) == (f"escalation:{eid}", 24 * 3600)
     assert sent_to(push, WARDEN_A) == [] and sent_to(push, ADMIN) == []
     assert db.execute(text("SELECT handed_over_at IS NOT NULL FROM escalations")).scalar_one()
     # After the hand-over, re-alerts go to the head wardens.
@@ -410,6 +443,64 @@ def test_unclaimed_it_is_re_alerted_to_its_hostel_then_handed_over(
     assert len(sent_to(push, HEAD)) == 2 and sent_to(push, WARDEN_A) == []
     [e] = client.get("/admin/escalations", headers=office["head"]).json()
     assert e["realerts"] == 3 and e["handed_over_at"] is not None
+
+
+OPENED = "Escalation: no response in 10 min"
+
+
+def late_41(db, email: str | None = None) -> None:
+    """Open outings (or `email`'s only) 41 min late with no answer: the next sweep escalates."""
+    db.execute(
+        text(
+            "UPDATE outings SET left_at = now() - interval '3 hours', "
+            "expected_return_at = now() - interval '41 minutes', "
+            "overdue_notified_at = now() - interval '11 minutes' WHERE returned_at IS NULL "
+            "AND (CAST(:email AS text) IS NULL "
+            "OR student_id = (SELECT id FROM users WHERE email = :email))"
+        ),
+        {"email": email},
+    )
+    db.commit()
+
+
+def escalation_ids(db) -> list[str]:
+    found = db.execute(text("SELECT id FROM escalations ORDER BY created_at")).scalars()
+    return [str(i) for i in found]
+
+
+def test_two_escalations_never_replace_each_other_on_a_phone(client, db, push, office, anna, bina):
+    """Each escalation's pushes carry its own tag (ids only, no name): a second student's
+    escalation must not replace the first one on a staff phone."""
+    go_out(client, anna)
+    late_41(db)
+    assert run_sweep(client).escalated == 1
+    go_out(client, bina)
+    late_41(db, "bina@geu.ac.in")
+    assert run_sweep(client).escalated == 1
+    first, second = escalation_ids(db)
+    opened = [m for m in sent_to(push, HEAD) if m.title == OPENED]
+    assert [m.tag for m in opened] == [f"escalation:{first}", f"escalation:{second}"]
+    assert all(m.ttl == 24 * 3600 for m in opened)
+    # Their re-alerts keep their own tags too.
+    push.outbox.clear()
+    opened_ago(db, 16)
+    assert run_sweep(client).followed_up == 2
+    [a] = sent_to(push, WARDEN_A)
+    [b] = sent_to(push, WARDEN_B)
+    assert (a.tag, b.tag) == (f"escalation:{first}", f"escalation:{second}")
+
+
+def test_one_sweep_opening_two_escalations_tags_its_batch(client, db, push, office, anna, bina):
+    """One push tells of both: its tag is the batch's, not either escalation's."""
+    go_out(client, anna)
+    go_out(client, bina)
+    late_41(db)
+    assert run_sweep(client).escalated == 2
+    ids = escalation_ids(db)
+    [m] = [m for m in sent_to(push, HEAD) if m.title == OPENED]
+    assert m.tag == f"escalations:{min(ids)}"
+    assert m.tag not in {f"escalation:{i}" for i in ids}
+    assert "Anna" not in m.tag and "Bina" not in m.tag
 
 
 def test_a_claim_stops_the_re_alerts(client, db, push, office, anna):
@@ -576,13 +667,17 @@ def test_a_waiting_request_reminds_its_wardens_then_the_head_warden(client, db, 
     asked_ago(db, 16)
     assert run_sweep(client).reminded_requests == 1
     [m] = sent_to(push, WARDEN_A)
-    assert m.title == "An outing request is waiting" and "Anna" in m.body and not m.urgent
+    assert m.title == "Pending request: 16 min" and not m.urgent
+    assert m.body == "Anna is waiting for a decision."
+    # The reminder replaces the "new request" notice for the same request.
+    assert m.tag.startswith("request:") and m.ttl == 24 * 3600
     assert sent_to(push, HEAD) == [] and sent_to(push, WARDEN_B) == []
     assert run_sweep(client).reminded_requests == 0  # once
     asked_ago(db, 31)
     assert run_sweep(client).reminded_requests == 1
     [m] = sent_to(push, HEAD)
-    assert m.title == "An outing request needs a backup decision"
+    assert m.title == "Backup decision required"
+    assert m.body == "Anna has waited 31 min. Approve or decline in Requests."
     assert len(sent_to(push, WARDEN_A)) == 1
     assert run_sweep(client).reminded_requests == 0
     # The head warden may decide it.
@@ -646,6 +741,8 @@ def test_ask_the_office_to_call_tells_the_hostels_wardens(client, db, push, mail
     [m] = sent_to(push, WARDEN_A)
     anna_id = client.get("/auth/me", headers=anna).json()["id"]
     assert m.urgent and "Anna" in m.title and m.url == f"/office/student/{anna_id}"
+    # A warden's phone that was off for a few hours still gets it (there is no email then).
+    assert (m.tag, m.ttl) == (f"call-me:{anna_id}", 24 * 3600)
     assert sent_to(push, WARDEN_B) == [] and sent_to(push, HEAD) == []
     for _ in range(2):
         assert client.post("/outings/current/call-me", headers=anna).status_code == 202
@@ -666,10 +763,11 @@ def test_a_warden_sends_a_notice_to_their_hostels_students_who_are_out(
     assert (r.status_code, r.json()) == (200, {"sent": 1})
     [m] = sent_to(push, ANNA)
     assert (m.title, m.body, m.urgent) == (
-        "Notice from the hostel office",
+        "Hostel office notice",
         "The gate closes at 9 tonight",
         False,
     )
+    assert m.tag.startswith("notice:") and m.ttl == 24 * 3600
     assert sent_to(push, BINA) == []
     [(target,)] = audit(db, "notice:send")
     assert target == "1 out, all their hostels"  # who and where; the text went to the students
@@ -695,7 +793,8 @@ def test_a_head_warden_recalls_every_student_who_is_out(
     assert r.json() == {"sent": 2}
     for phone in (ANNA, BINA):
         [m] = sent_to(push, phone)
-        assert m.urgent and m.title == "Come back to the hostel now"
+        assert m.urgent and m.title == "Recall: return to the hostel now"
+        assert m.ttl == 24 * 3600  # a phone off for an hour still gets the recall
     assert len(audit(db, "notice:recall")) == 1
     # One hostel only.
     r = client.post(
@@ -740,9 +839,13 @@ def test_help_reaches_the_office_followers_and_the_emergency_contact(
     assert out["office"]["phone"].endswith("9876511111")
     for phone in (WARDEN_A, HEAD):
         [m] = sent_to(push, phone)
-        assert m.urgent and m.title == "Help: Anna pressed Help"
+        assert m.urgent and m.title == "Help request: Anna"
+        assert m.body.startswith("Sent ") and "Location and number are in Escalations." in m.body
+        assert m.tag.startswith("help:") and m.ttl == 24 * 3600
     [m] = sent_to(push, FRIEND)
-    assert m.urgent and m.title == "Anna pressed Help" and "30.3" not in m.body
+    assert m.urgent and m.title == "Help request: Anna" and "30.3" not in m.body
+    assert m.tag.startswith("help:") and m.ttl == 24 * 3600
+    assert m.body.startswith("Sent to the hostel office at ") and "Call them" in m.body
     assert sent_to(push, WARDEN_B) == [] and sent_to(push, ADMIN) == []
     [mail] = [m for m in mailer.outbox if m.to == "mum@example.com"]
     assert "Anna asked for help" in mail.subject and "30.3" not in mail.body
@@ -1007,7 +1110,7 @@ def test_a_claim_lapses_when_the_claimer_is_turned_off(
     opened_ago(db, 31)
     assert run_sweep(client).followed_up == 1
     [m] = sent_to(push, HEAD)
-    assert m.title == "A late student needs you to take over"
+    assert m.title == "Escalation unclaimed: 30 min"
     assert db.execute(text("SELECT claimed_by FROM escalations")).scalar_one() is None
     # A co-warden may take over such a claim, or give it back.
     lapsed = (

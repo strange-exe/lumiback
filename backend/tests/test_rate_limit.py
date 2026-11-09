@@ -6,11 +6,13 @@ import hmac
 from datetime import timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.jobs.expiry import sweep
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from tests.conftest import FAKE_SECRET, FakeClock
+from tests.helpers import PASSWORD
 
 PEPPER = FAKE_SECRET[::-1]
 FIVE_PER_MINUTE = Limit(max_hits=5, window_seconds=60)
@@ -120,3 +122,37 @@ def test_login_lockout_survives_an_api_restart(client, clock):
     )  # "restarted" server
     r = client.post("/auth/login", json={"email": "riya@geu.ac.in", "password": "wrong-pass-1"})
     assert r.status_code == 429
+
+
+def test_a_limit_never_waits_for_a_second_connection_from_the_request_pool(
+    client, db, settings, monkeypatch
+):
+    """Hold-and-wait (audit, wave 5): a request's session holds its pooled connection while the
+    limiter counts the hit. If the limiter drew from the same pool, a full pool would leave
+    every such request waiting on the others until each timed out. With one connection per
+    pool, a search and a sign-in (which counts under the account's row lock) must still work."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    import app.main
+    from app.email import MemoryMailer
+    from app.main import create_app
+    from tests.helpers import make_admin, signup
+
+    _, admin = signup(client, "office@geu.ac.in", "Office")
+    make_admin(db, "office@geu.ac.in")
+
+    def one_connection(url: str, **_: object):
+        return create_async_engine(url, pool_size=1, max_overflow=0, pool_timeout=2)
+
+    monkeypatch.setattr(app.main, "make_engine", one_connection)
+    tiny = create_app(settings, start_jobs=False)
+    tiny.state.mailer = MemoryMailer()
+    with TestClient(
+        tiny,
+        raise_server_exceptions=False,
+        backend_options={"loop_factory": asyncio.SelectorEventLoop},
+    ) as c:
+        r = c.get("/admin/users", params={"q": "office"}, headers=admin)
+        assert r.status_code == 200, r.text
+        login = {"email": "office@geu.ac.in", "password": PASSWORD}
+        assert c.post("/auth/login", json=login).status_code == 200

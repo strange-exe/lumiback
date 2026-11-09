@@ -19,8 +19,9 @@ not raised. A notification is a nudge; the app always shows the same state when 
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
@@ -31,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.email import Email, Mailer
-from app.models import PushTicket, PushToken, User
+from app.models import PushTicket, PushToken, User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,17 @@ RECEIPT_MAX_AGE = timedelta(hours=24)
 
 GONE = "DeviceNotRegistered"
 
+# How long a message is worth delivering (Expo `ttl`, seconds; Expo's default is 4 weeks).
+HOUR = 3600
+DAY = 24 * HOUR
+
 
 @dataclass(frozen=True)
 class PushMessage:
+    """One notification. Every message the API builds names a `tag` and a `ttl` (wave 5;
+    tests/test_push.py checks): a repeat of the same thing replaces the one shown, and a stale
+    alert isn't delivered days late. `subtitle` doesn't exist on purpose: Android drops it."""
+
     title: str
     body: str
     url: str | None = None  # app route to open on tap, e.g. "/live"; None: the app's default
@@ -70,6 +79,20 @@ class PushMessage:
     urgent: bool = False
     # What the app does on tap besides opening `url`: "app-update" checks for the update.
     kind: str | None = None
+    # Android: a notification with the same tag replaces the one already shown.
+    tag: str | None = None
+    # A notification category the app created (its action buttons), e.g. "app_update".
+    category: str | None = None
+    # An https picture for the expanded notification (only the website's own banners).
+    image: str | None = None
+    ttl: int | None = None  # seconds Expo may keep trying to deliver it
+
+    @classmethod
+    def from_saved(cls, saved: dict[str, Any]) -> "PushMessage":
+        """A message the outbox saved (dataclasses.asdict). Fields this version doesn't know
+        (saved by a newer one, then rolled back) are dropped, so the alert is still sent."""
+        known = {f.name for f in dataclass_fields(cls)}
+        return cls(**{k: v for k, v in saved.items() if k in known})
 
 
 @dataclass
@@ -181,16 +204,7 @@ class ExpoPushSender:
             for start in range(0, len(tokens), BATCH):
                 chunk = tokens[start : start + BATCH]
                 payload: list[dict[str, Any]] = [
-                    {
-                        "to": token,
-                        "title": message.title,
-                        "body": message.body,
-                        "data": _data(message),
-                        "sound": "default",
-                        "priority": "high",
-                        "channelId": message.channel,
-                    }
-                    for token in chunk
+                    {"to": token, **_fields(message)} for token in chunk
                 ]
                 try:
                     tickets = (await self._post(client, EXPO_PUSH_URL, payload)).get("data", [])
@@ -222,6 +236,27 @@ class ExpoPushSender:
                 payload = await self._post(client, EXPO_RECEIPTS_URL, {"ids": ids})
                 found.update(payload.get("data") or {})
         return found
+
+
+def _fields(message: PushMessage) -> dict[str, Any]:
+    """The Expo message, without `to` (docs.expo.dev/push-notifications/sending-notifications)."""
+    fields: dict[str, Any] = {
+        "title": message.title,
+        "body": message.body,
+        "data": _data(message),
+        "sound": "default",
+        "priority": "high",
+        "channelId": message.channel,
+    }
+    if message.tag:
+        fields["tag"] = message.tag
+    if message.category:
+        fields["categoryId"] = message.category
+    if message.image:
+        fields["richContent"] = {"image": message.image}
+    if message.ttl is not None:
+        fields["ttl"] = message.ttl
+    return fields
 
 
 def _data(message: PushMessage) -> dict[str, str]:
@@ -303,23 +338,31 @@ async def notify_user(
 TICKET_INSERT_BATCH = 1000
 
 
+def _everyone(channel: str, roles: Collection[UserRole] | None):  # noqa: ANN202 - a WHERE list
+    """Phones of accounts that are on, not muting `channel`; with `roles`, those roles only."""
+    where = [User.deactivated_at.is_(None), ~PushToken.muted.contains([channel])]
+    if roles is not None:
+        where.append(User.role.in_(roles))
+    return where
+
+
 async def push_everyone(
-    sessionmaker: async_sessionmaker[AsyncSession], sender: PushSender, message: PushMessage
+    sessionmaker: async_sessionmaker[AsyncSession],
+    sender: PushSender,
+    message: PushMessage,
+    roles: Collection[UserRole] | None = None,
 ) -> PushOutcome:
     """One message to every phone with the app (accounts that are on; phones that muted the
-    channel skipped), in Expo's batches. Only the developer's "Announce update" calls this
-    (api/admin.py): nothing sends it on its own. Safe as a background task: failures are
-    logged, not raised."""
+    channel skipped), or only to people with one of `roles`, in Expo's batches. Only the
+    developer's "Announce update" calls this (api/admin.py): nothing sends it on its own. Safe
+    as a background task: failures are logged, not raised."""
     try:
         async with sessionmaker() as session:
             tokens = list(
                 await session.scalars(
                     select(PushToken.token)
                     .join(User, User.id == PushToken.user_id)
-                    .where(
-                        User.deactivated_at.is_(None),
-                        ~PushToken.muted.contains([message.channel]),
-                    )
+                    .where(*_everyone(message.channel, roles))
                 )
             )
             if not tokens:
@@ -341,13 +384,15 @@ async def push_everyone(
         return PushOutcome()
 
 
-async def count_everyone(session: AsyncSession, channel: str) -> int:
+async def count_everyone(
+    session: AsyncSession, channel: str, roles: Collection[UserRole] | None = None
+) -> int:
     """How many phones push_everyone would send to now."""
     count = await session.scalar(
         select(func.count())
         .select_from(PushToken)
         .join(User, User.id == PushToken.user_id)
-        .where(User.deactivated_at.is_(None), ~PushToken.muted.contains([channel]))
+        .where(*_everyone(channel, roles))
     )
     return count or 0
 

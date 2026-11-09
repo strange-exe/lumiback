@@ -23,7 +23,7 @@ from app.config import Settings
 from app.email import Mailer
 from app.email_templates import Fix
 from app.models import LateReply, Outing, User
-from app.push import PushMessage
+from app.push import DAY, PushMessage
 from app.realtime import AccessChanged, Hub
 from app.schemas import (
     CallMeOut,
@@ -279,10 +279,12 @@ async def ask_correction(
         push.to_user(
             person.id,
             PushMessage(
-                title="Outing correction asked",
-                body=f"{name} asked the office to correct an outing.",
+                title="Correction requested",
+                body=f"{name} flagged an outing for correction.",
                 url="/office/corrections",
                 channel="share-status",  # the app's "Sharing and requests" switch
+                tag=f"correction:{out.id}",
+                ttl=DAY,
             ),
         )
     return out
@@ -391,9 +393,11 @@ async def send_request(
             person.id,
             PushMessage(
                 title="New outing request",
-                body=f"{name} asked for {asked}.",
+                body=f"{name} requested {asked}.",
                 url="/office/requests",
                 channel="share-status",  # the app's "Sharing and requests" switch
+                tag=f"request:{out.id}",  # a reminder about it later replaces this one
+                ttl=DAY,
             ),
         )
     return out

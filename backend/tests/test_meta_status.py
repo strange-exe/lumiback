@@ -64,6 +64,17 @@ def test_a_developer_sees_the_build_and_the_migration(client, dev):
     assert before.replace(microsecond=0) <= at.astimezone(UTC)
 
 
+def test_the_api_version_is_the_package_version(client, dev):
+    """Wave 5: the version comes from pyproject.toml, not a number typed into the code."""
+    import tomllib
+
+    with open(BACKEND / "pyproject.toml", "rb") as f:
+        package = tomllib.load(f)["project"]["version"]
+    assert client.get(PATH, headers=dev[1]).json()["api_version"] == package
+    assert client.app.version == package
+    assert '"0.1.0"' not in (BACKEND / "app" / "main.py").read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("viewed", ROLES)
 def test_it_answers_a_developer_viewing_as_any_role(client, dev, viewed):
     """A GET, so view as allows it; the account behind it is still the developer."""

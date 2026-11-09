@@ -46,7 +46,7 @@ from app.models import (
     RequestStatus,
     User,
 )
-from app.push import PushMessage
+from app.push import DAY, HOUR, PushMessage
 from app.schemas import OfficeContact
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.services import escalations, outbox
@@ -59,6 +59,12 @@ from app.services.staff import Staff, head_office, hostel_wardens, office_for
 MINUTE = timedelta(minutes=1)
 URGENT = "return-reminders"  # the Android channel safety messages use
 REQUESTS = "share-status"  # the app's "Sharing and requests" switch
+
+
+def escalation_tag(escalation_id: uuid.UUID | str) -> str:
+    """One escalation's pushes replace each other on a phone, never another student's (ids
+    only: a tag holds no personal data)."""
+    return f"escalation:{escalation_id}"
 
 
 @dataclass(frozen=True)
@@ -155,12 +161,14 @@ async def late_alerts(session: AsyncSession, now: datetime, web_url: str) -> int
             mode=OutboxMode.PUSH_OR_EMAIL,
             user_id=student.id,
             push=PushMessage(
-                title=f"You're {minutes} min late. Are you OK?",
-                body="Tap to answer. If there's no answer in 10 minutes, the hostel office "
-                "is told.",
+                title=f"Return overdue: {minutes} min",
+                body="Are you OK? Tap to confirm. No response in 10 min escalates to the "
+                "hostel office.",
                 url="/today",
                 channel=URGENT,
                 urgent=True,
+                tag=f"late:{x.outing_id}",
+                ttl=HOUR,
             ),
             email=late_alert_email(
                 to=student.email, name=student.name, due_at=x.due, web_url=web_url
@@ -176,6 +184,8 @@ async def escalation_opened(
     if not opened:
         return
     batch = min(str(e_id) for e_id, _ in opened)  # stable for these escalations
+    # One push tells of the whole batch: one escalation's own tag, or the batch's.
+    tag = escalation_tag(batch) if len(opened) == 1 else f"escalations:{batch}"
     for person in await escalations.recipients(session, [h for _, h in opened]):
         await outbox.enqueue(
             session,
@@ -184,11 +194,13 @@ async def escalation_opened(
             mode=OutboxMode.PUSH,
             user_id=person.user_id,
             push=PushMessage(
-                title="A late student needs follow-up",
-                body="Open Escalations in Lumiback to follow up.",
+                title="Escalation: no response in 10 min",
+                body="A late student hasn't replied. Open Escalations to follow up.",
                 url="/office/escalations",
                 channel=URGENT,
                 urgent=True,
+                tag=tag,
+                ttl=DAY,  # the email goes too, but the push is how the office acts on it
             ),
             staff_only=True,
         )
@@ -213,18 +225,20 @@ async def escalation_follow_ups(
     for f in due:
         if f.handed_over:
             key = f"escalation-handover:{f.escalation_id}"
-            title = "A late student needs you to take over"
-            body = f"Nobody has claimed it in {takeover} min."
+            title = f"Escalation unclaimed: {takeover} min"
+            body = "Open Escalations and choose I'm on it to take over."
         else:
             key = f"escalation-realert:{f.escalation_id}:{f.realerts}"
-            title = "A late student still needs follow-up"
-            body = "Nobody has claimed it yet."
+            title = "Escalation still unclaimed"
+            body = "No one has claimed it. Open Escalations and choose I'm on it."
         push = PushMessage(
             title=title,
-            body=f"{body} Open Escalations and choose I'm on it.",
+            body=body,
             url="/office/escalations",
             channel=URGENT,
             urgent=True,
+            tag=escalation_tag(f.escalation_id),
+            ttl=DAY,
         )
         await _staff_alert(
             session,
@@ -277,10 +291,12 @@ async def request_reminders(session: AsyncSession, now: datetime, t: Timings, we
                 "request_reminder",
                 deciders,
                 PushMessage(
-                    title="An outing request is waiting",
-                    body=f"{student.name} has waited {waited} min for a decision.",
+                    title=f"Pending request: {waited} min",
+                    body=f"{student.name} is waiting for a decision.",
                     url="/office/requests",
                     channel=REQUESTS,
+                    tag=f"request:{r.id}",  # replaces the "new request" notice
+                    ttl=DAY,
                 ),
                 lambda to, waited=waited: request_waiting_email(
                     to=to, backup=False, minutes=waited, web_url=web_url
@@ -296,10 +312,12 @@ async def request_reminders(session: AsyncSession, now: datetime, t: Timings, we
                 "request_backup",
                 backups,
                 PushMessage(
-                    title="An outing request needs a backup decision",
-                    body=f"{student.name} has waited {waited} min. You can approve or decline it.",
+                    title="Backup decision required",
+                    body=f"{student.name} has waited {waited} min. Approve or decline in Requests.",
                     url="/office/requests",
                     channel=REQUESTS,
+                    tag=f"request:{r.id}",
+                    ttl=DAY,
                 ),
                 lambda to, waited=waited: request_waiting_email(
                     to=to, backup=True, minutes=waited, web_url=web_url
@@ -329,11 +347,15 @@ async def call_me(session: AsyncSession, student: User, outing: Outing, web_url:
         "call_me",
         people,
         PushMessage(
-            title=f"{student.name} asks the office to call",
-            body="They're out and asked for a call. Their number is on their record.",
+            title=f"Call requested: {student.name}",
+            body="Currently out. Number is on their record.",
             url=f"/office/student/{student.id}",
             channel=URGENT,
             urgent=True,
+            tag=f"call-me:{student.id}",
+            # A day, not an hour: a warden's phone that was off for a while still gets it
+            # (Expo accepted it, so no email follows).
+            ttl=DAY,
         ),
         lambda to: call_me_email(to=to, student_id=str(student.id), web_url=web_url),
     )
@@ -363,7 +385,7 @@ async def notice(
         query = query.where(Outing.hostel_id == hostel_id)
     students = list(await session.scalars(query))
     batch = uuid.uuid4()
-    title = "Come back to the hostel now" if recall else "Notice from the hostel office"
+    title = "Recall: return to the hostel now" if recall else "Hostel office notice"
     ids = []
     for s in students:
         found = await outbox.enqueue(
@@ -373,7 +395,13 @@ async def notice(
             mode=OutboxMode.PUSH_OR_EMAIL,
             user_id=s.id,
             push=PushMessage(
-                title=title, body=message, url="/today", channel=URGENT, urgent=recall
+                title=title,
+                body=message,
+                url="/today",
+                channel=URGENT,
+                urgent=recall,
+                tag=f"notice:{batch}",  # each notice its own; a repeat delivery replaces it
+                ttl=DAY,  # a recall too: a phone back on after an hour must still get it
             ),
             email=office_notice_email(
                 to=s.email, name=s.name, message=message, recall=recall, web_url=web_url
@@ -399,10 +427,12 @@ async def running_late(
         "running_late",
         await office_for(session, outing.hostel_id),
         PushMessage(
-            title=f"{student.name} is running late",
-            body=f"Now due back at {new} (was {was}).{reason}",
+            title=f"Return time updated: {student.name}",
+            body=f"Due {new} (was {was}).{reason}",
             url=f"/office/student/{student.id}",
             channel=REQUESTS,
+            tag=f"running-late:{outing.id}",
+            ttl=DAY,
         ),
         lambda to: running_late_office_email(
             to=to,
@@ -459,9 +489,10 @@ async def help_alert(
 ) -> HelpSent:
     """A student who is out pressed Help. Saved (with the one fix) and, all urgent: the
     outing's hostel's wardens and the head wardens (the admins if neither exists) by push,
-    and by email with the fix but no name; the people the student shares their location with
-    by push (email if they don't use the app); their emergency contact (and the safe-return
-    contact, if different) by email, each only if `contact_ok` allows that address (see
+    emailed instead (with the fix but no name) to those without the app or when none of their
+    phones took it; the people the student shares their location with, the same way (push,
+    else email, without the fix); their emergency contact (and the safe-return contact, if
+    different) by email, each only if `contact_ok` allows that address (see
     help_contact_allowed). Nobody but the office gets the location."""
     request = HelpRequest(
         student_id=student.id,
@@ -487,11 +518,13 @@ async def help_alert(
         "help_office",
         list(people.values()),
         PushMessage(
-            title=f"Help: {student.name} pressed Help",
-            body=f"At {at}. Open Escalations for where they were and their number.",
+            title=f"Help request: {student.name}",
+            body=f"Sent {at}. Location and number are in Escalations.",
             url="/office/escalations",
             channel=URGENT,
             urgent=True,
+            tag=key,
+            ttl=DAY,  # Expo accepting it means no email, so it must outlast a phone left off
         ),
         lambda to: help_office_email(to=to, at=now, fix=fix, web_url=web_url),
     )
@@ -503,11 +536,13 @@ async def help_alert(
         "help_follower",
         near,
         PushMessage(
-            title=f"{student.name} pressed Help",
-            body=f"They asked the hostel office for help at {at}. Call them if you can.",
+            title=f"Help request: {student.name}",
+            body=f"Sent to the hostel office at {at}. Call them if you can.",
             url="/live?view=follow",  # what they follow, in the app
             channel=URGENT,
             urgent=True,
+            tag=key,
+            ttl=DAY,
         ),
         lambda to: help_contact_email(
             to=to,

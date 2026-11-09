@@ -101,7 +101,9 @@ def test_the_office_records_a_forgotten_return(client, db, office, riya, push):
     assert c["old_returned_at"] is None and c["reason"] == "Seen at 7:40"
     audit = db.execute(text("SELECT action, target FROM admin_audit")).all()
     assert ("outing:return", "riya@geu.ac.in") in [tuple(a) for a in audit]
-    assert "Your outing was updated" in pushed(push)
+    assert "Outing record updated" in pushed(push)
+    [m] = [m for _, m in push.outbox if m.title == "Outing record updated"]
+    assert m.body == "The hostel office corrected an outing. Details in History."
 
 
 def test_a_return_time_must_be_between_leaving_and_now(client, db, office, riya):
@@ -208,7 +210,9 @@ def test_a_student_asks_and_the_office_approves(client, db, office, riya, push):
     assert r.status_code == 201, r.text
     assert r.json()["status"] == "pending" and r.json()["by_staff"] is False
     assert outing_row(db, outing["id"]).returned_at is None  # nothing changes yet
-    assert "Outing correction asked" in pushed(push)
+    assert "Correction requested" in pushed(push)
+    [m] = [m for _, m in push.outbox if m.title == "Correction requested"]
+    assert m.body.endswith(" flagged an outing for correction.")
 
     again = ask(client, riya, outing["id"], kind="cancel", reason="Actually never left")
     assert again.status_code == 409
@@ -225,6 +229,8 @@ def test_a_student_asks_and_the_office_approves(client, db, office, riya, push):
     assert via == "staff" and abs((returned - left) - timedelta(hours=1)) < timedelta(seconds=5)
     assert client.get("/admin/corrections", headers=office).json()["asks"] == []
     assert "Correction approved" in pushed(push)
+    [m] = [m for _, m in push.outbox if m.title == "Correction approved"]
+    assert m.body == "Your outing record is corrected. Details in History."
     twice = client.post(
         f"/admin/corrections/{cid}/decision", json={"approve": True}, headers=office
     )

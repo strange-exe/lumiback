@@ -10,9 +10,10 @@ Changes are written to admin_audit.
 import csv
 import io
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -383,9 +384,11 @@ async def scans(
     q: str | None = None,
     days: tuple[date, date] | None = None,
     student_id: uuid.UUID | None = None,
+    hostel_id: uuid.UUID | None = None,
 ) -> AdminScanPage:
     """Newest first, `limit` at a time. `q`: a student's name or roll number. `days`: scans on
-    these IST dates (inclusive). `student_id`: one student's (their record page)."""
+    these IST dates (inclusive). `student_id`: one student's (their record page). `hostel_id`:
+    students living in that hostel now (the caller checks it is the office's own)."""
     query = (
         select(GateScan, User, Gate.name)
         .join(User, User.id == GateScan.user_id)
@@ -407,6 +410,8 @@ async def scans(
         query = query.where(GateScan.scanned_at >= since, GateScan.scanned_at < until)
     if student_id is not None:
         query = query.where(GateScan.user_id == student_id)
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
     rows = list(await session.execute(query))
     page = rows[:limit]
     return AdminScanPage(
@@ -543,16 +548,34 @@ def _anyone_matching(q: str):  # noqa: ANN202 - a SQL expression
     )
 
 
-async def search_users(session: AsyncSession, q: str) -> list[AdminUser]:
-    rows = await session.scalars(
-        select(User)
-        # Unverified users are imported students who haven't set up yet: found too, so an
-        # admin can send their link again.
-        .where(_anyone_matching(q))
-        .order_by(User.role.desc(), User.name)
-        .limit(20)
-    )
-    return [await person(session, u) for u in rows]
+ROLE_PAGE = 50  # people listed by role, per page
+
+
+async def search_users(
+    session: AsyncSession,
+    q: str | None,
+    *,
+    roles: Sequence[UserRole] = (),
+    after: uuid.UUID | None = None,
+) -> list[AdminUser]:
+    """A search (`q`): the best 20, staff first. With `roles`: everyone with one of them
+    (matching `q` too, if given), ROLE_PAGE at a time by name; `after` is the last person of the
+    page before (an unknown id is an empty page, never the first one again)."""
+    # Unverified users are imported students who haven't set up yet: found too, so an admin
+    # can send their link again.
+    query = select(User)
+    if q:
+        query = query.where(_anyone_matching(q))
+    if not roles:
+        query = query.order_by(User.role.desc(), User.name).limit(20)
+    else:
+        query = query.where(User.role.in_(roles)).order_by(User.name, User.id).limit(ROLE_PAGE)
+        if after is not None:
+            mark = await session.get(User, after)
+            if mark is None:
+                return []
+            query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
+    return [await person(session, u) for u in await session.scalars(query)]
 
 
 async def person(session: AsyncSession, u: User) -> AdminUser:
@@ -589,10 +612,12 @@ async def students(
     hostel_id: uuid.UUID | None,
     q: str | None,
     account: str | None = None,
+    roles: Sequence[UserRole] | None = None,
 ) -> list[StudentOut]:
     """People the office looks after: a hostel's students, or a search. A warden sees their
     own hostels' students only; an admin's search (or `account` list) also finds staff.
-    `account`: "invited" (haven't set up yet) or "off" (turned off) only."""
+    `account`: "invited" (haven't set up yet) or "off" (turned off) only. `roles`: only these
+    (the caller passes it for admins only; wardens and head wardens see students only)."""
     query = (
         select(User, Hostel.name)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
@@ -602,11 +627,13 @@ async def students(
     )
     if not staff.user.is_admin:  # wardens and head wardens: students, not staff
         query = query.where(User.role == UserRole.STUDENT)
+    elif roles:
+        query = query.where(User.role.in_(roles))
     if hostel_id is not None:
         query = query.where(User.hostel_id == hostel_id)
     if q:
         query = query.where(_anyone_matching(q))
-    elif hostel_id is None and staff.every_hostel and account is None:
+    elif hostel_id is None and staff.every_hostel and account is None and not roles:
         query = query.where(User.hostel_id.is_not(None))  # no filter: everyone in a hostel
     if account == "invited":
         query = query.where(User.email_verified_at.is_(None), User.deactivated_at.is_(None))
