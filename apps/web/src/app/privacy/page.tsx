@@ -31,6 +31,7 @@ const PARTS: Part[] = [
       "When you tap out or in at a gate: which gate, the time, whether the scan was accepted, how far your phone was from the gate and how precise its GPS was. Never your coordinates.",
       "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, reminders before you're due back, when you're 30 minutes past your return time, news about someone you follow (back, late, running late, sharing timed out), and app update notices. If you don't use the app, request decisions and the late alert are emailed to your university address instead.",
       "On your phone, while you're out: a copy of your current trip (destination, times and your hostel office's number) so the app can show it without a connection. The app drops it the next time it loads after you're back, and deletes it when you sign in or out.",
+      "Error reports: when something breaks on the website or in the app, it sends us what went wrong so we can fix it: the error message, where in the code it happened, the page's path (never what follows a ? or #), the app version and whether it was the website, Android or iPhone. Before anything is stored, our server removes emails, phone numbers, roll numbers, your name, coordinates, tokens and other secrets from it. The same error is counted together, and only the latest report is kept with a link to your account, if you were signed in.",
     ],
   },
   {
@@ -41,10 +42,12 @@ const PARTS: Part[] = [
       "Admins see your outing requests, including the phone numbers on them, so they can decide and call if needed.",
       "Running late: the hostel office is told (your hostel's wardens; if it has none, the head wardens, or else the admins). Hostel admins see the new due-back time, the earlier one and your reason in the outing register, and the wardens' phone notification shows your name and reason (it passes through Expo and Google's push service, and may show on a locked screen). The people you share your location with see only the times, never the reason.",
       "While you share your location and are out on an outing, the people following you see when you're due back (and the earlier time if you said you're running late). People who follow you with a Lumiback account are also notified, in the app or by email if they don't use it, when you're back, when you're 30 minutes late, when you say you're running late, and when a share with them times out while you're still out (its time ran out, or your phone or tab stopped sending your location). That last notice says only that it timed out, not that you're out or when you're due. If you stop sharing yourself, nobody is told.",
-      "App update notices: when a new version of Lumiback is released, the team may send one notification to every phone with the app. It contains no personal data and is sent at most once a day.",
+      "App update notices: when a new version of Lumiback is released, the team may send one notification to every phone with the app. It contains no personal data.",
       "If you're 30 minutes late and don't answer the alert within 10 minutes, admins are told and see your phone number, your emergency contact and your hostel warden's number. If you are sharing your location at that moment, they also see your latest shared position, and that look is listed in your share's viewer history. Otherwise they see only your last gate scan: which gate, and when. Nothing new is collected for this.",
       "Help: if you press Help while out, your phone takes one location fix and the hostel office is told at once (your hostel's wardens and the head wardens), with that position. The people you share your location with, your emergency contact and your safe-return contact are told you asked for help, with your phone number and the hostel office's, but not where you are. The position is deleted after a day; the office keeps the time it was pressed and when they handled it, with the outing.",
       "Safe return: only if you tick “Let my emergency contact follow until I'm back” when you check out, we email that contact a link. It says you chose to send it, shows your location while you share it from the app or website, and stops working when you're back or stop sharing. They're also emailed if you're 30 minutes late, and when you're back. Their views are listed in your share's viewer history like anyone else's. Their email address is kept with that outing only until you're back.",
+      "Hostel office reports show counts per hostel (trips, late returns, escalations, requests), never a student's name.",
+      "Error reports are seen only by the Lumiback developers, without saying who sent them. Once a day, a summary of new errors may be emailed to the team.",
       "We don't sell your data, show ads, or use analytics or tracking cookies.",
       "The only cookies keep you signed in, or let a guest keep following one share, and they can't be read by scripts on the page.",
     ],
@@ -58,6 +61,7 @@ const PARTS: Part[] = [
       "Join codes are deleted a day after they expire. You are signed out after 30 days without using the app.",
       "A phone's push token is deleted when you sign out on it, or after 90 days without the app being opened on it.",
       "Records of changes staff make in the admin area (roles, gates, kiosk links, settings) are deleted after 365 days.",
+      "Error reports are deleted 30 days after that error was last seen. Deleting your account removes its link to any of them.",
     ],
   },
   {
@@ -75,8 +79,8 @@ const PARTS: Part[] = [
       <>
         Download a copy of your data from the <Link href="/account">Account</Link> page, or Profile
         in the app: a JSON file with your account, contacts, outings, requests, shares and who
-        viewed them, gate scans and phones. It holds only your own records, plus the names of the
-        people who viewed your shares.
+        viewed them, gate scans, phones and the error reports last sent while you were signed in. It
+        holds only your own records, plus the names of the people who viewed your shares.
       </>,
       <>
         Delete your account from the <Link href="/account">Account</Link> page. Your account,

@@ -1,6 +1,6 @@
 /**
- * "Announce an update" (developers only): a push to every phone with Lumiback, at most once a
- * day. This module checks the form and shapes the wording; the API enforces every rule. Pure,
+ * "Announce an update" (developers only): a push to every phone with Lumiback, sent once
+ * confirmed (no daily limit since 2026-11-09). This module checks the form and shapes the wording; the API enforces every rule. Pure,
  * so `node --test` can load it.
  */
 
@@ -10,14 +10,14 @@ export const MAX_ANNOUNCE_BODY = 140;
 /** GET /admin/announcements */
 export interface AnnounceState {
   last_at: string | null;
-  /** When the next announcement is allowed; null if allowed now. */
+  /** Always null since the daily limit went (2026-11-09); kept by the API for 1.18.x apps. */
   next_at: string | null;
 }
 
 /** POST /admin/announcements (200) */
 export interface Announced {
   devices: number;
-  next_at: string;
+  next_at: string | null;
 }
 
 /** What the form starts with: the newest release's title and its one-line summary. */
@@ -69,18 +69,9 @@ export function announceBody(rawTitle: string, rawBody: string): AnnounceBody {
   return { ok: true, body: { title, body } };
 }
 
-/** When the last one went out, and whether (or when) the next is allowed. */
-export function announceTiming(
-  state: AnnounceState,
-  now: number,
-  fmt: (iso: string) => string,
-): { last: string; next: string; allowed: boolean } {
-  const last = state.last_at ? `Last announced ${fmt(state.last_at)}.` : "No update announced yet.";
-  const nextAt = state.next_at ? Date.parse(state.next_at) : NaN;
-  if (state.next_at && Number.isFinite(nextAt) && nextAt > now) {
-    return { last, next: `You can announce again after ${fmt(state.next_at)}.`, allowed: false };
-  }
-  return { last, next: "You can announce now.", allowed: true };
+/** When the last one went out. There is no daily limit any more, so `next_at` is ignored. */
+export function announceTiming(state: AnnounceState, fmt: (iso: string) => string): string {
+  return state.last_at ? `Last announced ${fmt(state.last_at)}.` : "No update announced yet.";
 }
 
 export function reachedLine(devices: number): string {

@@ -38,8 +38,8 @@ export async function chooseViewAs(choice: string): Promise<void> {
 }
 
 /**
- * "Announce an update": a push to every phone with Lumiback (developers only, once a day; the
- * API enforces both and audits it). Plain text, checked here too before it is sent.
+ * "Announce an update": a push to every phone with Lumiback (developers only; the API
+ * enforces it and audits each one). Plain text, checked here too before it is sent.
  */
 export async function announceUpdate(_: FormState, form: FormData): Promise<FormState> {
   const token = await tokenOrSignIn();

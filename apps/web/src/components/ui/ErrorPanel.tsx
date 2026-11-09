@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useTransition, type ReactNode } from "react";
 
 import { errorCopy, supportHref } from "@/lib/error-copy";
+import { reportClientError } from "@/lib/report-error";
 import { useOnline } from "@/lib/use-online";
 
 interface ErrorPanelProps {
@@ -26,6 +27,7 @@ export function ErrorPanel({ error, retry, away }: ErrorPanelProps): ReactNode {
 
   useEffect(() => {
     console.error(error);
+    reportClientError(error);
     heading.current?.focus();
   }, [error]);
 

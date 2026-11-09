@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { errorCopy, supportHref } from "@/lib/error-copy";
 import { fontVariables } from "@/lib/fonts";
+import { reportClientError } from "@/lib/report-error";
 import { useOnline } from "@/lib/use-online";
 
 import "./globals.css";
@@ -21,6 +22,9 @@ export default function GlobalError({
   retry: () => void;
 }): ReactNode {
   const copy = errorCopy({ online: useOnline() });
+  useEffect(() => {
+    reportClientError(error);
+  }, [error]);
   return (
     <html lang="en-IN" className={fontVariables}>
       <body className="min-h-dvh">

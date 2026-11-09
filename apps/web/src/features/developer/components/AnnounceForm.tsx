@@ -22,16 +22,14 @@ const INPUT =
 
 /**
  * "Announce an update" for developers: a title and one line, pushed to every phone with
- * Lumiback once confirmed. `last` and `next` say when the last one went out and when the next
- * is allowed (the API refuses a second within a day).
+ * Lumiback once confirmed. `last` says when the last one went out; there is no daily limit
+ * (owner, 2026-11-09), so the confirm step is the guard.
  */
 export function AnnounceForm({
   last,
-  next,
   draft,
 }: {
   last: string;
-  next: string;
   /** What the fields start with: this release's title and summary (the changelog). */
   draft: AnnounceDraft;
 }): ReactNode {
@@ -69,14 +67,25 @@ export function AnnounceForm({
           Announce an update
         </h2>
         <p className="text-sm text-muted">
-          A notification to every phone with Lumiback, for a release people will notice. Once a day,
+          A notification to every phone with Lumiback, for a release people will notice. Each one is
           recorded in the audit log.
         </p>
-        <p className="text-sm text-ink">
-          {last} {next}
-        </p>
+        <p className="text-sm text-ink">{last}</p>
       </div>
-      <form ref={form} action={action} className="flex flex-col gap-4">
+      <form
+        ref={form}
+        action={action}
+        // Enter in a field submits the form through its first submit button, which is the
+        // closed dialog's "Send". Every submit goes through the confirm step instead: only one
+        // made while the dialog is open (its own button; the page behind a modal dialog
+        // takes no input) reaches the action. React skips the action when this prevents it.
+        onSubmit={(event) => {
+          if (dialog.current?.open) return;
+          event.preventDefault();
+          ask();
+        }}
+        className="flex flex-col gap-4"
+      >
         <div className="flex flex-col gap-1.5">
           <label htmlFor={`${id}-title`} className="text-sm font-bold text-ink">
             Title
@@ -134,7 +143,7 @@ export function AnnounceForm({
             <h3 id={`${id}-confirm`} className="font-display text-xl text-ink">
               Send this to every phone with Lumiback?
             </h3>
-            <p>You can announce once a day.</p>
+            <p>It goes out as soon as you send it, and can&apos;t be taken back.</p>
             {preview ? (
               <div className="flex flex-col gap-0.5 rounded-control bg-accent-soft px-4 py-3">
                 <p className="break-words font-bold text-ink">{preview.title}</p>

@@ -28,9 +28,7 @@ export default async function StatusPage(): Promise<ReactNode> {
   const announced = await callBackend<AnnounceState>("/admin/announcements", { token }).catch(
     () => null,
   );
-  // Rendered per request: the server's clock says whether the next one is allowed yet.
-  const now = new Date().getTime();
-  const timing = announced ? announceTiming(announced, now, formatWhen) : null;
+  const last = announced ? announceTiming(announced, formatWhen) : null;
 
   return (
     <div className="flex max-w-2xl flex-col gap-8">
@@ -70,8 +68,7 @@ export default async function StatusPage(): Promise<ReactNode> {
       </Facts>
 
       <AnnounceForm
-        last={timing?.last ?? "Couldn't check when the last update was announced."}
-        next={timing?.next ?? "The API refuses a second one within a day."}
+        last={last ?? "Couldn't check when the last update was announced."}
         draft={announceDraft(CURRENT)}
       />
     </div>

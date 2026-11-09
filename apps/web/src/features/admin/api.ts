@@ -10,6 +10,7 @@ import type {
   AuditPage,
   CampusSettings,
   CorrectionQueue,
+  ErrorGroupList,
   Escalation,
   Gate,
   HelpRequest,
@@ -18,6 +19,7 @@ import type {
   OfficeStudent,
   RecordOutingPage,
   RecordRequestPage,
+  Report,
   RuleSet,
   ScanResult,
   StudentRecord,
@@ -175,5 +177,16 @@ export const adminApi = {
 
   holidays(token: string, year: number): Promise<Holiday[]> {
     return callBackend<Holiday[]>(`/admin/holidays?year=${year}`, { token });
+  },
+
+  /** Counts per hostel the office looks after, for IST days `from` to `to` (checked dates). */
+  report(token: string, from: string, to: string): Promise<Report> {
+    const query = new URLSearchParams({ from, to });
+    return callBackend<Report>(`/admin/reports?${query.toString()}`, { token });
+  },
+
+  /** The latest groups of errors from the website and the app: developers only. */
+  errors(token: string): Promise<ErrorGroupList> {
+    return callBackend<ErrorGroupList>("/errors?limit=50", { token });
   },
 };

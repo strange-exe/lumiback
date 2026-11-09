@@ -29,11 +29,15 @@ const SECTIONS: readonly Section[] = [
   { href: "/admin/rules", label: "Rules", for: ["admin", "head_warden", "developer"] },
   // Wardens see their own hostels' students there (details, turning an account off).
   { href: "/admin/people", label: "People", for: "staff", tour: "nav-people" },
+  // Counts per hostel over a range of dates; a warden's own hostels only.
+  { href: "/admin/reports", label: "Reports", for: "staff" },
   { href: "/admin/settings", label: "Settings", for: ["admin", "developer"] },
   // Read only: every change made in the office.
   { href: "/admin/audit", label: "Audit log", for: ["admin", "developer"] },
   // Which builds are running (a developer as themselves; while viewing, `role` is the viewed one).
   { href: "/admin/status", label: "Status", for: ["developer"] },
+  // What broke on the website and in the app (scrubbed, grouped).
+  { href: "/admin/errors", label: "Errors", for: ["developer"] },
 ];
 
 /** Section tabs. They wrap onto a second row on a phone, so every section and the current

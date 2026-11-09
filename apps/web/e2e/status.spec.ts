@@ -68,7 +68,7 @@ test("a developer sees the API, database and website status", async ({ browser }
 });
 
 // The test API logs pushes instead of sending them (scripts/e2e_server.py): no phone is reached.
-test("a developer announces an update, confirmed first, once a day", async ({ browser }) => {
+test("a developer announces an update, confirmed first, twice in a row", async ({ browser }) => {
   const page = await asDeveloper(browser);
   const errors = watchForErrors(page);
   try {
@@ -90,12 +90,22 @@ test("a developer announces an update, confirmed first, once a day", async ({ br
     ).toBeVisible();
     await expect(form.getByRole("alert")).toHaveText(""); // always there, empty: no error
 
-    // A sent announcement clears the form; a second one the same day is refused.
+    // A sent announcement clears the form, and a second one right after is sent too (owner,
+    // 2026-11-09: "No timeout in announcements, it's just better for dev").
+    await expect(form.getByLabel("Title")).toHaveValue("");
+    await expect(form).not.toContainText(/once a day|again after/i);
     await form.getByLabel("Title").fill("Lumiback has been updated again");
     await form.getByLabel("What's new").fill("One more thing.");
     await form.getByRole("button", { name: "Announce" }).click();
+    await expect(confirm).toBeVisible();
     await confirm.getByRole("button", { name: "Send to every phone" }).click();
-    await expect(form).toContainText("An update was already announced in the last 24 hours.");
+    await expect(confirm).toBeHidden();
+    // Sent again: the form empties once more and no refusal shows.
+    await expect(form.getByLabel("Title")).toHaveValue("");
+    await expect(form.getByRole("alert")).toHaveText("");
+    await expect(
+      form.getByText(/^(Sending to \d+ phones?|Announced, but no phones)/),
+    ).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     await page.context().close();

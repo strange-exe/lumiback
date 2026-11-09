@@ -76,30 +76,17 @@ test("both are required, within their limits, and plain one-line text", () => {
   });
 });
 
-test("when the last one went out and when the next is allowed", () => {
+test("when the last one went out, and nothing about a next one (no daily limit)", () => {
   const fmt = (iso: string): string => `[${iso}]`;
-  const now = Date.parse("2026-11-08T12:00:00Z");
-  assert.deepEqual(announceTiming({ last_at: null, next_at: null }, now, fmt), {
-    last: "No update announced yet.",
-    next: "You can announce now.",
-    allowed: true,
-  });
-  assert.deepEqual(
-    announceTiming({ last_at: "2026-11-08T10:00:00Z", next_at: "2026-11-09T10:00:00Z" }, now, fmt),
-    {
-      last: "Last announced [2026-11-08T10:00:00Z].",
-      next: "You can announce again after [2026-11-09T10:00:00Z].",
-      allowed: false,
-    },
+  assert.equal(announceTiming({ last_at: null, next_at: null }, fmt), "No update announced yet.");
+  assert.equal(
+    announceTiming({ last_at: "2026-11-08T10:00:00Z", next_at: null }, fmt),
+    "Last announced [2026-11-08T10:00:00Z].",
   );
-  // A next time already passed (the page was open a while) means allowed now.
-  assert.deepEqual(
-    announceTiming({ last_at: "2026-11-07T10:00:00Z", next_at: "2026-11-08T10:00:00Z" }, now, fmt),
-    {
-      last: "Last announced [2026-11-07T10:00:00Z].",
-      next: "You can announce now.",
-      allowed: true,
-    },
+  // An older API's next_at changes nothing.
+  assert.equal(
+    announceTiming({ last_at: "2026-11-08T10:00:00Z", next_at: "2026-11-09T10:00:00Z" }, fmt),
+    "Last announced [2026-11-08T10:00:00Z].",
   );
 });
 
@@ -110,9 +97,8 @@ test("how many phones it reached", () => {
 });
 
 test("refusals show the server's own words; a 403 says who may announce", () => {
-  const twice =
-    "An update was already announced in the last 24 hours. You can announce again after 9:00 PM.";
-  assert.equal(announceError(409, twice), twice);
+  const noPush = "Push notifications aren't set up on this server, so nothing was sent.";
+  assert.equal(announceError(503, noPush), noPush);
   assert.equal(announceError(403, "Developers only"), "Only developers can announce updates.");
   assert.equal(announceError(422, "Bad title"), "Bad title");
 });

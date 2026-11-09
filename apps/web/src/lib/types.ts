@@ -707,3 +707,66 @@ export interface KioskCode {
   qr: string;
   refresh_at: string;
 }
+
+/** One hostel's numbers, or the campus's, for a report's days (GET /admin/reports). Counts
+ * only: a report never names a student. */
+export interface ReportStats {
+  outings: number;
+  gate_out: number;
+  self_out: number;
+  /** Came back with a recorded time. */
+  back: number;
+  returned_late: number;
+  /** returned_late / back, 0 to 1; null with nobody back. */
+  late_rate: number | null;
+  median_minutes_late: number | null;
+  escalations: number;
+  requests_approved: number;
+  requests_declined: number;
+  running_late: number;
+}
+
+export interface ReportHostel extends ReportStats {
+  /** Null: students who hadn't chosen a hostel. */
+  hostel_id: string | null;
+  hostel: string;
+}
+
+export interface ReportWeek {
+  /** The Monday, YYYY-MM-DD (IST). */
+  week_start: string;
+  /** How many of its days are inside the report's range (1 to 7). */
+  days: number;
+  outings: number;
+  returned_late: number;
+}
+
+export interface Report {
+  start: string;
+  end: string;
+  /** False for a warden: `total` adds up their hostels only, not the campus. */
+  every_hostel: boolean;
+  hostels: ReportHostel[];
+  total: ReportStats;
+  weeks: ReportWeek[];
+}
+
+/** One group of the same error from the website or the app (GET /errors, developers). */
+export interface ErrorGroup {
+  id: number;
+  message: string;
+  top_frame: string | null;
+  stack: string | null;
+  route: string | null;
+  platform: "web" | "android" | "ios";
+  app_version: string | null;
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  /** The latest report came from a signed-in session (never who). */
+  signed_in: boolean;
+}
+
+export interface ErrorGroupList {
+  items: ErrorGroup[];
+}
