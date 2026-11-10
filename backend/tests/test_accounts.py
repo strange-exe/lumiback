@@ -166,6 +166,35 @@ def test_a_warden_manages_their_own_hostels_students_only(client, admin, hostels
     assert email.status_code == 403 and "Only an admin" in email.json()["detail"]
 
 
+def test_a_warden_gets_no_details_of_someone_moved_out_mid_request(
+    client, admin, hostels, warden, anna, monkeypatch
+):
+    """Turning on commits (the row's lock ends) before the answer reads the person again; an
+    admin moving them to another hostel in between leaves them outside the warden's scope, so
+    the answer is the same 404 as for anyone else's student (run-12 hardening note)."""
+    import uuid as uuid_
+
+    from sqlalchemy import update
+
+    from app.models import User
+    from app.services import accounts
+
+    anna_id = user_id(client, admin, ANNA)
+    assert turn(client, warden, anna_id, on=False).status_code == 200
+    real = accounts.reactivate
+
+    async def then_moved(session, staff, uid):
+        await real(session, staff, uid)
+        hostel_b = uuid_.UUID(hostels["B"])
+        await session.execute(update(User).where(User.id == uid).values(hostel_id=hostel_b))
+        await session.commit()
+
+    monkeypatch.setattr(accounts, "reactivate", then_moved)
+    r = turn(client, warden, anna_id, on=True)
+    assert r.status_code == 404, r.text
+    assert "anna" not in r.text.lower()
+
+
 @pytest.mark.parametrize("how", ["search", "off"])
 def test_a_head_warden_lists_students_only(client, admin, hostels, anna, how):
     """A head warden looks after every hostel's students, not the staff: neither a search nor

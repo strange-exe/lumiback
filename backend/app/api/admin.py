@@ -961,8 +961,10 @@ async def turn_account(
                 await hub.publish(AccessChanged(share_id))  # open streams re-check and end
     except accounts.Refused as e:
         raise HTTPException(e.status, detail=str(e)) from None
+    # Read again after the commit ended the row's lock: an admin may have moved them out of
+    # this warden's hostels in between, and then they get nothing (run-12 hardening note).
     target = await session.get(User, user_id)
-    if target is None:
+    if target is None or not accounts.manages(staff, target):
         raise NOT_FOUND
     return await svc.person(session, target)
 

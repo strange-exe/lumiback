@@ -62,7 +62,8 @@ class Refused(Exception):
 NOT_FOUND = "No such person"
 
 
-def _manages(staff: Staff, target: User) -> bool:
+def manages(staff: Staff, target: User) -> bool:
+    """Whether `staff` may change `target`'s account: admins anyone, others their students."""
     if staff.user.is_admin:
         return True
     return target.role == UserRole.STUDENT and staff.covers_student(target)
@@ -70,7 +71,7 @@ def _manages(staff: Staff, target: User) -> bool:
 
 async def _target(session: AsyncSession, staff: Staff, user_id: uuid.UUID) -> User:
     target = await session.get(User, user_id, with_for_update=True)
-    if target is None or not _manages(staff, target):
+    if target is None or not manages(staff, target):
         raise Refused(404, NOT_FOUND)  # someone else's: as if they didn't exist
     if target.id == staff.user.id:
         raise Refused(403, "You can't change your own account here")

@@ -140,7 +140,8 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
     { q, role },
   );
   const later = after !== undefined;
-  const more = next === null ? null : `${first}${first.includes("?") ? "&" : "?"}after=${next}`;
+  // Only an id goes in the address (run-12 hardening note): anything else, no link.
+  const more = isUuid(next) ? `${first}${first.includes("?") ? "&" : "?"}after=${next}` : null;
 
   // Who each row's checkbox may act on (the same tests as the row's own controls).
   const marks = rows.map(({ person }) => {
