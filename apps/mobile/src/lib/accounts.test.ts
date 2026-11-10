@@ -11,7 +11,7 @@ import {
   signInRefusal,
   turnCopy,
 } from "@/lib/accounts";
-import { studentsQuery } from "@/lib/office";
+import { peopleUpTo, studentsQuery } from "@/lib/office";
 import type { AccountState, Role } from "@/lib/types";
 
 const person = (role: Role = "student", account: AccountState = "active") => ({
@@ -199,6 +199,44 @@ describe("the students list filter", () => {
     expect(studentsQuery({ role: "warden" })).toBe("?role=warden");
     expect(studentsQuery({ q: "ri", role: "head_warden" })).toBe("?q=ri&role=head_warden");
     expect(studentsQuery({ role: null })).toBe("");
+    // Paging: the cursor and page size.
+    expect(studentsQuery({ q: "ri", after: "p50", limit: 51 })).toBe("?q=ri&after=p50&limit=51");
+    expect(studentsQuery({ after: null, limit: null })).toBe("");
+  });
+
+  describe("peopleUpTo", () => {
+    const everyone = Array.from({ length: 420 }, (_, i) => ({ id: `p${i + 1}` }));
+    /** The API's paging: after an id, at most `limit` (1-300), by order. */
+    const api = jest.fn(async (after: string | null, limit: number) => {
+      expect(limit).toBeGreaterThanOrEqual(1);
+      expect(limit).toBeLessThanOrEqual(300);
+      const from = after === null ? 0 : everyone.findIndex((p) => p.id === after) + 1;
+      return everyone.slice(from, from + limit);
+    });
+    beforeEach(() => api.mockClear());
+
+    it("asks for one more than it keeps, to know if more follow", async () => {
+      const first = await peopleUpTo(api, 50);
+      expect(first.people.map((p) => p.id)).toEqual(everyone.slice(0, 50).map((p) => p.id));
+      expect(first.more).toBe(true);
+      expect(api.mock.calls).toEqual([[null, 51]]);
+    });
+
+    it("gets more than 300 in pages within the API's limit, each after the last", async () => {
+      const all = await peopleUpTo(api, 400);
+      expect(all.people.map((p) => p.id)).toEqual(everyone.slice(0, 400).map((p) => p.id));
+      expect(all.more).toBe(true);
+      expect(api.mock.calls).toEqual([
+        [null, 300],
+        ["p299", 102],
+      ]);
+    });
+
+    it("says no more at the end, also when the end falls exactly on a page", async () => {
+      expect(await peopleUpTo(api, 500)).toEqual({ people: everyone, more: false });
+      const short = jest.fn(async () => everyone.slice(0, 50));
+      expect(await peopleUpTo(short, 50)).toEqual({ people: everyone.slice(0, 50), more: false });
+    });
   });
 
   it("says why the list is empty", () => {

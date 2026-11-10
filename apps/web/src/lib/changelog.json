@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.21.1",
+    "date": "2026-11-10",
+    "kind": "fix",
+    "title": "A faster Students list",
+    "summary": "The office's Students list opens with 50 people and shows more at the end. The tab bar's chip stays rounded.",
+    "points": [
+      "For the hostel office: Students opens with the first 50 people and adds 50 more each time you tap Show more people at the end. Search still finds anyone.",
+      "The highlighted tab in the tab bar no longer turns into a square block after you switch tabs."
+    ]
+  },
+  {
     "version": "1.21.0",
     "date": "2026-11-10",
     "kind": "feature",

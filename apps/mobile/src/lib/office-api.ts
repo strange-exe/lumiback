@@ -109,6 +109,9 @@ export const office = {
     account?: AccountFilter | null;
     /** One role's people (admins only; the API ignores it from anyone else). */
     role?: Role | null;
+    /** Paging: the last person of the page before, and how many (1-300; 300 without it). */
+    after?: string | null;
+    limit?: number | null;
   }) => api<OfficeStudent[]>(`/admin/students${studentsQuery(filter)}`),
 
   /** Correct someone's details: only the fields in `body` change (email: admins only). */

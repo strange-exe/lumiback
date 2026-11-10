@@ -58,10 +58,10 @@ describe("role chips (wave 5: admins and developers only)", () => {
   });
 
   it("counts what is shown, and says when the list is cut", () => {
-    expect(shownLine(0, 300)).toBe("No one shown.");
-    expect(shownLine(1, 300)).toBe("1 person shown.");
-    expect(shownLine(12, 300)).toBe("12 people shown.");
-    expect(shownLine(300, 300)).toBe("The first 300 shown. Search to narrow it down.");
+    expect(shownLine(0, false)).toBe("No one shown.");
+    expect(shownLine(1, false)).toBe("1 person shown.");
+    expect(shownLine(12, false)).toBe("12 people shown.");
+    expect(shownLine(50, true)).toBe("The first 50 people shown. Show more at the end, or search.");
   });
 });
 

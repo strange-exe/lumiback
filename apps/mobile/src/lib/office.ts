@@ -64,6 +64,10 @@ export function studentsQuery(filter: {
   q?: string;
   account?: AccountFilter | null;
   role?: Role | null;
+  /** The last person of the page before (the API's cursor). */
+  after?: string | null;
+  /** How many to send, 1-300 (the API's default without it is 300). */
+  limit?: number | null;
 }): string {
   const query = new URLSearchParams();
   if (filter.hostelId) query.set("hostel_id", filter.hostelId);
@@ -71,8 +75,36 @@ export function studentsQuery(filter: {
   if (q) query.set("q", q);
   if (filter.account) query.set("account", filter.account);
   if (filter.role) query.set("role", filter.role);
+  if (filter.after) query.set("after", filter.after);
+  if (filter.limit) query.set("limit", String(filter.limit));
   const qs = query.toString();
   return qs ? `?${qs}` : "";
+}
+
+/** People the Students list adds at a time. */
+export const STUDENTS_PAGE = 50;
+/** The most the API sends in one answer (backend services/admin.py STUDENTS_MAX). */
+const API_MAX = 300;
+
+/**
+ * The first `wanted` people of a list the API pages by cursor, and whether more follow. Each
+ * request asks for one more than it keeps, to know if there is a next page, and stays within
+ * the API's 300.
+ */
+export async function peopleUpTo<P extends { id: string }>(
+  page: (after: string | null, limit: number) => Promise<P[]>,
+  wanted: number,
+): Promise<{ people: P[]; more: boolean }> {
+  const people: P[] = [];
+  let after: string | null = null;
+  while (people.length < wanted) {
+    const keep = Math.min(wanted - people.length, API_MAX - 1);
+    const got = await page(after, keep + 1);
+    people.push(...got.slice(0, keep));
+    if (got.length <= keep) return { people, more: false };
+    after = people[people.length - 1]!.id;
+  }
+  return { people, more: true };
 }
 
 /** The search a list applies as its box is typed in (`applied` is the one in use): none once
@@ -92,11 +124,11 @@ export const ROLE_CHIPS: readonly { value: "all" | Role; label: string }[] = [
   { value: "developer", label: "Developers" },
 ];
 
-/** The line above a list: how many are shown, and whether it was cut at `cap`. */
-export function shownLine(shown: number, cap: number): string {
-  if (shown >= cap) return `The first ${cap} shown. Search to narrow it down.`;
+/** The line above a list: how many are shown, and whether more follow. */
+export function shownLine(shown: number, more: boolean): string {
   if (shown === 0) return "No one shown.";
-  return `${shown} ${shown === 1 ? "person" : "people"} shown.`;
+  const count = `${shown} ${shown === 1 ? "person" : "people"}`;
+  return more ? `The first ${count} shown. Show more at the end, or search.` : `${count} shown.`;
 }
 
 /** "12 m from the gate (GPS ±9 m)"; null when the scan had no position (a bad code). */

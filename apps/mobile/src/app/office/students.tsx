@@ -16,10 +16,12 @@ import {
   everyHostel,
   isAdmin,
   passwordLinkCopy,
+  peopleUpTo,
   ROLE_CHIPS,
   ROLE_LABEL,
   searchAfterTyping,
   shownLine,
+  STUDENTS_PAGE,
 } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import { known, loadOfficeFilters, rememberOfficeFilter } from "@/lib/office-filters";
@@ -58,20 +60,38 @@ export default function Students(): ReactNode {
   const viewer = user?.role ? { id: user.id, role: user.role } : null;
 
   const hostels = useData(useCallback(() => office.hostels(), []));
+  // How many people the list holds: a page at first, a page more per "Show more". Any reload
+  // (coming back, or after an account change) keeps them all, so the row someone acted on
+  // stays where it was; a new filter or a pull to refresh starts again from the first page.
+  const wanted = useRef(STUDENTS_PAGE);
+  const [loadingMore, setLoadingMore] = useState(false);
   const load = useCallback(
     () =>
-      office.students({
-        hostelId: hostelId === "all" ? null : hostelId,
-        q: search,
-        account: account === "all" ? null : account,
-        role: admin && role !== "all" ? role : null,
-      }),
+      peopleUpTo(
+        (after, limit) =>
+          office.students({
+            hostelId: hostelId === "all" ? null : hostelId,
+            q: search,
+            account: account === "all" ? null : account,
+            role: admin && role !== "all" ? role : null,
+            after,
+            limit,
+          }),
+        wanted.current,
+      ),
     [hostelId, search, account, admin, role],
   );
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
+  const people = data?.people;
   useEffect(() => {
+    wanted.current = STUDENTS_PAGE;
     void refetch();
   }, [hostelId, search, account, role, refetch]);
+  const showMore = (): void => {
+    wanted.current = (people?.length ?? 0) + STUDENTS_PAGE;
+    setLoadingMore(true);
+    void refetch().finally(() => setLoadingMore(false));
+  };
 
   // The last hostel and "Show" choice, once the hostels are known (a hostel no longer in the
   // list is "All"). A choice made before the stored one is read wins.
@@ -122,7 +142,10 @@ export default function Students(): ReactNode {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => void reload()}
+          onRefresh={() => {
+            wanted.current = STUDENTS_PAGE;
+            void reload();
+          }}
           colors={[c.accent]}
           tintColor={c.accent}
         />
@@ -175,17 +198,16 @@ export default function Students(): ReactNode {
         autoCorrect={false}
         hint="Press search on the keyboard. At least 2 letters."
       />
-      {data && data.length > 0 ? (
-        // The API lists at most 300 (backend services/admin.py students).
-        <T tone="muted">{shownLine(data.length, 300)}</T>
+      {people && people.length > 0 ? (
+        <T tone="muted">{shownLine(people.length, data.more)}</T>
       ) : null}
-      {error && !data ? (
+      {error && !people ? (
         <T tone="muted" accessibilityRole="alert">
           {error} Pull down to try again.
         </T>
-      ) : loading && !data ? (
+      ) : loading && !people ? (
         <T tone="muted">Loading…</T>
-      ) : data && data.length === 0 ? (
+      ) : people && people.length === 0 ? (
         <T tone="muted" style={{ textAlign: "center", paddingVertical: space(8) }}>
           {emptyListText(account, search)}
         </T>
@@ -199,7 +221,7 @@ export default function Students(): ReactNode {
             overflow: "hidden",
           }}
         >
-          {(data ?? []).map((s, i) => (
+          {(people ?? []).map((s, i) => (
             <StudentRow
               key={s.id}
               student={s}
@@ -222,6 +244,21 @@ export default function Students(): ReactNode {
           ))}
         </View>
       )}
+      {people && error ? (
+        // A reload or "Show more" failed: the list above is the last one that loaded.
+        <T tone="muted" accessibilityRole="alert">
+          {error} Pull down to try again.
+        </T>
+      ) : null}
+      {people && data.more ? (
+        <Button
+          label="Show more people"
+          variant="secondary"
+          busy={loadingMore}
+          busyLabel="Loading more…"
+          onPress={showMore}
+        />
+      ) : null}
       {moveFor ? (
         <MoveSheet
           student={moveFor}
