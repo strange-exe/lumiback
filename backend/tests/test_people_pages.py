@@ -255,6 +255,20 @@ def test_a_wardens_cursor_must_be_their_own_student(client, admin, warden, anna,
     assert after_bina.status_code == 200 and after_bina.json() == []
 
 
+def test_a_wardens_cursor_is_never_a_staff_member(client, db, admin, warden, hostels, pagers):
+    """Staff living in the warden's hostel aren't on the warden's list, so they are no place to
+    start from either: an empty page, not whether that id exists or where the name falls."""
+    add_people(db, "Mentor", 1, 1, role="warden", hostel=hostels["A"])
+    mentor = str(
+        db.execute(text("SELECT id FROM users WHERE email = 'mentor1@geu.ac.in'")).scalar_one()
+    )
+    # Control: an admin's list has staff, so an admin pages on from them.
+    from_admin = client.get(STUDENTS, params={"after": mentor, "q": "pager"}, headers=admin)
+    assert from_admin.status_code == 200 and len(from_admin.json()) == 8
+    r = client.get(STUDENTS, params={"after": mentor}, headers=warden)
+    assert r.status_code == 200 and r.json() == []
+
+
 @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 301}, {"after": "not-an-id"}])
 def test_the_office_list_checks_its_page_parameters(client, admin, params):
     assert client.get(STUDENTS, params=params, headers=admin).status_code == 422

@@ -661,6 +661,8 @@ async def students(
         mark = await session.get(User, after)
         if mark is None or not staff.covers_student(mark):
             return []
+        if not staff.user.is_admin and mark.role != UserRole.STUDENT:
+            return []  # not on a warden's list (staff), so no place to page on from
         query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
     if not staff.user.is_admin:  # wardens and head wardens: students, not staff
         query = query.where(User.role == UserRole.STUDENT)
