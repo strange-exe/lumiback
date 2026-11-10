@@ -1,5 +1,7 @@
 import asyncio
 import os
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from app.main import create_app
 from app.models import Base
 from app.security.breached import MemoryBreachChecker
 from app.security.rate_limit import RateLimiter
+from app.services.rules import IST
 
 BACKEND = Path(__file__).resolve().parents[1]
 FAKE_SECRET = "t3st-only-" + "x7Kq9Zp2" * 5
@@ -63,11 +66,29 @@ def migrated_engine(test_db_url: str) -> Engine:
 
 
 OPEN_RULES = "Test rules (always open)"
+# The open rules close at 23:59 IST and a tap-out needs a minute ahead (rules.MIN_AHEAD), so
+# check-outs are refused from 23:58 IST. A test starting this close to midnight waits for the
+# new day instead: the closing minute, plus a minute for the test itself to run.
+DAY_END_MARGIN = timedelta(minutes=3)
+
+
+def wait_out_day_end(
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Sleeps into the next IST day when less than DAY_END_MARGIN of this one is left (once a
+    night, at most three minutes; a run crossing midnight then never sees the day close)."""
+    local = now().astimezone(IST)
+    midnight = datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), IST)
+    left = midnight - local
+    if left <= DAY_END_MARGIN:
+        sleep(left.total_seconds() + 1)
 
 
 def seed_open_rules(conn: Connection) -> None:
     """Outings allowed all day on every day type, as the campus default: tests that don't test
-    the rules then pass at any time of day. Rule tests narrow these with tests.helpers.set_rules.
+    the rules then pass at any time of day (clean_db waits out the closing minutes, see
+    DAY_END_MARGIN). Rule tests narrow these with tests.helpers.set_rules.
     (The upsert also restores campus_settings, which the per-test TRUNCATE empties.)"""
     conn.execute(text("DELETE FROM hostels"))
     conn.execute(text("UPDATE campus_settings SET default_rule_set_id = NULL"))
@@ -95,6 +116,7 @@ def seed_open_rules(conn: Connection) -> None:
 @pytest.fixture
 def clean_db(migrated_engine: Engine) -> Engine:
     """Starts every test with the open default rules; empties every table after the test."""
+    wait_out_day_end()
     with migrated_engine.begin() as conn:
         seed_open_rules(conn)
     yield migrated_engine
