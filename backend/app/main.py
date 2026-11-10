@@ -105,6 +105,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                     health=app.state.sweep_health,
                     pepper=settings.code_pepper.get_secret_value(),
                     digest_to=settings.error_digest_email,
+                    first_delay=expiry.FIRST_SWEEP_DELAY_SECONDS,
                 )
             )
             if start_jobs

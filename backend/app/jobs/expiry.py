@@ -56,6 +56,10 @@ from app.services.rules import IST
 logger = logging.getLogger(__name__)
 
 INTERVAL_SECONDS = 30.0
+# The first sweep waits this long after start-up, so the request that woke a sleeping server
+# (Render's free plan) gets the first database connection instead of queueing behind the sweep.
+# Well inside SweepHealth's grace (STALE_AFTER_SWEEPS intervals from start-up).
+FIRST_SWEEP_DELAY_SECONDS = 5.0
 KEEP_SPENT_CODES = timedelta(days=1)
 KEEP_DEAD_REFRESH_TOKENS = timedelta(days=7)
 # A tab-live share ends once the sharer's tab stops checking in (closed, crashed, phone locked).
@@ -347,7 +351,10 @@ async def run_forever(
     health: SweepHealth | None = None,
     pepper: str | None = None,
     digest_to: str | None = None,
+    first_delay: float = 0.0,
 ) -> None:
+    if first_delay > 0:
+        await asyncio.sleep(first_delay)
     while True:
         try:
             result = await sweep(

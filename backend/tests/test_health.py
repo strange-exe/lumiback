@@ -177,6 +177,43 @@ def test_the_health_check_waits_at_most_three_seconds_for_the_database(settings,
     assert create_app(settings, start_jobs=False).state.health_db_timeout == 3.0
 
 
+def test_the_first_sweep_waits_for_its_delay(monkeypatch):
+    ran = []
+
+    async def fake_sweep(*_args, **_kwargs):
+        ran.append(True)
+
+    async def run() -> None:
+        task = asyncio.create_task(
+            expiry.run_forever(None, None, interval=0, first_delay=0.5)  # type: ignore[arg-type]
+        )
+        await asyncio.sleep(0.05)
+        assert ran == []  # still inside the delay: the waking request gets the database first
+        while not ran:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    monkeypatch.setattr(expiry, "sweep", fake_sweep)
+    asyncio.run(asyncio.wait_for(run(), timeout=5))
+
+
+def test_the_app_delays_its_first_sweep_within_the_health_grace(settings, monkeypatch):
+    seen = {}
+
+    async def fake_run_forever(*_args, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(expiry, "run_forever", fake_run_forever)
+    app = create_app(settings)
+    with TestClient(app, backend_options={"loop_factory": asyncio.SelectorEventLoop}):
+        pass
+    assert seen["first_delay"] == expiry.FIRST_SWEEP_DELAY_SECONDS > 0
+    grace = expiry.INTERVAL_SECONDS * SweepHealth.STALE_AFTER_SWEEPS
+    assert expiry.FIRST_SWEEP_DELAY_SECONDS < grace / 2
+
+
 def test_the_running_app_reports_its_own_sweep(settings, clean_db):
     app = create_app(settings)
     with TestClient(app, backend_options={"loop_factory": asyncio.SelectorEventLoop}) as c:
