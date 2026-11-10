@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { ADMIN_STATE, DEVELOPER_STATE, WARDEN_STATE } from "../playwright.config";
+import { KIND_LABEL, type AnnounceKind } from "../src/features/developer/announce";
 import changelog from "../src/lib/changelog.json";
 import { designMatrix, watchForErrors } from "./helpers";
 
@@ -127,8 +128,9 @@ test("a developer launches a feature to chosen roles, with a banner and a previe
       await set.getByText(name, { exact: true }).click();
       await expect(set.getByRole("radio", { name })).toBeChecked();
     };
-    // The current release is a feature launch (changelog.json kind), so that kind starts chosen.
-    await expect(form.getByRole("radio", { name: "Release" })).toBeChecked();
+    // The current release's kind (changelog.json) starts chosen, whichever kind it is.
+    const current = KIND_LABEL[changelog[0]!.kind as AnnounceKind];
+    await expect(form.getByRole("radio", { name: current })).toBeChecked();
     await pick("Kind", "Patch");
     // A banner is for feature launches only: no picker for a patch.
     await expect(form.getByRole("group", { name: "Banner (optional)" })).toHaveCount(0);
