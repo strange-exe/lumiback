@@ -549,6 +549,9 @@ def _anyone_matching(q: str):  # noqa: ANN202 - a SQL expression
 
 
 ROLE_PAGE = 50  # people listed by role, per page
+# The office list (students): at most this many in one answer. Callers that don't page (apps
+# released before paging) get this many, as before; the website pages 50 at a time.
+STUDENTS_MAX = 300
 
 
 async def search_users(
@@ -575,35 +578,51 @@ async def search_users(
             if mark is None:
                 return []
             query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
-    return [await person(session, u) for u in await session.scalars(query)]
+    return await people(session, list(await session.scalars(query)))
 
 
 async def person(session: AsyncSession, u: User) -> AdminUser:
-    hostels = (
-        (
-            await session.execute(
-                select(Hostel.id, Hostel.name)
-                .join(WardenHostel, WardenHostel.hostel_id == Hostel.id)
-                .where(WardenHostel.user_id == u.id)
-                .order_by(Hostel.name)
+    [one] = await people(session, [u])
+    return one
+
+
+async def people(session: AsyncSession, users: Sequence[User]) -> list[AdminUser]:
+    """Each of `users` as People shows them, in order. Two queries at most, however many there
+    are: every home hostel's name, then every warden's hostels (each warden's by name)."""
+    home_ids = {u.hostel_id for u in users if u.hostel_id}
+    homes: dict[uuid.UUID, str] = {}
+    if home_ids:
+        found = await session.execute(select(Hostel.id, Hostel.name).where(Hostel.id.in_(home_ids)))
+        homes = {hostel_id: name for hostel_id, name in found}
+    wardens = [u.id for u in users if u.role == UserRole.WARDEN]
+    looked_after: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {w: [] for w in wardens}
+    if wardens:
+        rows = await session.execute(
+            select(WardenHostel.user_id, Hostel.id, Hostel.name)
+            .join(WardenHostel, WardenHostel.hostel_id == Hostel.id)
+            .where(WardenHostel.user_id.in_(wardens))
+            .order_by(Hostel.name)
+        )
+        for user_id, hostel_id, name in rows:
+            looked_after[user_id].append((hostel_id, name))
+    out = []
+    for u in users:
+        hostels = looked_after.get(u.id, [])
+        out.append(
+            AdminUser(
+                id=u.id,
+                name=u.name,
+                email=u.email,
+                roll_no=u.roll_no,
+                role=u.role.value,
+                hostel_ids=[i for i, _ in hostels],
+                hostels=[n for _, n in hostels],
+                home_hostel_id=u.hostel_id,
+                home_hostel=homes.get(u.hostel_id) if u.hostel_id else None,
+                account=account_state(u),
             )
-        ).all()
-        if u.role == UserRole.WARDEN
-        else []
-    )
-    home = await session.get(Hostel, u.hostel_id) if u.hostel_id else None
-    return AdminUser(
-        id=u.id,
-        name=u.name,
-        email=u.email,
-        roll_no=u.roll_no,
-        role=u.role.value,
-        hostel_ids=[i for i, _ in hostels],
-        hostels=[n for _, n in hostels],
-        home_hostel_id=u.hostel_id,
-        home_hostel=home.name if home else None,
-        account=account_state(u),
-    )
+        )
+    return out
 
 
 async def students(
@@ -613,18 +632,28 @@ async def students(
     q: str | None,
     account: str | None = None,
     roles: Sequence[UserRole] | None = None,
+    *,
+    after: uuid.UUID | None = None,
+    limit: int = STUDENTS_MAX,
 ) -> list[StudentOut]:
     """People the office looks after: a hostel's students, or a search. A warden sees their
     own hostels' students only; an admin's search (or `account` list) also finds staff.
     `account`: "invited" (haven't set up yet) or "off" (turned off) only. `roles`: only these
-    (the caller passes it for admins only; wardens and head wardens see students only)."""
+    (the caller passes it for admins only; wardens and head wardens see students only).
+    By name, `limit` at a time; `after` is the last person of the page before (an unknown id,
+    or someone this office doesn't look after, is an empty page, never the first one again)."""
     query = (
         select(User, Hostel.name)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
         .where(staff.covers(User.hostel_id))  # imported students who haven't set up too
-        .order_by(User.name)
-        .limit(300)
+        .order_by(User.name, User.id)
+        .limit(limit)
     )
+    if after is not None:
+        mark = await session.get(User, after)
+        if mark is None or not staff.covers_student(mark):
+            return []
+        query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
     if not staff.user.is_admin:  # wardens and head wardens: students, not staff
         query = query.where(User.role == UserRole.STUDENT)
     elif roles:

@@ -656,15 +656,21 @@ async def list_students(
     q: Search = None,
     account: Literal["invited", "off"] | None = None,
     role: Roles = None,
+    after: uuid.UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=svc.STUDENTS_MAX)] = svc.STUDENTS_MAX,
 ) -> list[StudentOut]:
     """A hostel's students (a warden: their own hostels only), with contacts and who's out.
     `account`: only those who haven't set up yet, or only accounts turned off. `role`: admins
-    and developers only; from anyone else it is ignored (they see students only, never more)."""
+    and developers only; from anyone else it is ignored (they see students only, never more).
+    By name, `limit` at a time (300 when not given, as before paging): `after` is the last id
+    of the page before, with the same filters. An unknown `after` is an empty page."""
     await searching(limiter, staff.user, "students")
     if hostel_id is not None and staff.hostels is not None and hostel_id not in staff.hostels:
         raise NOT_FOUND
     roles = role_filter(role) if staff.user.is_admin else None
-    return await svc.students(session, staff, hostel_id, q, account, roles)
+    return await svc.students(
+        session, staff, hostel_id, q, account, roles, after=after, limit=limit
+    )
 
 
 @router.post("/students/{user_id}/hostel")
