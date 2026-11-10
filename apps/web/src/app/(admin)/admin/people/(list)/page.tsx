@@ -9,10 +9,18 @@ import { AddPersonForm } from "@/features/admin/components/AddPersonForm";
 import { BULK_FORM, BulkActions, SelectAllShown } from "@/features/admin/components/BulkActions";
 import { MoveForm } from "@/features/admin/components/MoveForm";
 import { PasswordLinkForm } from "@/features/admin/components/PasswordLinkForm";
-import { listSource, resultCount, ROLE_CHIPS, type ChipRole } from "@/features/admin/people-roles";
+import {
+  listSource,
+  onePage,
+  PEOPLE_PAGE,
+  resultCount,
+  ROLE_CHIPS,
+  type ChipRole,
+} from "@/features/admin/people-roles";
 import { recordHref } from "@/features/admin/record";
 import { RoleForm } from "@/features/admin/components/RoleForm";
-import { extrasFrom, filterHref, resolveFilters } from "@/lib/filters";
+import { extrasFrom, filterHref, pageHref, resolveFilters } from "@/lib/filters";
+import { isUuid } from "@/lib/ids";
 import { rememberedFilters, requireStaff } from "@/lib/session";
 import {
   isAdminRole,
@@ -24,9 +32,6 @@ import {
 
 export const metadata: Metadata = { title: "People" };
 
-/** The backend lists at most this many (services/admin.py students). */
-const LIST_LIMIT = 300;
-
 type Account = "invited" | "off" | undefined;
 
 interface PageProps {
@@ -36,6 +41,7 @@ interface PageProps {
     hostel?: string | string[];
     role?: string | string[];
     cancelled?: string | string[];
+    after?: string | string[];
   }>;
 }
 
@@ -75,6 +81,9 @@ const SEARCH_LIMIT = 20;
 /**
  * Who's listed: everyone in the hostels the viewer looks after (every hostel for an admin, as
  * in the app), one hostel, a filter, or an admin's search or role chip, which also find staff.
+ * The office list comes PEOPLE_PAGE at a time by name: `after` is the last id of the page
+ * before, and `next` the id the following page starts after (null: none follows). `cap` is
+ * null for that paged list; the admins' search is cut at its cap instead.
  */
 async function load(
   token: string,
@@ -83,11 +92,21 @@ async function load(
   account: Account,
   hostel: string | undefined,
   role: ChipRole | undefined,
-): Promise<{ rows: Row[]; cap: number }> {
+  after: string | undefined,
+): Promise<{ rows: Row[]; cap: number | null; paged: boolean; next: string | null }> {
   const search = q.length >= 2 ? q : undefined;
   if (listSource({ isAdmin, search, role, account, hostel }) === "students") {
-    const students = await adminApi.students(token, { q: search, account, hostel, role });
-    return { rows: students.map(fromStudent), cap: LIST_LIMIT };
+    // One more than a page: whether a next page exists, without a link to an empty one.
+    const answer = await adminApi.students(token, {
+      q: search,
+      account,
+      hostel,
+      role,
+      after,
+      limit: PEOPLE_PAGE + 1,
+    });
+    const { rows, next } = onePage(answer);
+    return { rows: rows.map(fromStudent), cap: null, paged: true, next };
   }
   // The search knows roles and a warden's hostels; the students list knows phone numbers.
   const [users, students] = await Promise.all([
@@ -99,7 +118,7 @@ async function load(
     person: phones.has(u.id) ? { ...u, phone: phones.get(u.id) } : u,
     full: true,
   }));
-  return { rows, cap: role ? ROLE_LIMIT : SEARCH_LIMIT };
+  return { rows, cap: role ? ROLE_LIMIT : SEARCH_LIMIT, paged: false, next: null };
 }
 
 export default async function PeoplePage({ searchParams }: PageProps): Promise<ReactNode> {
@@ -121,8 +140,18 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   // The role chips are for admins and developers only; anyone else's ?role= is ignored (and
   // the API ignores it from them too).
   const role = isAdmin ? (extrasFrom("people", params).role as ChipRole | undefined) : undefined;
-  const { rows, cap } = await load(token, isAdmin, q, account, hostel, role);
+  // A later page: the last id of the page before (anything but one id is the first page).
+  const after = isUuid(params.after) ? params.after : undefined;
+  const { rows, cap, paged, next } = await load(token, isAdmin, q, account, hostel, role, after);
   const back = { q, account: account ?? "" };
+  // The list's own address with the same filters: the first page, and the next one.
+  const first = pageHref(
+    "people",
+    { ...(hostel ? { hostel } : {}), ...(account ? { account } : {}) },
+    { q, role },
+  );
+  const later = paged && after !== undefined;
+  const more = next === null ? null : `${first}${first.includes("?") ? "&" : "?"}after=${next}`;
 
   // Who each row's checkbox may act on (the same tests as the row's own controls).
   const marks = rows.map(({ person }) => {
@@ -216,9 +245,24 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
           or moved out of this filter); the bar itself only shows while someone is ticked. */}
       <BulkActions isAdmin={isAdmin} hostels={hostels} names={names} />
 
+      {later && (
+        <p className="text-sm text-muted">
+          Showing more people, by name.{" "}
+          <Link
+            href={first}
+            prefetch={false}
+            className="font-bold text-accent-text underline-offset-4 hover:underline"
+          >
+            Back to the first page
+          </Link>
+        </p>
+      )}
+
       {rows.length === 0 ? (
         <p className="rounded-sheet border border-dashed border-line px-5 py-8 text-center text-muted">
-          {emptyMessage(q, account, isAdmin, mine.find((h) => h.id === hostel)?.name, role)}
+          {later
+            ? "No more people to show."
+            : emptyMessage(q, account, isAdmin, mine.find((h) => h.id === hostel)?.name, role)}
         </p>
       ) : (
         <>
@@ -287,6 +331,16 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
             })}
           </ul>
         </>
+      )}
+
+      {more && (
+        <Link
+          href={more}
+          prefetch={false}
+          className="flex min-h-11 items-center self-center font-bold text-accent-text underline-offset-4 hover:underline"
+        >
+          More people
+        </Link>
       )}
     </section>
   );

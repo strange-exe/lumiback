@@ -15,11 +15,30 @@ export const ROLE_CHIPS: readonly { value: ChipRole | undefined; label: string }
   { value: "developer", label: "Developers" },
 ];
 
-/** The line above the list: how many are shown, and whether the list was cut at `cap`. */
-export function resultCount(shown: number, cap: number): string {
-  if (shown >= cap) return `The first ${cap} shown. Search to narrow it down.`;
+/**
+ * The line above the list: how many are shown, and whether the list was cut at `cap`. A paged
+ * list (`cap` null) is never cut: its "More people" link follows the rows.
+ */
+export function resultCount(shown: number, cap: number | null): string {
+  if (cap !== null && shown >= cap) return `The first ${cap} shown. Search to narrow it down.`;
   if (shown === 0) return "No one shown.";
   return `${shown} ${shown === 1 ? "person" : "people"} shown.`;
+}
+
+/** The office list (GET /admin/students) is shown this many at a time, by name. */
+export const PEOPLE_PAGE = 50;
+
+/**
+ * One page from an answer asked for with `limit` = size + 1: the rows to show, and the id the
+ * next page starts after (null: nobody follows, so no "More people" link to an empty page).
+ */
+export function onePage<T extends { id: string }>(
+  answer: readonly T[],
+  size: number = PEOPLE_PAGE,
+): { rows: T[]; next: string | null } {
+  const rows = answer.slice(0, size);
+  const last = rows.at(-1);
+  return { rows, next: answer.length > size && last ? last.id : null };
 }
 
 /**

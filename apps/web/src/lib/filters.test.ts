@@ -118,6 +118,8 @@ test("a visit with any filter, search or page in its address is explicit", () =>
   assert.equal(isExplicit("register", params("export_error=range")), false);
   assert.equal(isExplicit("register", params("state=all")), true);
   assert.equal(isExplicit("scans", params("before=120")), true);
+  // A later page of People shows exactly the filters in its address.
+  assert.equal(isExplicit("people", params("after=7a1b2c3d-0000-4000-8000-0000000000bb")), true);
   assert.equal(isExplicit("escalations", params("state=open")), true);
 });
 

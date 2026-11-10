@@ -84,7 +84,7 @@ export const VIEWS: Readonly<Record<FilterView, ViewSpec>> = {
     fields: { hostel: uuid, account: oneOf("invited", "off") },
     // The role chips (admins only): an address value, never remembered, like the search.
     extras: { q: text(1), role: oneOf("student", "warden", "head_warden", "admin", "developer") },
-    explicit: [],
+    explicit: ["after"],
   },
   scans: {
     path: "/admin/scans",

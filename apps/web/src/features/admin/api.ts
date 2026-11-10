@@ -141,17 +141,27 @@ export const adminApi = {
    * People the office looks after, with their phone numbers: a warden's own hostels' students,
    * or (for an admin) anyone matching `q`. `account`: only those who haven't set up, or only
    * accounts turned off (for an admin, staff too). `hostel`: one hostel's people only. `role`:
-   * one role's people (admins only; the API ignores it for anyone else).
+   * one role's people (admins only; the API ignores it for anyone else). By name, `limit` at a
+   * time (300 without it); `after`: the last id of the page before.
    */
   students(
     token: string,
-    filters: { q?: string; account?: "invited" | "off"; hostel?: string; role?: Role },
+    filters: {
+      q?: string;
+      account?: "invited" | "off";
+      hostel?: string;
+      role?: Role;
+      after?: string;
+      limit?: number;
+    },
   ): Promise<OfficeStudent[]> {
     const query = new URLSearchParams();
     if (filters.hostel) query.set("hostel_id", filters.hostel);
     if (filters.q) query.set("q", filters.q);
     if (filters.account) query.set("account", filters.account);
     if (filters.role) query.set("role", filters.role);
+    if (filters.after) query.set("after", filters.after);
+    if (filters.limit) query.set("limit", String(filters.limit));
     const search = query.toString();
     return callBackend<OfficeStudent[]>(`/admin/students${search ? `?${search}` : ""}`, { token });
   },
