@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.21.0",
+    "date": "2026-11-10",
+    "kind": "feature",
+    "title": "A new tab bar and icon",
+    "summary": "Install build 4 for a glass tab bar with Scan in the middle, a new app icon and a bolder notification icon.",
+    "points": [
+      "The tab bar is now a floating glass bar, with Scan as a large button in its middle, where your thumb already is.",
+      "The app icon's window is now orange, and notifications show a bolder lantern that is easier to spot.",
+      "These come with build 4, a new install. The app offers the download when it's ready."
+    ]
+  },
+  {
     "version": "1.20.0",
     "date": "2026-11-10",
     "kind": "feature",

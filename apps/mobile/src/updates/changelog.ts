@@ -39,6 +39,8 @@ export const NATIVE_BUILDS: Readonly<Record<string, number>> = {
   "09a68a5f6ff29dabba07bfa02488c9206cda5818": 2,
   // Build 3 (1.8.0): Expo SDK 57 patch releases, same signing key as build 2.
   "3b9a63d6b753fdb9d3d3308930fcc962c8ca8b15": 3,
+  // Build 4 (1.21.0): glass tab bar (expo-blur), bold lantern notification icon, orange accent.
+  fa85eb700ea05170d641b7b6fe5c2c0b6c1efa65: 4,
 };
 
 /**
