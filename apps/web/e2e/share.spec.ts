@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 import {
   allowLocation,
@@ -28,6 +28,20 @@ async function joinAsGuest(guest: Page, code: string, name: string): Promise<voi
   await guest.getByLabel("Your name").fill(name);
   await guest.getByRole("button", { name: "Ask to follow along" }).click();
   await expect(guest).toHaveURL(/\/watch\/[0-9a-f-]{36}$/);
+}
+
+/** The backend's own word on the share the guest is watching, for a failure message. */
+async function shareState(context: BrowserContext, guest: Page): Promise<string> {
+  const id = new URL(guest.url()).pathname.split("/").pop();
+  const token = (await context.cookies()).find((c) => c.name === "outing_at")?.value;
+  const response = await context.request.get(`${BACKEND}/sessions/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) return `The backend answered ${response.status()} for the share.`;
+  const share = (await response.json()) as { status: string; ended_reason: string | null };
+  return share.status === "active"
+    ? "The share is still active: the tab-close beacon never ended it."
+    : `The share ended (${share.ended_reason}), but the guest's page never showed it.`;
 }
 
 test.describe("live sharing", () => {
@@ -77,7 +91,7 @@ test.describe("live sharing", () => {
     await guest.context().close();
   });
 
-  test("closing the share tab ends the share for everyone", async ({ page, browser }) => {
+  test("closing the share tab ends the share for everyone", async ({ page, browser, context }) => {
     await startSharing(page);
     const code = await newJoinCode(page);
     const guest = await guestPage(browser);
@@ -94,9 +108,14 @@ test.describe("live sharing", () => {
     page.on("dialog", (dialog) => void dialog.accept()); // the "Leave site?" confirmation
     await page.close({ runBeforeUnload: true });
 
-    await expect(guest.getByRole("heading", { name: `${SHARER} stopped sharing.` })).toBeVisible({
-      timeout: 10_000,
-    });
+    const stopped = guest.getByRole("heading", { name: `${SHARER} stopped sharing.` });
+    await expect(stopped)
+      .toBeVisible({ timeout: 10_000 })
+      .catch(async (error: unknown) => {
+        // Traces don't record beacons, so say which half failed: the share never ended (the
+        // beacon or the stop route), or it ended and the guest's stream didn't show it.
+        throw new Error(`${await shareState(context, guest)}\n${String(error)}`);
+      });
     await guest.context().close();
   });
 
