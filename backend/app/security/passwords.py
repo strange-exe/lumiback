@@ -36,7 +36,16 @@ COMMON = frozenset(
 _hasher = PasswordHasher()  # argon2-cffi defaults follow RFC 9106 (Argon2id)
 # Verifying against this when the user does not exist keeps login timing uniform,
 # so response time does not reveal whether an email is registered.
-_DUMMY_HASH = _hasher.hash("timing-equalizer-not-a-password")
+# Precomputed (it was `_hasher.hash(...)` at import: ~60 ms of CPU and 64 MiB on every cold start).
+# Verify time depends only on the parameters inside the hash string, so a stored hash with the
+# hasher's own parameters costs exactly what a fresh one would. It is the hash of a non-secret
+# phrase and never authenticates anyone (verify_password returns False whenever it is used).
+# tests/test_passwords.py fails if argon2-cffi's defaults ever move away from these parameters.
+_DUMMY_PASSWORD = "timing-equalizer-not-a-password"  # noqa: S105 (not a credential)
+_DUMMY_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4"
+    "$/Xb2I/N3FHUBWaxVRtuwWg$SoYr8oGqDPi7c3i3i1Osni0mfJEM2WYYStjA8veK75k"
+)
 
 
 def password_problem(password: str, *, email: str = "", name: str = "") -> str | None:
