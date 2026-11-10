@@ -11,8 +11,6 @@ from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -44,7 +42,14 @@ class StatusOut(BaseModel):
 
 @cache
 def migration_head() -> str | None:
-    """The newest revision in migrations/ (read once per process; deploys restart it)."""
+    """The newest revision in migrations/ (read once per process; deploys restart it).
+
+    Alembic is imported here, not at module level: it loads every dialect's DDL code (~0.3 s),
+    which every cold start paid although only this developer-only endpoint needs it.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
     heads = ScriptDirectory.from_config(Config(str(ALEMBIC_INI))).get_heads()
     return ",".join(sorted(heads)) or None
 
