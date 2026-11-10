@@ -634,6 +634,7 @@ export interface AdminUser {
   /** The hostel they live in (students), so the office can move them. */
   home_hostel_id?: string | null;
   home_hostel?: string | null;
+  phone?: string | null;
   /**
    * invited: added (CSV or one at a time), no password chosen yet; reset: an admin sent a
    * password link; off: the hostel office turned the account off.

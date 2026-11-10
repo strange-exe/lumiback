@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { accountFilter, editBody, personBody } from "@/features/admin/accounts";
+import { editBody, personBody } from "@/features/admin/accounts";
 import { readTimings, TIMING_FIELDS, type TimingName } from "@/features/admin/alerts";
 import {
   bulkIds,
@@ -14,6 +14,7 @@ import {
   type BulkOutcome,
 } from "@/features/admin/bulk";
 import { attempt, number, pathId, text, tokenOrSignIn } from "@/features/admin/form";
+import { afterCancelHref } from "@/features/admin/people-roles";
 import { readQuietHours } from "@/features/admin/quiet-hours";
 import { correctionBody } from "@/features/outings/corrections";
 import { ApiError, callBackend } from "@/lib/backend";
@@ -492,12 +493,16 @@ export async function cancelInvite(_: FormState, form: FormData): Promise<FormSt
   );
   if ("error" in result) return result.error;
   revalidatePath("/admin/people");
-  const back = new URLSearchParams({ cancelled: "1" });
-  const q = text(form, "q").slice(0, 100);
-  const account = accountFilter(text(form, "account"));
-  if (q) back.set("q", q);
-  if (account) back.set("account", account);
-  redirect(`/admin/people?${back.toString()}`);
+  // The same list and page it was cancelled from (once always the first page).
+  redirect(
+    afterCancelHref({
+      q: text(form, "q"),
+      account: text(form, "account"),
+      hostel: text(form, "hostel"),
+      role: text(form, "role"),
+      after: text(form, "after"),
+    }),
+  );
 }
 
 /** What adding one person hands back: who was added, for the message beside the button. */

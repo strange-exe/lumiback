@@ -111,13 +111,14 @@ def test_a_role_listing_pages_by_cursor(client, everyone, monkeypatch):
     assert client.get(USERS, params={**params, "after": unknown}, headers=admin).json() == []
 
 
-def test_a_cursor_without_a_role_is_refused_not_ignored(client, everyone):
-    """`after` pages a role listing; a search has no pages, so it would be silently dropped."""
+def test_a_cursor_on_a_search_pages_it_staff_first(client, everyone):
+    """`after` pages a search as well as a role listing (once refused: a search had no pages)."""
     admin = everyone["admin"]
-    first = client.get(USERS, params={"role": "warden"}, headers=admin).json()
-    r = client.get(USERS, params={"q": "warden", "after": first[0]["id"]}, headers=admin)
-    assert r.status_code == 422, r.text
-    assert r.json()["detail"] == "Choose a role to page through"
+    every = client.get(USERS, params={"q": "warden"}, headers=admin).json()
+    assert [p["name"] for p in every] == ["Head Warden", "Warden A", "Warden B"]
+    r = client.get(USERS, params={"q": "warden", "after": every[0]["id"]}, headers=admin)
+    assert r.status_code == 200, r.text
+    assert [p["name"] for p in r.json()] == ["Warden A", "Warden B"]
 
 
 @pytest.mark.parametrize("path", [USERS, STUDENTS])

@@ -630,21 +630,19 @@ async def search_users(
     q: Search = None,
     role: Roles = None,
     after: uuid.UUID | None = None,
+    limit: Annotated[int | None, Query(ge=1, le=svc.STUDENTS_MAX)] = None,
 ) -> list[AdminUserOut]:
-    """Anyone, by name, email or roll number (`q`, 20 at most), or everyone with one of the
-    roles in `role` (repeatable; with `q` too), 50 at a time by name: `after` is the last id of
-    the page before. Admins and developers only."""
+    """Anyone, by name, email or roll number (`q`; staff first), or everyone with one of the
+    roles in `role` (repeatable; with `q` too) by name. `limit` at a time (when not given, as
+    before paging: 20 for a search, 50 by role): `after` is the last id of the page before, with
+    the same `q` and `role`. Admins and developers only."""
     roles = role_filter(role)
     if q is None and not roles:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Type at least 2 letters or choose a role"
         )
-    if after is not None and not roles:  # a search has no pages: never drop it silently
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Choose a role to page through"
-        )
     await searching(limiter, me, "users")
-    return await svc.search_users(session, q, roles=roles, after=after)
+    return await svc.search_users(session, q, roles=roles, after=after, limit=limit)
 
 
 @router.get("/students")

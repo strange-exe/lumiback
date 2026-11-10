@@ -51,7 +51,7 @@ interface PageProps {
  * looks after (and a student looks after none).
  */
 interface Row {
-  person: AdminUser & { phone?: string | null };
+  person: AdminUser;
   full: boolean;
 }
 
@@ -74,16 +74,13 @@ function fromStudent(s: OfficeStudent): Row {
   };
 }
 
-/** The API's admin search answers at most this many: by role (ROLE_PAGE), by name alone. */
-const ROLE_LIMIT = 50;
-const SEARCH_LIMIT = 20;
-
 /**
  * Who's listed: everyone in the hostels the viewer looks after (every hostel for an admin, as
  * in the app), one hostel, a filter, or an admin's search or role chip, which also find staff.
- * The office list comes PEOPLE_PAGE at a time by name: `after` is the last id of the page
- * before, and `next` the id the following page starts after (null: none follows). `cap` is
- * null for that paged list; the admins' search is cut at its cap instead.
+ * Every list comes PEOPLE_PAGE at a time (the office list and a role chip by name, a search
+ * staff first): `after` is the last id of the page before, and `next` the id the following
+ * page starts after (null: none follows). One more than a page is asked for, to know whether a
+ * next page exists without linking to an empty one.
  */
 async function load(
   token: string,
@@ -93,32 +90,17 @@ async function load(
   hostel: string | undefined,
   role: ChipRole | undefined,
   after: string | undefined,
-): Promise<{ rows: Row[]; cap: number | null; paged: boolean; next: string | null }> {
+): Promise<{ rows: Row[]; next: string | null }> {
   const search = q.length >= 2 ? q : undefined;
+  const limit = PEOPLE_PAGE + 1;
   if (listSource({ isAdmin, search, role, account, hostel }) === "students") {
-    // One more than a page: whether a next page exists, without a link to an empty one.
-    const answer = await adminApi.students(token, {
-      q: search,
-      account,
-      hostel,
-      role,
-      after,
-      limit: PEOPLE_PAGE + 1,
-    });
-    const { rows, next } = onePage(answer);
-    return { rows: rows.map(fromStudent), cap: null, paged: true, next };
+    const filters = { q: search, account, hostel, role, after, limit };
+    const { rows, next } = onePage(await adminApi.students(token, filters));
+    return { rows: rows.map(fromStudent), next };
   }
-  // The search knows roles and a warden's hostels; the students list knows phone numbers.
-  const [users, students] = await Promise.all([
-    adminApi.users(token, { q: search, role }),
-    adminApi.students(token, { q: search, role }),
-  ]);
-  const phones = new Map(students.map((s) => [s.id, s.phone]));
-  const rows = users.map((u) => ({
-    person: phones.has(u.id) ? { ...u, phone: phones.get(u.id) } : u,
-    full: true,
-  }));
-  return { rows, cap: role ? ROLE_LIMIT : SEARCH_LIMIT, paged: false, next: null };
+  // The search knows roles, a warden's hostels and phone numbers.
+  const { rows, next } = onePage(await adminApi.users(token, { q: search, role, after, limit }));
+  return { rows: rows.map((person) => ({ person, full: true })), next };
 }
 
 export default async function PeoplePage({ searchParams }: PageProps): Promise<ReactNode> {
@@ -142,15 +124,22 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   const role = isAdmin ? (extrasFrom("people", params).role as ChipRole | undefined) : undefined;
   // A later page: the last id of the page before (anything but one id is the first page).
   const after = isUuid(params.after) ? params.after : undefined;
-  const { rows, cap, paged, next } = await load(token, isAdmin, q, account, hostel, role, after);
-  const back = { q, account: account ?? "" };
+  const { rows, next } = await load(token, isAdmin, q, account, hostel, role, after);
+  // The list as shown, for a form that reloads the page (cancelling an invite).
+  const back = {
+    q,
+    account: account ?? "",
+    hostel: hostel ?? "",
+    role: role ?? "",
+    after: after ?? "",
+  };
   // The list's own address with the same filters: the first page, and the next one.
   const first = pageHref(
     "people",
     { ...(hostel ? { hostel } : {}), ...(account ? { account } : {}) },
     { q, role },
   );
-  const later = paged && after !== undefined;
+  const later = after !== undefined;
   const more = next === null ? null : `${first}${first.includes("?") ? "&" : "?"}after=${next}`;
 
   // Who each row's checkbox may act on (the same tests as the row's own controls).
@@ -247,7 +236,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
 
       {later && (
         <p className="text-sm text-muted">
-          Showing more people, by name.{" "}
+          Showing more people.{" "}
           <Link
             href={first}
             prefetch={false}
@@ -266,7 +255,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         </p>
       ) : (
         <>
-          <p className="text-sm text-muted">{resultCount(rows.length, cap)}</p>
+          <p className="text-sm text-muted">{resultCount(rows.length)}</p>
           {anyTickable && <SelectAllShown />}
           <ul
             aria-labelledby="people-heading"

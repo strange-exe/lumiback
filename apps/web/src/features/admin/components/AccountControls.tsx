@@ -5,6 +5,7 @@ import { useActionState, useEffect, useId, useRef, type ReactNode } from "react"
 import { Field, FormError } from "@/components/ui/Field";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { cancelInvite, editAccount, setAccountOn } from "@/features/admin/actions";
+import type { BackTo } from "@/features/admin/people-roles";
 import type { AccountState, FormState, Role } from "@/lib/types";
 
 const EMPTY: FormState = { error: null };
@@ -19,12 +20,6 @@ export interface AccountPerson {
   account: AccountState;
   /** Undefined when the list didn't include it: a blank field then keeps the number. */
   phone?: string | null;
-}
-
-/** The list's search and filter, kept when a cancelled invite reloads the page. */
-export interface BackTo {
-  q: string;
-  account: string;
 }
 
 const TRIGGER =
@@ -255,8 +250,10 @@ function CancelInvite({ person, back }: { person: AccountPerson; back: BackTo })
     >
       <form action={action} className="flex flex-col gap-4">
         <input type="hidden" name="user_id" value={person.id} />
-        <input type="hidden" name="q" value={back.q} />
-        <input type="hidden" name="account" value={back.account} />
+        {/* The list it came from (search, filters, role chip, page): reloaded as it was. */}
+        {(Object.keys(back) as (keyof BackTo)[]).map((key) => (
+          <input key={key} type="hidden" name={key} value={back[key]} />
+        ))}
         <p className="text-ink">
           Their account is removed and the set-up link emailed to{" "}
           <span className="break-all font-bold">{person.email}</span> stops working. You can add

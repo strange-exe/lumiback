@@ -4,6 +4,9 @@
  * a role from them anyway. Pure, so `node --test` can load it.
  */
 
+import { pageHref } from "../../lib/filters.ts";
+import { isUuid } from "../../lib/ids.ts";
+
 export type ChipRole = "student" | "warden" | "head_warden" | "admin" | "developer";
 
 export const ROLE_CHIPS: readonly { value: ChipRole | undefined; label: string }[] = [
@@ -16,17 +19,43 @@ export const ROLE_CHIPS: readonly { value: ChipRole | undefined; label: string }
 ];
 
 /**
- * The line above the list: how many are shown, and whether the list was cut at `cap`. A paged
- * list (`cap` null) is never cut: its "More people" link follows the rows.
+ * The line above the list: how many are shown on this page. Every list pages, so none is ever
+ * cut: a "More people" link follows the rows when more remain.
  */
-export function resultCount(shown: number, cap: number | null): string {
-  if (cap !== null && shown >= cap) return `The first ${cap} shown. Search to narrow it down.`;
+export function resultCount(shown: number): string {
   if (shown === 0) return "No one shown.";
   return `${shown} ${shown === 1 ? "person" : "people"} shown.`;
 }
 
-/** The office list (GET /admin/students) is shown this many at a time, by name. */
+/** Every People list (the office list, a search, a role chip) is shown this many at a time. */
 export const PEOPLE_PAGE = 50;
+
+/** The list a People row's form came from, sent back with it (hidden fields). */
+export interface BackTo {
+  q: string;
+  account: string;
+  hostel: string;
+  role: string;
+  after: string;
+}
+
+/**
+ * Where cancelling an invite returns: the same list (its filters, search, role chip and page)
+ * with the "cancelled" note. Every value is checked and anything else dropped, so the address
+ * only ever leads to People. The page's own cursor is someone on an earlier page, never the
+ * row just removed, so the same page comes back.
+ */
+export function afterCancelHref(back: BackTo): string {
+  const list = pageHref(
+    "people",
+    { hostel: back.hostel, account: back.account },
+    { q: back.q.slice(0, 100), role: back.role },
+  );
+  const query = new URLSearchParams(list.split("?")[1] ?? "");
+  if (isUuid(back.after)) query.set("after", back.after);
+  query.set("cancelled", "1");
+  return `/admin/people?${query.toString()}`;
+}
 
 /**
  * One page from an answer asked for with `limit` = size + 1: the rows to show, and the id the

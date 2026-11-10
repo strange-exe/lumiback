@@ -931,6 +931,8 @@ class AdminUser(BaseModel):
     hostels: list[str] = []
     home_hostel_id: uuid.UUID | None = None  # the hostel they live in (students), to move them
     home_hostel: str | None = None
+    # Only ever answered to the office, which sees it on the students list anyway.
+    phone: str | None = None
     # invited: imported, hasn't chosen a password; reset: password reset, not chosen yet;
     # off: turned off by the hostel office
     account: Literal["active", "invited", "reset", "off"] = "active"

@@ -173,11 +173,11 @@ def test_the_people_search_shows_homes_and_each_wardens_hostels_by_name(
 # ---------- the office list: pages by name ----------
 
 
-def page_through(client, headers, params: dict, limit: int) -> list[list[dict]]:
+def page_through(client, headers, params: dict, limit: int, path=STUDENTS) -> list[list[dict]]:
     pages, after = [], None
     while True:
         query = {**params, "limit": limit, **({"after": after} if after else {})}
-        r = client.get(STUDENTS, params=query, headers=headers)
+        r = client.get(path, params=query, headers=headers)
         assert r.status_code == 200, r.text
         page = r.json()
         if not page:
@@ -284,3 +284,68 @@ def test_a_caller_that_doesnt_page_still_gets_the_first_300(client, db, admin, h
     assert [p["id"] for p in first] == [p["id"] for p in every[:50]]
     rest = client.get(STUDENTS, params={"after": every[-1]["id"]}, headers=admin).json()
     assert [p["name"] for p in rest] == ["Many 301"]
+
+
+# ---------- the admins' search: pages too, staff first ----------
+
+
+@pytest.fixture
+def staff_pagers(db, hostels, pagers):
+    """The eight Pager students, plus staff whose names sort AFTER theirs (so staff first is
+    the order's doing, not the alphabet's): an admin, a head warden and two wardens."""
+    add_people(db, "Pagerz", 1, 1, role="admin")
+    add_people(db, "Pagery", 1, 1, role="head_warden")
+    add_people(db, "Pagerx", 1, 2, role="warden")
+
+
+def test_a_people_search_pages_staff_first_with_the_same_order(client, admin, staff_pagers):
+    every = client.get(USERS, params={"q": "pager", "limit": 300}, headers=admin).json()
+    assert [p["name"] for p in every] == [
+        "Pagerz 001",
+        "Pagery 001",
+        "Pagerx 001",
+        "Pagerx 002",
+        "Pager 001",
+        "Pager 002",
+        "Pager 003",
+        "Pager 003",
+        "Pager 004",
+        "Pager 005",
+        "Pager 006",
+        "Pager 008",
+    ]
+    pages = page_through(client, admin, {"q": "pager"}, limit=3, path=USERS)
+    assert [len(page) for page in pages] == [3, 3, 3, 3]
+    assert [p["id"] for page in pages for p in page] == [p["id"] for p in every]
+
+
+def test_a_role_listing_takes_a_limit_too(client, admin, staff_pagers):
+    params = {"q": "pager", "role": ["warden", "student"]}
+    every = client.get(USERS, params={**params, "limit": 300}, headers=admin).json()
+    assert len(every) == 10
+    pages = page_through(client, admin, params, limit=4, path=USERS)
+    assert [p["id"] for page in pages for p in page] == [p["id"] for p in every]
+
+
+def test_a_people_search_without_a_limit_answers_20_as_before(client, db, admin):
+    add_people(db, "Many", 1, 21)
+    assert len(client.get(USERS, params={"q": "many"}, headers=admin).json()) == 20
+
+
+def test_an_unknown_search_cursor_is_an_empty_page(client, admin, staff_pagers):
+    nobody = str(uuid.uuid4())
+    r = client.get(USERS, params={"q": "pager", "after": nobody}, headers=admin)
+    assert r.status_code == 200 and r.json() == []
+
+
+@pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 301}, {"after": "not-an-id"}])
+def test_the_people_search_checks_its_page_parameters(client, admin, params):
+    assert client.get(USERS, params={"q": "pager", **params}, headers=admin).status_code == 422
+
+
+def test_a_people_search_shows_each_persons_phone(client, db, admin, staff_pagers):
+    """The website lists phones beside the search: each page carries its own."""
+    db.execute(text("UPDATE users SET phone = '+919800000001' WHERE email = 'pager1@geu.ac.in'"))
+    db.commit()
+    found = client.get(USERS, params={"q": "pager 001"}, headers=admin).json()
+    assert [(p["name"], p["phone"]) for p in found] == [("Pager 001", "+919800000001")]

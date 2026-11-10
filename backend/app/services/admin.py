@@ -552,11 +552,9 @@ ROLE_PAGE = 50  # people listed by role, per page
 # A search's order: staff first, most powers first (admins and developers, head wardens,
 # wardens), then students. The role column is text, so sorting it directly would put wardens
 # and students ahead of admins.
-STAFF_FIRST = case(
-    {UserRole.ADMIN: 0, UserRole.DEVELOPER: 0, UserRole.HEAD_WARDEN: 1, UserRole.WARDEN: 2},
-    value=User.role,
-    else_=3,
-)
+STAFF_RANK = {UserRole.ADMIN: 0, UserRole.DEVELOPER: 0, UserRole.HEAD_WARDEN: 1, UserRole.WARDEN: 2}
+STUDENT_RANK = 3
+STAFF_FIRST = case(STAFF_RANK, value=User.role, else_=STUDENT_RANK)
 # The office list (students): at most this many in one answer. Callers that don't page (apps
 # released before paging) get this many, as before; the website pages 50 at a time.
 STUDENTS_MAX = 300
@@ -568,24 +566,31 @@ async def search_users(
     *,
     roles: Sequence[UserRole] = (),
     after: uuid.UUID | None = None,
+    limit: int | None = None,
 ) -> list[AdminUser]:
-    """A search (`q`): the best 20, staff first. With `roles`: everyone with one of them
-    (matching `q` too, if given), ROLE_PAGE at a time by name; `after` is the last person of the
-    page before (an unknown id is an empty page, never the first one again)."""
+    """A search (`q`): staff first, then by name. With `roles`: everyone with one of them
+    (matching `q` too, if given), by name. `limit` at a time (when not given, as before paging:
+    20 for a search, ROLE_PAGE by role); `after` is the last person of the page before (an
+    unknown id is an empty page, never the first one again)."""
     # Unverified users are imported students who haven't set up yet: found too, so an admin
     # can send their link again.
     query = select(User)
     if q:
         query = query.where(_anyone_matching(q))
-    if not roles:
-        query = query.order_by(STAFF_FIRST, User.name, User.id).limit(20)
+    if roles:
+        query = query.where(User.role.in_(roles)).order_by(User.name, User.id)
+        key = tuple_(User.name, User.id)
     else:
-        query = query.where(User.role.in_(roles)).order_by(User.name, User.id).limit(ROLE_PAGE)
-        if after is not None:
-            mark = await session.get(User, after)
-            if mark is None:
-                return []
-            query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
+        query = query.order_by(STAFF_FIRST, User.name, User.id)
+        key = tuple_(STAFF_FIRST, User.name, User.id)
+    if after is not None:
+        mark = await session.get(User, after)
+        if mark is None:
+            return []
+        rank = STAFF_RANK.get(mark.role, STUDENT_RANK)
+        at = (mark.name, mark.id) if roles else (rank, mark.name, mark.id)
+        query = query.where(key > tuple_(*at))
+    query = query.limit(limit or (ROLE_PAGE if roles else 20))
     return await people(session, list(await session.scalars(query)))
 
 
@@ -627,6 +632,7 @@ async def people(session: AsyncSession, users: Sequence[User]) -> list[AdminUser
                 hostels=[n for _, n in hostels],
                 home_hostel_id=u.hostel_id,
                 home_hostel=homes.get(u.hostel_id) if u.hostel_id else None,
+                phone=u.phone,
                 account=account_state(u),
             )
         )

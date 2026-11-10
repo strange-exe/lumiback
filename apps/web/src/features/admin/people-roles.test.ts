@@ -1,7 +1,53 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { listSource, onePage, PEOPLE_PAGE, resultCount, ROLE_CHIPS } from "./people-roles.ts";
+import {
+  afterCancelHref,
+  listSource,
+  onePage,
+  PEOPLE_PAGE,
+  resultCount,
+  ROLE_CHIPS,
+} from "./people-roles.ts";
+
+const HOSTEL = "7a1b2c3d-0000-4000-8000-0000000000aa";
+const CURSOR = "7a1b2c3d-0000-4000-8000-0000000000bb";
+const NONE = { q: "", account: "", hostel: "", role: "", after: "" };
+
+test("cancelling an invite returns to the same list and page", () => {
+  const href = afterCancelHref({
+    q: "pagerow",
+    account: "invited",
+    hostel: HOSTEL,
+    role: "student",
+    after: CURSOR,
+  });
+  const url = new URL(href, "https://x.test");
+  assert.equal(url.pathname, "/admin/people");
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    hostel: HOSTEL,
+    account: "invited",
+    q: "pagerow",
+    role: "student",
+    after: CURSOR,
+    cancelled: "1",
+  });
+  // The first page of a bare list: just the note.
+  assert.equal(afterCancelHref(NONE), "/admin/people?cancelled=1");
+});
+
+test("a return address keeps only real filter values", () => {
+  const href = afterCancelHref({
+    q: "x".repeat(150),
+    account: "everyone",
+    hostel: "../../evil",
+    role: "superuser",
+    after: "https://evil.test/",
+  });
+  const url = new URL(href, "https://x.test");
+  assert.equal(url.origin + url.pathname, "https://x.test/admin/people");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { q: "x".repeat(100), cancelled: "1" });
+});
 
 test("the role chips, in order, with All first", () => {
   assert.deepEqual(
@@ -17,15 +63,11 @@ test("the role chips, in order, with All first", () => {
   );
 });
 
-test("how many are shown, and when the list is cut", () => {
-  assert.equal(resultCount(0, 50), "No one shown.");
-  assert.equal(resultCount(1, 50), "1 person shown.");
-  assert.equal(resultCount(12, 50), "12 people shown.");
-  assert.equal(resultCount(50, 50), "The first 50 shown. Search to narrow it down.");
-  assert.equal(resultCount(300, 300), "The first 300 shown. Search to narrow it down.");
-  // A paged list is never "cut": its next page is a link.
-  assert.equal(resultCount(50, null), "50 people shown.");
-  assert.equal(resultCount(0, null), "No one shown.");
+test("how many are shown on a page, never 'cut' (the next page is a link)", () => {
+  assert.equal(resultCount(0), "No one shown.");
+  assert.equal(resultCount(1), "1 person shown.");
+  assert.equal(resultCount(12), "12 people shown.");
+  assert.equal(resultCount(50), "50 people shown.");
 });
 
 test("one page of the office list, and where the next one starts", () => {

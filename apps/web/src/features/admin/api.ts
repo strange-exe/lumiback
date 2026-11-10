@@ -127,13 +127,19 @@ export const adminApi = {
   },
 
   /**
-   * Admins' people search: `q` (2+ letters) and/or one role. With a role, the first 50 by name;
-   * a search alone, the best 20.
+   * Admins' people search: `q` (2+ letters) and/or one role, with phone numbers. With a role,
+   * by name; a search alone, staff first. `limit` at a time (without it, 50 by role and 20 for
+   * a search); `after`: the last id of the page before.
    */
-  users(token: string, filters: { q?: string; role?: Role }): Promise<AdminUser[]> {
+  users(
+    token: string,
+    filters: { q?: string; role?: Role; after?: string; limit?: number },
+  ): Promise<AdminUser[]> {
     const query = new URLSearchParams();
     if (filters.q) query.set("q", filters.q);
     if (filters.role) query.set("role", filters.role);
+    if (filters.after) query.set("after", filters.after);
+    if (filters.limit) query.set("limit", String(filters.limit));
     return callBackend<AdminUser[]>(`/admin/users?${query.toString()}`, { token });
   },
 

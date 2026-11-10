@@ -5,14 +5,15 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { ADMIN_STATE } from "../playwright.config";
 import { API, designMatrix, watchForErrors } from "./helpers";
 
-// People shows the office list (GET /admin/students) 50 at a time, by name: a "More people"
-// link opens the next page with the same search and filters, and a later page links back to
-// the first (features/admin/people-roles.ts). This file adds 51 students who haven't set up
-// (one CSV import; the e2e server only logs emails) and removes them again.
+// People shows every list 50 at a time (the office list, GET /admin/students, and an admin's
+// search, GET /admin/users): a "More people" link opens the next page with the same search and
+// filters, and a later page links back to the first (features/admin/people-roles.ts). This
+// file adds 51 students who haven't set up (one CSV import; the e2e server only logs emails)
+// and removes them again.
 
 const PREFIX = "Pagerow";
 const COUNT = 51;
-// The admin's office list (not the admins' search, which answers 20): the Students chip.
+// The admin's office list: the Students chip.
 const LIST = `/admin/people?role=student&q=${PREFIX.toLowerCase()}`;
 const UNKNOWN = "7a1b2c3d-0000-4000-8000-0000000000cc";
 
@@ -95,6 +96,40 @@ test.describe("as an admin", () => {
 
       // A cursor that is no one's: an empty page, with the way back.
       await page.goto(`${LIST}&after=${UNKNOWN}`);
+      await expect(page.getByText("No more people to show.")).toBeVisible();
+      await expect(page.getByRole("link", { name: "Back to the first page" })).toBeVisible();
+
+      // A plain search (the admins' search, GET /admin/users) pages the same way: once cut at
+      // 20 with no way on.
+      await page.goto(`/admin/people?q=${PREFIX.toLowerCase()}`);
+      await expect(rows(page)).toHaveCount(50);
+      await expect(page.getByText("50 people shown.")).toBeVisible();
+      await page.getByRole("link", { name: "More people" }).click();
+      await expect(page).toHaveURL(/[?&]after=/);
+      await expect(rows(page)).toHaveCount(1);
+      await expect(rows(page).first()).toContainText(`${PREFIX} 051`);
+      await expect(page.getByRole("link", { name: "More people" })).toHaveCount(0);
+
+      // Cancelling an invite on a later page stays on that page with the same search (it once
+      // went back to the first page).
+      const last = `${PREFIX} 051`;
+      const page2 = new URL(page.url()).searchParams;
+      const cancel = page.getByRole("dialog", { name: `Cancel ${last}'s invite?` });
+      const button = rows(page)
+        .first()
+        .getByRole("button", { name: `Cancel invite: ${last}` });
+      // Retried: a click before the page hydrates opens nothing.
+      await expect(async () => {
+        if (!(await cancel.isVisible())) await button.click();
+        await expect(cancel).toBeVisible({ timeout: 1_000 });
+      }).toPass();
+      await cancel.getByRole("button", { name: "Cancel invite" }).click();
+      await expect(
+        page.getByText("Invite cancelled. The emailed set-up link no longer works."),
+      ).toBeVisible();
+      const after = new URL(page.url()).searchParams;
+      expect(after.get("after")).toBe(page2.get("after"));
+      expect(after.get("q")).toBe(PREFIX.toLowerCase());
       await expect(page.getByText("No more people to show.")).toBeVisible();
       await expect(page.getByRole("link", { name: "Back to the first page" })).toBeVisible();
       expect(errors).toEqual([]);
