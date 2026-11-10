@@ -345,6 +345,15 @@ for (const scheme of SCHEMES) {
 
 test("reduced motion: the LED board's colon, glow and scan stop", async ({ page }) => {
   await checkOut(page, "Library");
+  // The colon shows only an hour or more from the return time (it failed when the suite ran
+  // within an hour of curfew). Move this page's clock three hours further from it, back while
+  // time is left, on while late, and reload so the board starts on that clock.
+  const figure = page.getByRole("img", { name: / (left|late)$/ });
+  await expect(figure).toBeVisible();
+  const late = (await page.getByRole("img", { name: / late$/ }).count()) > 0;
+  await page.clock.setFixedTime(Date.now() + (late ? 3 : -3) * 3_600_000);
+  await page.reload();
+  await expect(figure).toHaveAccessibleName(/hour/);
   const colon = page.locator(".led-lit .led-colon").first();
   const fx = page.locator(".led-stage-fx").first();
   const names = async (): Promise<string[]> => [
