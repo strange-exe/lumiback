@@ -73,12 +73,8 @@ async def _reporter(request: Request, session: SessionDep, settings: SettingsDep
         claims = decode_access_token(token.strip(), settings.jwt_secret.get_secret_value())
     except InvalidToken:
         return None
-    user = await session.get(User, claims.user_id)
+    user = await refresh_tokens.signed_in_user(session, claims.user_id, claims.session_id)
     if user is None or not user.active or not user.email_verified:
-        return None
-    if claims.session_id is not None and not await refresh_tokens.is_live(
-        session, user.id, claims.session_id
-    ):
         return None
     return user
 

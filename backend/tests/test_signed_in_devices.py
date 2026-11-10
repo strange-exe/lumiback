@@ -6,7 +6,7 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.services import device_label, refresh_tokens
 from tests.helpers import PASSWORD, auth_header, make_admin, register, signup
@@ -85,6 +85,32 @@ def test_signing_out_a_lost_phone_stops_it_at_once(client, db, riya):
     assert [
         d["device"] for d in client.get("/auth/devices", headers=auth_header(laptop)).json()
     ] == ["Chrome on Windows"]
+
+
+def test_a_signed_in_request_reads_the_account_and_its_sign_in_in_one_query(client, db, riya):
+    """Every signed-in request pays for this check, so the account and whether its sign-in is
+    still on are read together (refresh_tokens.signed_in_user), and that one query still
+    refuses a sign-in that has ended."""
+    tokens = sign_in(client)
+    engine = client.app.state.sessionmaker.kw["bind"].sync_engine
+    statements: list[str] = []
+
+    def count(_conn, _cursor, statement, *_):
+        statements.append(statement)
+
+    def me() -> tuple[int, int]:
+        statements.clear()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            r = client.get("/auth/me", headers=auth_header(tokens))
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        return r.status_code, len(statements)
+
+    assert me() == (200, 1)
+    db.execute(text("UPDATE refresh_tokens SET expires_at = now() - interval '1 second'"))
+    db.commit()
+    assert me() == (401, 1)  # an ended sign-in stops at once, not when the token expires
 
 
 @pytest.mark.parametrize("how", ["one", "others"])

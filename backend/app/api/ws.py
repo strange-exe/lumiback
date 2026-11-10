@@ -224,13 +224,10 @@ async def _authenticate(websocket: WebSocket, message: dict) -> Connection | Non
         except InvalidToken:
             return None
         async with websocket.app.state.sessionmaker() as db:
-            user = await db.get(User, claims.user_id)
+            # None also when that device was signed out
+            user = await refresh_tokens.signed_in_user(db, claims.user_id, claims.session_id)
             if user is None or not user.active:
                 return None
-            if claims.session_id is not None and not await refresh_tokens.is_live(
-                db, user.id, claims.session_id
-            ):
-                return None  # that device was signed out
         return Connection(
             websocket, Principal(user_id=claims.user_id), claims.expires_at, claims.session_id
         )

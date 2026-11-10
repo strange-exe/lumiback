@@ -176,13 +176,10 @@ async def get_optional_user(
         )
     except InvalidToken:
         raise UNAUTHORIZED from None
-    user = await session.get(User, claims.user_id)
+    # None also when that device was signed out, or the password was reset
+    user = await refresh_tokens.signed_in_user(session, claims.user_id, claims.session_id)
     if user is None or not user.active:  # deleted or turned off after the token was issued
         raise UNAUTHORIZED  # the app refreshes, fails, and signs out to the sign-in page
-    if claims.session_id is not None and not await refresh_tokens.is_live(
-        session, user.id, claims.session_id
-    ):
-        raise UNAUTHORIZED  # that device was signed out, or the password was reset
     request.state.session_id = claims.session_id
     if not user.email_verified:  # login already refuses these; defense in depth
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Email not verified")

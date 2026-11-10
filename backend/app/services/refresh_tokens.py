@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import Select, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PushToken, RefreshToken, User
@@ -199,20 +199,34 @@ async def devices(session: AsyncSession, user_id: uuid.UUID) -> list[Device]:
     return out
 
 
+def _live(user_id: uuid.UUID, family_id: uuid.UUID) -> Select:
+    """A live (unrevoked, unexpired) token of that user's sign-in."""
+    return select(RefreshToken.id).where(
+        RefreshToken.user_id == user_id,
+        RefreshToken.family_id == family_id,
+        RefreshToken.revoked_at.is_(None),
+        RefreshToken.expires_at > datetime.now(UTC),
+    )
+
+
 async def is_live(session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUID) -> bool:
     """Whether that sign-in is still on: an access token from a device signed out (or from
     before a reset) stops working at once, not when it expires."""
-    found = await session.scalar(
-        select(RefreshToken.id)
-        .where(
-            RefreshToken.user_id == user_id,
-            RefreshToken.family_id == family_id,
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.now(UTC),
-        )
-        .limit(1)
-    )
-    return found is not None
+    return await session.scalar(_live(user_id, family_id).limit(1)) is not None
+
+
+async def signed_in_user(
+    session: AsyncSession, user_id: uuid.UUID, family_id: uuid.UUID | None
+) -> User | None:
+    """The account an access token names, or None when it's gone or the token's sign-in
+    (family_id; None for tokens from before 2026-11-07) is no longer live (is_live).
+
+    One query for both checks: every authenticated request runs this, so it costs one round
+    trip, not two. Callers still check `active` and `email_verified` themselves."""
+    query = select(User).where(User.id == user_id)
+    if family_id is not None:
+        query = query.where(_live(user_id, family_id).exists())
+    return await session.scalar(query)
 
 
 async def _drop_unowned_push_tokens(session: AsyncSession, user_id: uuid.UUID) -> None:
