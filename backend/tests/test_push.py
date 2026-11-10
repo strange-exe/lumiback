@@ -2,6 +2,7 @@
 
 import asyncio
 import dataclasses
+import functools
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -584,6 +585,44 @@ def test_notify_user_counts_the_phones_it_reached(client, push):
     push.dead.add(TOKEN)
     assert send(everyday) == 0  # gone: reached nobody
     assert send(PushMessage(title="Late", body="OK?", urgent=True)) == 1  # muted, but urgent
+
+
+@dataclasses.dataclass
+class PoolWatchingSender(MemoryPushSender):
+    """Records how many pool connections are checked out while each send waits on Expo."""
+
+    pool: object = None
+    held: list[int] = dataclasses.field(default_factory=list)
+
+    async def send(self, tokens, message):
+        self.held.append(self.pool.checkedout())
+        return await super().send(tokens, message)
+
+
+def test_no_database_connection_is_held_while_expo_answers(client, db):
+    """A large send takes minutes; holding a pool connection idle in a transaction for that
+    long starves the small production pool. Both senders read, let go, send, then write."""
+    from app.push import push_devices, push_everyone
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya, TOKEN)
+    register_token(client, riya, OTHER, draws_updates=True)
+    me = uuid.UUID(client.get("/auth/me", headers=riya).json()["id"])
+    maker = client.app.state.sessionmaker
+    sender = PoolWatchingSender(pool=maker.kw["bind"].pool, dead={OTHER})
+    message = PushMessage(title="Hi", body="There", channel="share-status")
+
+    everyone = client.portal.call(
+        functools.partial(push_everyone, maker, sender, message, drawn_by_app=True)
+    )
+    one = client.portal.call(push_devices, maker, sender, me, message)
+
+    assert sender.held == [0, 0, 0]  # two shapes for everyone, then one send for riya
+    assert (everyone.devices, everyone.accepted) == (2, 1)
+    assert (one.devices, one.accepted) == (1, 1)  # OTHER was deleted as dead
+    assert tokens(db) == [(TOKEN, "riya@example.com")]
+    tickets = db.execute(text("SELECT count(*) FROM push_tickets")).scalar_one()
+    assert tickets == 2  # written after the sends
 
 
 # ---------- sweep: overdue push + scan retention ----------

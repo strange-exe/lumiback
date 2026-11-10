@@ -328,19 +328,29 @@ async def push_devices(
         query = query.where(~PushToken.muted.contains([message.channel]))
     async with sessionmaker() as session:
         tokens = list(await session.scalars(query))
-        if not tokens:
-            return PushOutcome()
-        result = await sender.send(tokens, message)
+    if not tokens:
+        return PushOutcome()
+    result = await sender.send(tokens, message)  # no database connection held meanwhile
+    await _record(sessionmaker, result)
+    return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
+
+
+async def _record(sessionmaker: async_sessionmaker[AsyncSession], result: SendResult) -> None:
+    """After a send, in a short transaction of its own: dead tokens deleted, accepted tickets
+    kept for the receipt check (the sweep fetches their receipts later)."""
+    if not result.dead and not result.tickets:
+        return
+    async with sessionmaker() as session:
         if result.dead:
             await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
-        if result.tickets:  # the sweep fetches their receipts later
+        tickets = [{"id": i, "token": t} for i, t in result.tickets.items()]
+        for start in range(0, len(tickets), TICKET_INSERT_BATCH):
             await session.execute(
                 insert(PushTicket)
-                .values([{"id": i, "token": t} for i, t in result.tickets.items()])
+                .values(tickets[start : start + TICKET_INSERT_BATCH])
                 .on_conflict_do_nothing()
             )
         await session.commit()
-        return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
 
 
 async def notify_user(
@@ -394,31 +404,23 @@ async def push_everyone(
                     .where(*_everyone(message.channel, roles))
                 )
             ).all()
-            if not rows:
-                return PushOutcome()
-            drawn = {token for token, draws in rows if draws and drawn_by_app}
-            result = SendResult()
-            for tokens, shape in (
-                ([t for t, _ in rows if t not in drawn], message),
-                ([t for t, _ in rows if t in drawn], replace(message, data_only=True)),
-            ):
-                if not tokens:
-                    continue
-                sent = await sender.send(tokens, shape)
-                result.tickets.update(sent.tickets)
-                result.dead |= sent.dead
-                result.failed |= sent.failed
-            if result.dead:
-                await session.execute(delete(PushToken).where(PushToken.token.in_(result.dead)))
-            tickets = [{"id": i, "token": t} for i, t in result.tickets.items()]
-            for start in range(0, len(tickets), TICKET_INSERT_BATCH):
-                await session.execute(
-                    insert(PushTicket)
-                    .values(tickets[start : start + TICKET_INSERT_BATCH])
-                    .on_conflict_do_nothing()
-                )
-            await session.commit()
-            return PushOutcome(len(rows), len(result.accepted), len(result.failed))
+        if not rows:
+            return PushOutcome()
+        drawn = {token for token, draws in rows if draws and drawn_by_app}
+        result = SendResult()
+        # No database connection is held while Expo answers (a large send takes minutes).
+        for tokens, shape in (
+            ([t for t, _ in rows if t not in drawn], message),
+            ([t for t, _ in rows if t in drawn], replace(message, data_only=True)),
+        ):
+            if not tokens:
+                continue
+            sent = await sender.send(tokens, shape)
+            result.tickets.update(sent.tickets)
+            result.dead |= sent.dead
+            result.failed |= sent.failed
+        await _record(sessionmaker, result)
+        return PushOutcome(len(rows), len(result.accepted), len(result.failed))
     except Exception:
         logger.exception("push to every device failed")
         return PushOutcome()
