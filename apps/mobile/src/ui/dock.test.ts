@@ -225,6 +225,20 @@ describe("Dock (students)", () => {
       expect(flat(tab).height).toBeGreaterThanOrEqual(44);
     }
   });
+
+  it("keeps each tab's rounded chip a real view, so switching tabs can't square it", async () => {
+    // Android flattens an idle (transparent) chip away; when it lit up on a tab switch, the view
+    // rebuilt for it lost its corner radius and drew as a square block (seen on build 4).
+    for (const role of ["student", "warden"] as const) {
+      const root = (await render({ role })).root;
+      for (const tab of tabNodes(root)) {
+        const chip = tab.findAll((n) => n.type === View && flat(n).borderRadius !== undefined);
+        expect(chip).toHaveLength(1);
+        expect(chip[0]!.props.collapsable).toBe(false);
+      }
+      act(() => tree?.unmount());
+    }
+  });
 });
 
 describe("Dock (staff)", () => {

@@ -104,7 +104,10 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           justifyContent: "center",
         }}
       >
+        {/* Never flattened: Android drops an idle (transparent) chip, and the view it rebuilds
+            when the tab lights up loses its radius, drawing a square block. */}
         <View
+          collapsable={false}
           style={{
             height: ITEM,
             minWidth: TAB,
