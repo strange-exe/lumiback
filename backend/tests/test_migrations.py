@@ -1,9 +1,11 @@
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 
-from app.models import Base
+from app.models import Base, User
+from app.services.admin import _anyone_matching, name_or_roll
 from tests.conftest import alembic_config
 
 
@@ -136,6 +138,61 @@ def test_0033_copies_earlier_announcements_into_the_history(migrated_engine, tes
             conn.execute(text(f"DELETE FROM announcements WHERE actor_id IN ({mine})"))
             conn.execute(text(f"DELETE FROM admin_audit WHERE actor_id IN ({mine})"))
             conn.execute(text("DELETE FROM users WHERE email = 'dev.0033@example.com'"))
+
+
+SEARCH_INDEXES = {
+    "ix_users_name_trgm",
+    "ix_users_email_trgm",
+    "ix_users_roll_no_trgm",
+    "ix_users_hostel_name",
+    "ix_gate_scans_result_id",
+}
+
+
+def search_indexes(engine) -> set[str]:
+    with engine.connect() as conn:
+        return SEARCH_INDEXES & set(
+            conn.execute(
+                text(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND tablename IN ('users', 'gate_scans')"
+                )
+            ).scalars()
+        )
+
+
+def test_0035_adds_the_search_indexes_and_its_downgrade_removes_them(migrated_engine, test_db_url):
+    assert search_indexes(migrated_engine) == SEARCH_INDEXES
+    cfg = alembic_config(test_db_url)
+    command.downgrade(cfg, "0034")
+    try:
+        assert search_indexes(migrated_engine) == set()
+        with migrated_engine.connect() as conn:  # kept: it may predate 0035 or serve others
+            assert conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")).one()
+    finally:
+        command.upgrade(cfg, "head")
+    assert search_indexes(migrated_engine) == SEARCH_INDEXES
+
+
+@pytest.mark.parametrize(
+    ("matching", "indexes"),
+    [
+        (_anyone_matching, {"ix_users_name_trgm", "ix_users_email_trgm", "ix_users_roll_no_trgm"}),
+        (name_or_roll, {"ix_users_name_trgm", "ix_users_roll_no_trgm"}),
+    ],
+)
+def test_the_contains_searches_can_use_their_trigram_indexes(migrated_engine, matching, indexes):
+    """The indexes match the searches' expressions exactly: a search whose SQL drifts from them
+    (say ILIKE, or lower() on another column) reads every user again."""
+    query = select(User.id).where(matching("zzqx")).compile(dialect=migrated_engine.dialect)
+    with migrated_engine.connect() as conn:
+        # Only bitmap scans left: possible only through an index on the search's expressions.
+        conn.execute(text("SET LOCAL enable_seqscan = off"))
+        conn.execute(text("SET LOCAL enable_indexscan = off"))
+        plan = "\n".join(row[0] for row in conn.exec_driver_sql(f"EXPLAIN {query}", query.params))
+        conn.rollback()
+    assert "Seq Scan" not in plan, plan
+    assert indexes <= {name for name in SEARCH_INDEXES if name in plan}, plan
 
 
 def test_outing_rules_are_seeded_from_hostel_practice(migrated_engine, test_db_url):

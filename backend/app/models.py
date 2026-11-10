@@ -179,6 +179,17 @@ class User(Base):
         CheckConstraint(
             "emergency_email = lower(emergency_email)", name="emergency_email_lowercase"
         ),
+        # Students and Scans filtered by the student's hostel. (No index by name or role: see
+        # migration 0035 for why.)
+        Index("ix_users_hostel_name", "hostel_id", "name"),
+        # The office's "contains" searches (pg_trgm, migration 0035); the name and roll number
+        # ones are below the class (they index expressions).
+        Index(
+            "ix_users_email_trgm",
+            "email",
+            postgresql_using="gin",
+            postgresql_ops={"email": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -220,6 +231,22 @@ class User(Base):
     def is_admin(self) -> bool:
         """Admin powers: admins and developers."""
         return self.role in ADMIN_ROLES
+
+
+# The searches' own expressions (services/admin.py `_anyone_matching`, `name_or_roll`): an
+# index on anything else is never used for them.
+Index(
+    "ix_users_name_trgm",
+    func.lower(User.name).label("name_lower"),
+    postgresql_using="gin",
+    postgresql_ops={"name_lower": "gin_trgm_ops"},
+)
+Index(
+    "ix_users_roll_no_trgm",
+    func.lower(func.coalesce(User.roll_no, "")).label("roll_no_lower"),
+    postgresql_using="gin",
+    postgresql_ops={"roll_no_lower": "gin_trgm_ops"},
+)
 
 
 class Outing(Base):
@@ -714,6 +741,7 @@ class GateScan(Base):
         Index("ix_gate_scans_scanned", "scanned_at"),
         Index("ix_gate_scans_user_scanned", "user_id", "scanned_at"),
         Index("ix_gate_scans_gate_id", "gate_id"),  # used gates; SET NULL on removal
+        Index("ix_gate_scans_result_id", "result", "id"),  # Scans filtered by result
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
