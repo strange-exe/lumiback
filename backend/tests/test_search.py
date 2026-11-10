@@ -73,6 +73,23 @@ def test_admins_list_people_by_role_with_or_without_a_search(client, everyone):
     ]
 
 
+def test_a_search_lists_staff_first_most_powers_first(client, everyone):
+    """Admins and developers, head wardens, wardens, then students; by name within each. (The
+    role is stored as text: sorting it directly put wardens and students before admins.)"""
+    # Everyone's email is @geu.ac.in, so this finds every role.
+    r = client.get(USERS, params={"q": "geu.ac.in"}, headers=everyone["admin"])
+    assert r.status_code == 200, r.text
+    assert [p["name"] for p in r.json()] == [
+        "Dev Eloper",
+        "Office Admin",
+        "Head Warden",
+        "Warden A",
+        "Warden B",
+        "Anna Rawat",
+        "Bina Negi",
+    ]
+
+
 @pytest.mark.parametrize(
     "params",
     [{}, {"role": "nobody"}, {"role": "student", "q": "a"}, {"q": "x" * 101}],

@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import delete, func, or_, select, tuple_
+from sqlalchemy import case, delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -549,6 +549,14 @@ def _anyone_matching(q: str):  # noqa: ANN202 - a SQL expression
 
 
 ROLE_PAGE = 50  # people listed by role, per page
+# A search's order: staff first, most powers first (admins and developers, head wardens,
+# wardens), then students. The role column is text, so sorting it directly would put wardens
+# and students ahead of admins.
+STAFF_FIRST = case(
+    {UserRole.ADMIN: 0, UserRole.DEVELOPER: 0, UserRole.HEAD_WARDEN: 1, UserRole.WARDEN: 2},
+    value=User.role,
+    else_=3,
+)
 # The office list (students): at most this many in one answer. Callers that don't page (apps
 # released before paging) get this many, as before; the website pages 50 at a time.
 STUDENTS_MAX = 300
@@ -570,7 +578,7 @@ async def search_users(
     if q:
         query = query.where(_anyone_matching(q))
     if not roles:
-        query = query.order_by(User.role.desc(), User.name).limit(20)
+        query = query.order_by(STAFF_FIRST, User.name, User.id).limit(20)
     else:
         query = query.where(User.role.in_(roles)).order_by(User.name, User.id).limit(ROLE_PAGE)
         if after is not None:
