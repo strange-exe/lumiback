@@ -13,6 +13,8 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+# Written by Render's build (scripts/migrate_if_behind.py record)
+backend/.migration-head
 .mypy_cache/
 .ruff_cache/
 

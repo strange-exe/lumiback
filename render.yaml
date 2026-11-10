@@ -15,11 +15,20 @@ services:
     buildFilter:
       paths: ["backend/**"]
     # Render provides uv (because of uv.lock) and its own Python (PYTHON_VERSION below); it does
-    # not allow uv-managed Pythons. Installs exactly the locked runtime dependencies into .venv.
-    buildCommand: uv sync --frozen --no-dev
-    # Migrations run before the server starts; safe with a single instance.
+    # not allow uv-managed Pythons. Installs exactly the locked runtime dependencies into .venv,
+    # compiled to bytecode (--compile-bytecode, https://docs.astral.sh/uv/reference/environment/)
+    # along with app/, so a wake from sleep doesn't compile every source file again. Then records
+    # the code's migration head in .migration-head for the start command.
+    buildCommand: >-
+      uv sync --frozen --no-dev --compile-bytecode &&
+      .venv/bin/python -m compileall -q app &&
+      .venv/bin/python scripts/migrate_if_behind.py record
+    # Migrations run before the server starts; safe with a single instance. The free plan has no
+    # preDeployCommand, so this runs on every wake: the check (psycopg only) skips alembic when
+    # the database is already at the recorded head, and on any doubt or error alembic runs as
+    # before (scripts/migrate_if_behind.py).
     startCommand: >-
-      .venv/bin/alembic upgrade head &&
+      { .venv/bin/python scripts/migrate_if_behind.py check || .venv/bin/alembic upgrade head; } &&
       exec .venv/bin/uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
