@@ -7,8 +7,15 @@ declare module "react-test-renderer" {
     type: ElementType | string;
     props: Record<string, unknown>;
     children: (ReactTestInstance | string)[];
+    parent: ReactTestInstance | null;
     findAllByType(type: ElementType): ReactTestInstance[];
-    findAll(predicate: (node: ReactTestInstance) => boolean): ReactTestInstance[];
+    /** `deep: false` stops at the outermost match instead of also returning its descendants. */
+    findAll(
+      predicate: (node: ReactTestInstance) => boolean,
+      options?: { deep?: boolean },
+    ): ReactTestInstance[];
+    /** The one match; throws when there are none or several. */
+    find(predicate: (node: ReactTestInstance) => boolean): ReactTestInstance;
   }
 
   export interface ReactTestRenderer {

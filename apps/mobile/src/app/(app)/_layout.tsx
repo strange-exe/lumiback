@@ -8,10 +8,11 @@ import { useNotificationRoutes } from "@/notify/notify";
 import { Tour } from "@/tour/Tour";
 import { WhatsNew } from "@/updates/WhatsNew";
 import { Dock } from "@/ui/dock";
+import { SceneTarget } from "@/ui/glass";
 import { useColors } from "@/ui/theme";
 import { ViewAsFrame } from "@/ui/view-as-banner";
 
-/** Four destinations in a floating dock (with Scan in the middle), one stack per tab. */
+/** Four destinations in a floating glass dock (Scan raised in its middle), one stack per tab. */
 export default function AppLayout(): ReactNode {
   const { status } = useAuth();
   const { onboarded } = usePrefs();
@@ -27,6 +28,11 @@ export default function AppLayout(): ReactNode {
     <ViewAsFrame>
       <Tabs
         tabBar={(props) => <Dock {...props} />}
+        // Each tab's scene sits in the view the dock's glass blurs; the dock (the tab bar) is
+        // drawn beside the scenes, outside every target.
+        screenLayout={({ route, children }) => (
+          <SceneTarget routeKey={route.key}>{children}</SceneTarget>
+        )}
         screenOptions={{
           headerShown: false,
           sceneStyle: { backgroundColor: c.page },

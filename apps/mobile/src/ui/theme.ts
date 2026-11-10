@@ -51,6 +51,10 @@ const light = {
   heroDanger: "#ff5a4e",
   shadow: "0 1px 2px rgba(17, 17, 19, 0.05), 0 8px 24px rgba(17, 17, 19, 0.08)",
   dock: "#111113",
+  /** The dock's glass fill: the dock colour at 85%, laid over the blur (or alone where there is none). */
+  dockGlass: "#111113d9",
+  /** The glass edge: a 1 px light hairline. */
+  glassLine: "#ffffff1f",
   onDock: "#f2f2f3",
   dockMuted: "#9a9aa3",
   dockActive: "#2b2c31",
@@ -92,6 +96,8 @@ const dark: typeof light = {
   heroDanger: "#ff5a4e",
   shadow: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35)",
   dock: "#1b1c20",
+  dockGlass: "#1b1c20d9",
+  glassLine: "#ffffff1f",
   onDock: "#f2f2f3",
   dockMuted: "#9a9aa3",
   dockActive: "#303137",
@@ -124,16 +130,24 @@ export const space = (n: number): number => n * 4;
 /** Screen edge padding and the gap between sections. */
 export const layout = { gutter: 20, section: 28 } as const;
 
-/** The floating dock: its height, and how far it floats above the system navigation. */
-export const dock = { height: 64, lift: 10 } as const;
+/**
+ * The floating dock: its height, how far it floats above the system navigation, and the Scan
+ * button in its middle: the accent circle's size, the page-coloured ring around it, and how far
+ * the circle's top rises above the dock's top edge.
+ */
+export const dock = { height: 64, lift: 10, scan: 60, ring: 4, rise: 22 } as const;
 
 /**
- * Room a scrolling page keeps clear at the bottom so its end can scroll above the dock. Depends
- * on the system navigation: 3-button navigation is about twice as tall as the gesture bar, so a
- * fixed number hid the end of every page on those phones.
+ * Room a scrolling page keeps clear at the bottom so its end can scroll above the dock and the
+ * Scan button rising out of it. Depends on the system navigation: 3-button navigation is about
+ * twice as tall as the gesture bar, so a fixed number hid the end of every page on those phones.
  */
+export function dockClearance(bottomInset: number): number {
+  return bottomInset + dock.lift + dock.height + dock.rise + dock.ring + space(6);
+}
+
 export function useDockClearance(): number {
-  return useSafeAreaInsets().bottom + dock.lift + dock.height + space(6);
+  return dockClearance(useSafeAreaInsets().bottom);
 }
 
 export function useColors(): Colors {
