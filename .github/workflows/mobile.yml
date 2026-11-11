@@ -46,7 +46,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run format:check
-      - run: npx expo-doctor
+      # Pinned to the release npm tags for this SDK (expo-doctor@sdk-57): an unpinned npx takes
+      # whatever was published last (1.21.7 crashed on start, missing @expo/env). Bump with the SDK.
+      - run: npx --yes expo-doctor@1.20.5
       - run: npx expo export --platform android --output-dir /tmp/export
 
   audit:
