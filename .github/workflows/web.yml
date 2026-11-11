@@ -62,7 +62,9 @@ jobs:
 
   e2e:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    # Pinned: `playwright install --with-deps` runs apt, and on the Ubuntu 26.04 image that
+    # ubuntu-latest started handing out, apt could not resolve the Ubuntu mirrors (2026-11-11).
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
