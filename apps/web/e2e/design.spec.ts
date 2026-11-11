@@ -351,8 +351,13 @@ test("reduced motion: the LED board's colon, glow and scan stop", async ({ page 
   const figure = page.getByRole("img", { name: / (left|late)$/ });
   await expect(figure).toBeVisible();
   const late = (await page.getByRole("img", { name: / late$/ }).count()) > 0;
+  const before = (await figure.getAttribute("aria-label")) ?? "";
   await page.clock.setFixedTime(Date.now() + (late ? 3 : -3) * 3_600_000);
   await page.reload();
+  // The server renders the real time first; wait for the board on the page's clock. React
+  // redraws the digits then (9 h to 12 h moves the colon), and a style read in between met a
+  // detached colon ("none").
+  await expect(figure).not.toHaveAccessibleName(before);
   await expect(figure).toHaveAccessibleName(/hour/);
   const colon = page.locator(".led-lit .led-colon").first();
   const fx = page.locator(".led-stage-fx").first();
