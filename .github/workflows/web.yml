@@ -62,8 +62,8 @@ jobs:
 
   e2e:
     if: github.event_name != 'schedule'
-    # Pinned: `playwright install --with-deps` runs apt, and on the Ubuntu 26.04 image that
-    # ubuntu-latest started handing out, apt could not resolve the Ubuntu mirrors (2026-11-11).
+    # Pinned to an image that already ships Chrome's system libraries, so the browser install
+    # below needs no apt (on 2026-11-11 apt could not resolve the Ubuntu mirrors on 26.04 or 24.04).
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -106,7 +106,7 @@ jobs:
           uv sync --locked
           uv run alembic -x db=test upgrade head
       - run: npm ci --ignore-scripts
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium
       - run: npm run test:e2e
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
