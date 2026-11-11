@@ -199,7 +199,10 @@ async def stop_session(
     return await svc.sharer_view(session, share)
 
 
-LEAVES_PER_SESSION = Limit(max_hits=30, window_seconds=60)  # each one starts a timer
+LEAVES_PER_SESSION = Limit(max_hits=30, window_seconds=60)  # each one (re)starts its timer
+# Per student too, so many shares don't multiply one student's budget (a real tab sends one
+# leave per close, and one stay per cancelled "Leave site?").
+LEAVES_PER_SHARER = Limit(max_hits=60, window_seconds=60)
 
 
 @router.post("/{session_id}/leaving", status_code=status.HTTP_204_NO_CONTENT)
@@ -211,14 +214,16 @@ async def tab_leaving(
     on `pagehide` ends it at once when it arrives; this covers a tab torn down before that
     (services/leaving.py). Only a tab-live share is marked; anything else is left alone."""
     await enforce(limiter, "sessions:leaving", str(share.id), LEAVES_PER_SESSION)
+    await enforce(limiter, "sessions:leaving:sharer", str(share.sharer_id), LEAVES_PER_SHARER)
     if (marked := await leave_svc.mark(session, share.id)) is not None:
         timer.start(share.id, marked)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{session_id}/leaving", status_code=status.HTTP_204_NO_CONTENT)
-async def tab_stayed(share: OwnSession, session: SessionDep) -> Response:
+async def tab_stayed(share: OwnSession, session: SessionDep, limiter: LimiterDep) -> Response:
     """The tab is still open after saying it was leaving (the student cancelled)."""
+    await enforce(limiter, "sessions:stayed", str(share.sharer_id), LEAVES_PER_SHARER)
     await leave_svc.clear(session, share.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

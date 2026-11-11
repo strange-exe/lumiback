@@ -12,6 +12,11 @@ once: the student may cancel "Leave site?". So it only marks the share, and:
 
 Only tab-live shares are marked: closing the tab only pauses an outing's share, and app shares
 have no tab.
+
+Known limit: a tab that stays (the student cancelled "Leave site?") but is frozen or heavily
+throttled for the whole grace, e.g. a phone that locks right then, can't clear its mark in
+time, and its share ends as if the tab had closed. The student sees the share ended and can
+start a new one; a share is never kept running for a tab that might be gone.
 """
 
 import asyncio
@@ -52,9 +57,11 @@ async def mark(session: AsyncSession, share_id: uuid.UUID) -> datetime | None:
 
 
 async def clear(session: AsyncSession, share_id: uuid.UUID) -> None:
-    """The tab stayed: forget the mark."""
+    """The tab stayed: forget the mark (no write when there is none)."""
     await session.execute(
-        update(ShareSession).where(ShareSession.id == share_id).values(leaving_at=None)
+        update(ShareSession)
+        .where(ShareSession.id == share_id, ShareSession.leaving_at.is_not(None))
+        .values(leaving_at=None)
     )
     await session.commit()
 
@@ -101,24 +108,32 @@ async def end_if_still_left(
 
 
 class Timers:
-    """The leave timers this process is running. Kept so they aren't garbage-collected mid-wait
-    and can be cancelled on shutdown (the sweep then ends what they would have)."""
+    """The leave timers this process is running, at most one per share: a newer mark replaces
+    the older one, which could only find its mark gone. Kept so they aren't garbage-collected
+    mid-wait and can be cancelled on shutdown (the sweep then ends what they would have)."""
 
     def __init__(self) -> None:
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
 
-    def start(self, work: Coroutine[Any, Any, None]) -> None:
+    def start(self, share_id: uuid.UUID, work: Coroutine[Any, Any, None]) -> None:
+        if (older := self._tasks.get(share_id)) is not None:
+            older.cancel()
         task = asyncio.create_task(work)
-        self._tasks.add(task)
-        task.add_done_callback(self._done)
+        self._tasks[share_id] = task
+        task.add_done_callback(lambda done: self._done(share_id, done))
 
-    def _done(self, task: asyncio.Task[None]) -> None:
-        self._tasks.discard(task)
+    def __len__(self) -> int:
+        return len(self._tasks)
+
+    def _done(self, share_id: uuid.UUID, task: asyncio.Task[None]) -> None:
+        if self._tasks.get(share_id) is task:
+            del self._tasks[share_id]
         if not task.cancelled() and task.exception() is not None:
             # The sweep ends the share instead; this only says the fast path failed.
             logger.error("leave timer failed", exc_info=task.exception())
 
     async def cancel_all(self) -> None:
-        for task in list(self._tasks):
+        tasks = list(self._tasks.values())
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)

@@ -13,10 +13,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.api import sessions as sessions_api
 from app.email import MemoryMailer
 from app.jobs.expiry import sweep
 from app.main import create_app
 from app.realtime import AccessChanged
+from app.security.rate_limit import Limit
 from tests.helpers import signup
 
 FIX = {"lat": 30.3, "lng": 78.0, "accuracy_m": 5}
@@ -157,6 +159,40 @@ def test_staying_within_the_grace_keeps_the_share_running(quick, db):
 
     wait(quick, 1.0)
     assert tuple(db.execute(STATE, {"s": s["id"]}).one()) == ("active", None)
+
+
+def test_a_share_has_one_leave_timer_however_often_it_leaves(quick, db):
+    """Each leave replaces the share's timer, so repeated beacons don't pile timers up."""
+    _, riya = signup(quick, "riya@example.com", "Riya")
+    s = tab_live(quick, riya)
+    other = tab_live(quick, riya)
+    for _ in range(5):
+        assert quick.post(f"/sessions/{s['id']}/leaving", headers=riya).status_code == 204
+    assert quick.post(f"/sessions/{other['id']}/leaving", headers=riya).status_code == 204
+    assert len(quick.app.state.leave_timers) == 2
+    wait(quick, 1.0)
+    assert len(quick.app.state.leave_timers) == 0  # done timers are dropped
+    assert tuple(db.execute(STATE, {"s": s["id"]}).one()) == ("ended", "tab_closed")
+
+
+def test_leaving_is_limited_per_student_across_their_shares(client, db, monkeypatch):
+    monkeypatch.setattr(sessions_api, "LEAVES_PER_SHARER", Limit(max_hits=2, window_seconds=60))
+    _, riya = signup(client, "riya@example.com", "Riya")
+    shares = [tab_live(client, riya) for _ in range(3)]
+    for s in shares[:2]:
+        assert client.post(f"/sessions/{s['id']}/leaving", headers=riya).status_code == 204
+    assert client.post(f"/sessions/{shares[2]['id']}/leaving", headers=riya).status_code == 429
+    assert db.execute(LEAVING, {"s": shares[2]["id"]}).scalar_one() is None
+
+
+def test_staying_without_a_mark_writes_nothing(client, db):
+    _, riya = signup(client, "riya@example.com", "Riya")
+    s = tab_live(client, riya)
+    version = text("SELECT xmin::text FROM share_sessions WHERE id = :s")
+    before = db.execute(version, {"s": s["id"]}).scalar_one()
+    db.commit()
+    assert client.delete(f"/sessions/{s['id']}/leaving", headers=riya).status_code == 204
+    assert db.execute(version, {"s": s["id"]}).scalar_one() == before  # the row was not rewritten
 
 
 def test_only_the_latest_leaving_mark_counts(quick, db):

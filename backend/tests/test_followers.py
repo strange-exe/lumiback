@@ -203,6 +203,40 @@ def test_a_share_that_ends_on_its_own_while_out_tells_its_followers(
     assert [r.kind for r in rows(db)].count("follower_timed_out") == 2
 
 
+def test_a_closed_share_tab_is_not_told_as_timed_out(client, db, push, anna, friend):
+    """The sweep ending a share whose tab said it was leaving (a restart lost the API's timer)
+    tells followers what the timer would have: nothing, as when she taps Stop."""
+    friend_id = client.get("/auth/me", headers=friend).json()["id"]
+    s = share_with(client, anna, [friend_id])
+    go_out(client, anna)
+    db.execute(
+        text(
+            "UPDATE share_sessions SET source = 'tab_live', sharer_seen_at = now(), "
+            "created_at = now() - interval '2 hours', leaving_at = now() - interval '1 hour' "
+            "WHERE id = :id"
+        ),
+        {"id": s["id"]},
+    )
+    # Her other share (the fixture's) is over, so this tab's share is the only one he follows:
+    # a "timed out" notice would reach him if one were sent.
+    db.execute(
+        text(
+            "UPDATE share_sessions SET status = 'ended', ended_at = now() "
+            "WHERE id != :id AND status = 'active'"
+        ),
+        {"id": s["id"]},
+    )
+    db.commit()
+    push.outbox.clear()
+    result = run_sweep(client)
+    assert db.execute(
+        text("SELECT status, ended_reason FROM share_sessions WHERE id = :id"), {"id": s["id"]}
+    ).one() == ("ended", "tab_closed")
+    assert [str(i) for i in result.closed_tabs] == [s["id"]]
+    assert sent_to(push, FRIEND) == []
+    assert [r.kind for r in rows(db)].count("follower_timed_out") == 0
+
+
 def test_a_share_ending_on_its_own_is_no_news_to_someone_still_following(
     client, db, push, anna, friend
 ):

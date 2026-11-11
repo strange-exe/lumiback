@@ -177,6 +177,21 @@ async def sweep(
                 )
             ).scalars()
         )
+        # Tabs that said they were leaving and never stayed (a restart lost their timer): ended
+        # as the timer would have, a closed tab like Stop, so nobody is told it timed out.
+        left_tabs = list(
+            (
+                await session.execute(
+                    update(ShareSession)
+                    .where(
+                        ShareSession.status == SessionStatus.ACTIVE,
+                        leaving.left_before(now - leave_grace),
+                    )
+                    .values(status=SessionStatus.ENDED, ended_at=now, ended_reason="tab_closed")
+                    .returning(ShareSession.id)
+                )
+            ).scalars()
+        )
         last_seen = func.coalesce(ShareSession.sharer_seen_at, ShareSession.created_at)
         closed_tabs = list(
             (
@@ -192,7 +207,6 @@ async def sweep(
                             and_(
                                 ShareSession.source == ShareSource.APP, last_seen < now - APP_IDLE
                             ),
-                            leaving.left_before(now - leave_grace),
                         ),
                     )
                     .values(
@@ -207,7 +221,7 @@ async def sweep(
                 )
             ).scalars()
         )
-        if ended := expired + closed_tabs:
+        if ended := expired + closed_tabs + left_tabs:
             await session.execute(delete(Location).where(Location.session_id.in_(ended)))
             # An expired safe-return share: its contact gets nothing more, so forget them.
             await safe_return.forget_address(session, ended)
@@ -220,7 +234,7 @@ async def sweep(
                     Outing,
                     and_(Outing.student_id == ShareSession.sharer_id, Outing.returned_at.is_(None)),
                 )
-                .where(ShareSession.id.in_(ended))
+                .where(ShareSession.id.in_(expired + closed_tabs))
             )
             for share_id, sharer in out.all():
                 await followers.timed_out(session, sharer, share_id, now, web_url)
@@ -303,6 +317,7 @@ async def sweep(
         old_errors, digest = await _error_upkeep(session, now, digest_to, web_url)
         await session.commit()
 
+    closed_tabs += left_tabs  # one count of closed tabs, however they ended
     for session_id in expired + closed_tabs:  # after commit: subscribers see committed state
         await hub.publish(AccessChanged(session_id))
     if mailer is not None:

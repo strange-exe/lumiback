@@ -60,7 +60,8 @@ class LeaveTimer:
 
     def start(self, share_id: uuid.UUID, marked: datetime) -> None:
         self._timers.start(
-            leaving.end_if_still_left(self._sessionmaker, self._hub, share_id, marked, self.grace)
+            share_id,
+            leaving.end_if_still_left(self._sessionmaker, self._hub, share_id, marked, self.grace),
         )
 
 
