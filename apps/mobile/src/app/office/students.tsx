@@ -83,10 +83,11 @@ export default function Students(): ReactNode {
   );
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
   const people = data?.people;
+  // A new list (any filter, or View as switching the role) starts again from the first page.
   useEffect(() => {
     wanted.current = STUDENTS_PAGE;
     void refetch();
-  }, [hostelId, search, account, role, refetch]);
+  }, [load, refetch]);
   const showMore = (): void => {
     wanted.current = (people?.length ?? 0) + STUDENTS_PAGE;
     setLoadingMore(true);

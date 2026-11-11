@@ -102,7 +102,11 @@ export async function peopleUpTo<P extends { id: string }>(
     const got = await page(after, keep + 1);
     people.push(...got.slice(0, keep));
     if (got.length <= keep) return { people, more: false };
-    after = people[people.length - 1]!.id;
+    const last = people[people.length - 1]!.id as unknown;
+    // Paging on from no id would start the list again and show people twice.
+    if (typeof last !== "string" || last === "")
+      throw new Error("A person came back without an id");
+    after = last;
   }
   return { people, more: true };
 }

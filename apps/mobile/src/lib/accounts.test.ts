@@ -237,6 +237,19 @@ describe("the students list filter", () => {
       const short = jest.fn(async () => everyone.slice(0, 50));
       expect(await peopleUpTo(short, 50)).toEqual({ people: everyone.slice(0, 50), more: false });
     });
+
+    it("fails rather than start again when a row has no id to page on from", async () => {
+      // The last row kept, the one the next page would start after, has no id.
+      const noId = jest.fn(async () => [...everyone.slice(0, 49), { id: "" }, { id: "p51" }]);
+      await expect(peopleUpTo(noId, 50)).rejects.toThrow("without an id");
+      const missing = jest.fn(async () => [
+        ...everyone.slice(0, 49),
+        {} as { id: string },
+        { id: "p51" },
+      ]);
+      await expect(peopleUpTo(missing, 50)).rejects.toThrow("without an id");
+      expect(noId).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("says why the list is empty", () => {
