@@ -71,6 +71,11 @@ export function useShare(): ShareContextValue {
 const MIN_GAP_MS = 4_000; // backend allows 120/min; one fix every few seconds is plenty
 const HEARTBEAT_MS = 20_000; // a fresh fix even when standing still, so the share reads "live"
 const POLL_MS = 5_000; // join requests show up within a few seconds
+// After "Leave site?": a page still running this long after beforeunload stayed. Longer than a
+// closing page lives (the browser tears it down within about half a second), far shorter than
+// the backend's grace (30 s).
+const STAY_CHECK_MS = 1_000;
+const STAY_RETRY_MS = 5_000;
 const WATCH: PositionOptions = { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 };
 const HEARTBEAT: PositionOptions = {
   enableHighAccuracy: true,
@@ -123,8 +128,9 @@ function firstPosition(): Promise<GeolocationPosition> {
  * until the student taps "Share location from this browser" there. Until then nothing here
  * calls the Geolocation API.
  *
- * Ending: the Stop button; closing the tab (a beacon on `pagehide`); or, if neither arrives,
- * the backend ends the share once this tab stops checking in. Nothing here can extend a share.
+ * Ending: the Stop button; closing the tab (a "leaving" beacon on `beforeunload`, ended a short
+ * grace later unless the tab stays, and a stop beacon on `pagehide`); or, if none arrives, the
+ * backend ends the share once this tab stops checking in. Nothing here can extend a share.
  */
 export function ShareProvider({
   initial,
@@ -296,7 +302,28 @@ export function ShareProvider({
   const tabOwned = session?.source !== "outing";
   useEffect(() => {
     if (!sessionId || !tabOwned || !sendingHere) return;
-    const warn = (event: BeforeUnloadEvent): void => event.preventDefault();
+    // A slow device can be torn down before the pagehide stop below runs, so the tab first says
+    // it is leaving from beforeunload, which the browser waits for. The backend ends the share a
+    // short grace later unless this tab says it stayed (the student cancelled "Leave site?").
+    const leaving = `/api/share/${sessionId}/leaving`;
+    let stayTimer: number | undefined;
+    const stay = (): void => {
+      const retry = (): void => {
+        stayTimer = window.setTimeout(stay, STAY_RETRY_MS);
+      };
+      void fetch(leaving, { method: "DELETE" })
+        .then((response) => {
+          if (response.status >= 500) retry(); // 4xx: the share ended or we're signed out
+        })
+        .catch(retry);
+    };
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      navigator.sendBeacon(leaving);
+      // Runs only if this page is still here a moment later: the student stayed.
+      window.clearTimeout(stayTimer);
+      stayTimer = window.setTimeout(stay, STAY_CHECK_MS);
+    };
     const onHide = (event: PageTransitionEvent): void => {
       if (event.persisted) return; // kept in the back/forward cache; the tab is still open
       navigator.sendBeacon(`/api/share/${sessionId}/stop`);
@@ -304,6 +331,7 @@ export function ShareProvider({
     window.addEventListener("beforeunload", warn);
     window.addEventListener("pagehide", onHide);
     return () => {
+      window.clearTimeout(stayTimer);
       window.removeEventListener("beforeunload", warn);
       window.removeEventListener("pagehide", onHide);
     };

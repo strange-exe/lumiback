@@ -4,6 +4,7 @@ import hmac
 import ipaddress
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, Header, HTTPException, Request, status
@@ -21,7 +22,7 @@ from app.security.breached import BreachChecker
 from app.security.codes import hash_guest_token
 from app.security.rate_limit import Limit, RateLimited, RateLimiter
 from app.security.tokens import InvalidToken, decode_access_token
-from app.services import outbox, refresh_tokens
+from app.services import leaving, outbox, refresh_tokens
 from app.services.authz import Principal
 from app.services.staff import Staff, staff_of
 
@@ -46,6 +47,21 @@ def get_breach_checker(request: Request) -> BreachChecker:
 
 def get_hub(request: Request) -> Hub:
     return request.app.state.hub
+
+
+class LeaveTimer:
+    """Ends a share a grace after its tab said it was leaving (services/leaving.py)."""
+
+    def __init__(self, request: Request) -> None:
+        self._sessionmaker = request.app.state.sessionmaker
+        self._hub = request.app.state.hub
+        self._timers: leaving.Timers = request.app.state.leave_timers
+        self.grace = timedelta(seconds=request.app.state.settings.tab_leave_grace_seconds)
+
+    def start(self, share_id: uuid.UUID, marked: datetime) -> None:
+        self._timers.start(
+            leaving.end_if_still_left(self._sessionmaker, self._hub, share_id, marked, self.grace)
+        )
 
 
 class Pusher:
@@ -97,6 +113,7 @@ class Outbox:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 LimiterDep = Annotated[RateLimiter, Depends(get_limiter)]
 HubDep = Annotated[Hub, Depends(get_hub)]
+LeaveTimerDep = Annotated[LeaveTimer, Depends()]
 MailerDep = Annotated[Mailer, Depends(get_mailer)]
 BreachesDep = Annotated[BreachChecker, Depends(get_breach_checker)]
 PushDep = Annotated[Pusher, Depends(Pusher)]

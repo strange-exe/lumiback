@@ -10,6 +10,7 @@ import time
 import tomllib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -43,6 +44,7 @@ from app.push import make_push_sender
 from app.realtime import Hub
 from app.security.breached import make_breach_checker
 from app.security.rate_limit import RateLimiter
+from app.services import leaving
 
 HEALTH_CACHE_SECONDS = 5.0
 HEALTH_DB_TIMEOUT_SECONDS = 3.0  # the longest /health waits for the database's answer
@@ -106,6 +108,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
                     pepper=settings.code_pepper.get_secret_value(),
                     digest_to=settings.error_digest_email,
                     first_delay=expiry.FIRST_SWEEP_DELAY_SECONDS,
+                    leave_grace=timedelta(seconds=settings.tab_leave_grace_seconds),
                 )
             )
             if start_jobs
@@ -115,6 +118,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
         try:
             yield
         finally:
+            await app.state.leave_timers.cancel_all()
             if sweeper is not None:
                 sweeper.cancel()
                 with suppress(asyncio.CancelledError):
@@ -133,6 +137,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     )
     app.state.settings = settings
     app.state.hub = Hub()
+    app.state.leave_timers = leaving.Timers()  # closing share tabs (services/leaving.py)
     app.state.mailer = make_mailer(settings)
     set_reply_to(settings.email_reply_to)  # emails invite replies only when they can arrive
     set_logo(settings.web_url)  # the website serves the icon the emails show

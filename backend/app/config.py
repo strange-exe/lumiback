@@ -63,6 +63,10 @@ class Settings(BaseSettings):
         default=None, pattern=r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$"
     )
 
+    # How long a share tab that said it was closing has to say it stayed (the student cancelled
+    # "Leave site?") before its share ends (services/leaving.py). E2E runs set a few seconds.
+    tab_leave_grace_seconds: float = Field(default=30.0, gt=0, le=300)
+
     # Shared with the web server, which sends the visitor's IP in X-Client-IP alongside this
     # secret. Without it, a header any caller can set would decide who gets rate-limited.
     internal_api_secret: SecretStr | None = None

@@ -323,6 +323,8 @@ def main() -> None:
     # hour, with the stored access cookie kept for the whole context.
     tokens.ACCESS_TTL = auth_api.ACCESS_TTL = E2E_ACCESS_TTL
     os.environ["BREACH_CHECK"] = "off"  # no calls to Have I Been Pwned from test runs
+    # A closing share tab's grace (production: 30 s), short enough for e2e/share.spec.ts to wait.
+    os.environ["TAB_LEAVE_GRACE_SECONDS"] = "3"
     loop = "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
     uvicorn.run("app.main:create_app", factory=True, host="127.0.0.1", port=args.port, loop=loop)
 

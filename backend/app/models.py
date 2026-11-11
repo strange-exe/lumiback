@@ -1052,6 +1052,9 @@ class ShareSession(Base):
     ended_at: Mapped[datetime | None]
     # Last check-in from the sharer's device (server time); tab-live ends when it goes quiet.
     sharer_seen_at: Mapped[datetime | None]
+    # When the sharer's tab said it was closing (server time); cleared if it stayed. A tab-live
+    # share ends a short grace after this (services/leaving.py).
+    leaving_at: Mapped[datetime | None]
 
 
 class ShareViewer(Base):

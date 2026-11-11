@@ -14,6 +14,7 @@ import {
 const SIGNED_OUT = { cookies: [], origins: [] };
 const SHARER = "Riya Sharma"; // the seeded e2e student
 const BACKEND = "http://127.0.0.1:8100"; // the e2e API started by playwright.config.ts
+const LEAVE_GRACE_S = 3; // TAB_LEAVE_GRACE_SECONDS in backend/scripts/e2e_server.py
 
 /** A friend with no account, in their own browser. */
 async function guestPage(browser: Browser): Promise<Page> {
@@ -28,6 +29,26 @@ async function joinAsGuest(guest: Page, code: string, name: string): Promise<voi
   await guest.getByLabel("Your name").fill(name);
   await guest.getByRole("button", { name: "Ask to follow along" }).click();
   await expect(guest).toHaveURL(/\/watch\/[0-9a-f-]{36}$/);
+}
+
+/**
+ * A running share that a guest follows live, ready for its tab to close. Also compiles the
+ * tab-close routes first: the dev server compiles a route on its first request, and a beacon
+ * waiting on that compile measures the compile, not the beacon (and is reset when the test
+ * closes its browser). Refused requests: no share ends.
+ */
+async function followedLive(page: Page, browser: Browser): Promise<Page> {
+  await startSharing(page);
+  const code = await newJoinCode(page);
+  const guest = await guestPage(browser);
+  await joinAsGuest(guest, code, "Arjun");
+  await page.getByRole("button", { name: "Approve Arjun (guest)" }).click({ timeout: 10_000 });
+  await expect(guest.getByText(/^Live · updated/)).toBeVisible();
+  for (const route of ["stop", "leaving"]) {
+    const warm = await page.request.post(`/api/share/${crypto.randomUUID()}/${route}`);
+    expect(warm.status()).toBeLessThan(500);
+  }
+  return guest;
 }
 
 /** The backend's own word on the share the guest is watching, for a failure message. */
@@ -92,18 +113,7 @@ test.describe("live sharing", () => {
   });
 
   test("closing the share tab ends the share for everyone", async ({ page, browser, context }) => {
-    await startSharing(page);
-    const code = await newJoinCode(page);
-    const guest = await guestPage(browser);
-    await joinAsGuest(guest, code, "Arjun");
-    await page.getByRole("button", { name: "Approve Arjun (guest)" }).click({ timeout: 10_000 });
-    await expect(guest.getByText(/^Live · updated/)).toBeVisible();
-
-    // The dev server compiles a route on its first request, and only this test calls the stop
-    // route: compile it now (a refused request: no share ends), so the wait below measures the
-    // beacon, not a cold compile on a slow CI runner.
-    const warm = await page.request.post(`/api/share/${crypto.randomUUID()}/stop`);
-    expect(warm.status()).toBeLessThan(500);
+    const guest = await followedLive(page, browser);
 
     page.on("dialog", (dialog) => void dialog.accept()); // the "Leave site?" confirmation
     await page.close({ runBeforeUnload: true });
@@ -116,6 +126,54 @@ test.describe("live sharing", () => {
         // beacon or the stop route), or it ended and the guest's stream didn't show it.
         throw new Error(`${await shareState(context, guest)}\n${String(error)}`);
       });
+    await guest.context().close();
+  });
+
+  // A slow device can be torn down before the pagehide stop runs (CI's runner, a cheap phone;
+  // reproduced with a 20x CPU slowdown). The "leaving" mark sent from beforeunload still ends
+  // the share, a grace later (LEAVE_GRACE_S).
+  test("a share still ends when the closing tab's stop beacon is lost", async ({
+    page,
+    browser,
+    context,
+  }) => {
+    await page.addInitScript(() => {
+      const send = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = (url, data) =>
+        String(url).endsWith("/stop") ? true : send(url, data); // "sent", never delivered
+    });
+    const guest = await followedLive(page, browser);
+
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.close({ runBeforeUnload: true });
+
+    const stopped = guest.getByRole("heading", { name: `${SHARER} stopped sharing.` });
+    await expect(stopped)
+      .toBeVisible({ timeout: (LEAVE_GRACE_S + 10) * 1000 })
+      .catch(async (error: unknown) => {
+        throw new Error(`${await shareState(context, guest)}\n${String(error)}`);
+      });
+    await guest.context().close();
+  });
+
+  test("cancelling Leave site? keeps the share running", async ({ page, browser, context }) => {
+    const guest = await followedLive(page, browser);
+
+    const stays: number[] = [];
+    page.on("response", (r) => {
+      if (r.url().endsWith("/leaving") && r.request().method() === "DELETE") stays.push(r.status());
+    });
+    page.once("dialog", (dialog) => void dialog.dismiss());
+    await page.close({ runBeforeUnload: true });
+
+    // Past the grace that would have ended it: the lost-beacon test above shows it would.
+    await page.waitForTimeout((LEAVE_GRACE_S + 2) * 1000);
+    expect(await shareState(context, guest)).toBe(
+      "The share is still active: the tab-close beacon never ended it.",
+    );
+    expect(stays).toEqual([204]);
+    await expect(guest.getByText(/^Live · updated/)).toBeVisible();
+    await stopSharing(page);
     await guest.context().close();
   });
 

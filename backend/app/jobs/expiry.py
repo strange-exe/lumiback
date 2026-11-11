@@ -45,6 +45,7 @@ from app.services import (
     error_reports,
     escalations,
     followers,
+    leaving,
     outbox,
     password_reset,
     safe_return,
@@ -66,6 +67,9 @@ KEEP_DEAD_REFRESH_TOKENS = timedelta(days=7)
 # The page also stops the share when the tab closes; this is the fallback when that never arrives.
 # Generous enough to ride out a background tab's throttled timers.
 TAB_IDLE = timedelta(minutes=5)
+# A tab that said it was closing and never said it stayed (services/leaving.py): the API ends
+# its share on a timer; this is for a timer lost to a restart. Settings.tab_leave_grace_seconds.
+TAB_LEAVE_GRACE = timedelta(seconds=30)
 # App shares report from a background service; if it stops (app killed, phone off) for this long,
 # the share ends. Longer than tabs: Android may batch updates while the phone sleeps.
 APP_IDLE = timedelta(minutes=15)
@@ -159,6 +163,7 @@ async def sweep(
     pepper: str | None = None,  # the code pepper: safe-return watch links (none without it)
     *,
     digest_to: str | None = None,  # ERROR_DIGEST_EMAIL: the daily error digest (none without)
+    leave_grace: timedelta = TAB_LEAVE_GRACE,
 ) -> SweepResult:
     now = datetime.now(UTC)
     async with sessionmaker() as session:
@@ -187,6 +192,7 @@ async def sweep(
                             and_(
                                 ShareSession.source == ShareSource.APP, last_seen < now - APP_IDLE
                             ),
+                            leaving.left_before(now - leave_grace),
                         ),
                     )
                     .values(
@@ -352,13 +358,21 @@ async def run_forever(
     pepper: str | None = None,
     digest_to: str | None = None,
     first_delay: float = 0.0,
+    leave_grace: timedelta = TAB_LEAVE_GRACE,
 ) -> None:
     if first_delay > 0:
         await asyncio.sleep(first_delay)
     while True:
         try:
             result = await sweep(
-                sessionmaker, hub, push, mailer, web_url, pepper, digest_to=digest_to
+                sessionmaker,
+                hub,
+                push,
+                mailer,
+                web_url,
+                pepper,
+                digest_to=digest_to,
+                leave_grace=leave_grace,
             )
             if health is not None:
                 health.mark_ok()
