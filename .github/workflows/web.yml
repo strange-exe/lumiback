@@ -91,9 +91,13 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - name: Generate throwaway API secrets for this run
+        # Masked before they reach $GITHUB_ENV, or every later step's env block prints them.
         run: |
-          echo "JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> "$GITHUB_ENV"
-          echo "CODE_PEPPER=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> "$GITHUB_ENV"
+          for name in JWT_SECRET CODE_PEPPER; do
+            value="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
       - name: Prepare the API and test database
         working-directory: backend
         run: |

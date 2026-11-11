@@ -44,6 +44,9 @@ export default defineConfig({
       url: "http://127.0.0.1:8100/health",
       reuseExistingServer: false,
       timeout: 120_000,
+      // uvicorn's access log goes to stdout, which Playwright drops by default. On CI it is the
+      // only record of which API calls (a tab-close stop, say) reached the backend.
+      stdout: process.env.CI ? "pipe" : "ignore",
     },
     {
       command: "npm run dev -- --port 3000",
