@@ -11,7 +11,7 @@ import {
   signInRefusal,
   turnCopy,
 } from "@/lib/accounts";
-import { peopleUpTo, studentsQuery } from "@/lib/office";
+import { listFor, peopleUpTo, studentsQuery } from "@/lib/office";
 import type { AccountState, Role } from "@/lib/types";
 
 const person = (role: Role = "student", account: AccountState = "active") => ({
@@ -250,6 +250,13 @@ describe("the students list filter", () => {
       await expect(peopleUpTo(missing, 50)).rejects.toThrow("without an id");
       expect(noId).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows a loaded list only under the filters it was loaded for", () => {
+    const loaded = { key: '["all","",null]', people: [{ id: "p1" }], more: false };
+    expect(listFor(loaded, '["all","",null]')).toBe(loaded);
+    expect(listFor(loaded, '["h2","",null]')).toBeUndefined(); // a new filter: nothing yet
+    expect(listFor(undefined, '["all","",null]')).toBeUndefined();
   });
 
   it("says why the list is empty", () => {

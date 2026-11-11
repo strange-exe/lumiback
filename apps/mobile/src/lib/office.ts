@@ -111,6 +111,14 @@ export async function peopleUpTo<P extends { id: string }>(
   return { people, more: true };
 }
 
+/** A loaded list, only if it is the one now asked for (`key`); otherwise none yet. */
+export function listFor<L extends { key: string }>(
+  loaded: L | undefined,
+  key: string,
+): L | undefined {
+  return loaded?.key === key ? loaded : undefined;
+}
+
 /** The search a list applies as its box is typed in (`applied` is the one in use): none once
  * the box is cleared, so no search stays applied that no one can see; otherwise the applied
  * one stays until the keyboard's search key. */

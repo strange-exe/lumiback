@@ -15,6 +15,7 @@ import {
   accountLabel,
   everyHostel,
   isAdmin,
+  listFor,
   passwordLinkCopy,
   peopleUpTo,
   ROLE_CHIPS,
@@ -65,6 +66,9 @@ export default function Students(): ReactNode {
   // stays where it was; a new filter or a pull to refresh starts again from the first page.
   const wanted = useRef(STUDENTS_PAGE);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Which list is asked for: rows from another one (before a filter or View as switch) never
+  // show under this one's labels while it loads.
+  const listKey = `${hostelId}|${account}|${admin}|${role}|${search}`;
   const load = useCallback(
     () =>
       peopleUpTo(
@@ -78,10 +82,11 @@ export default function Students(): ReactNode {
             limit,
           }),
         wanted.current,
-      ),
+      ).then((list) => ({ key: `${hostelId}|${account}|${admin}|${role}|${search}`, ...list })),
     [hostelId, search, account, admin, role],
   );
-  const { data, error, loading, refreshing, reload, refetch } = useData(load);
+  const { data: answer, error, refreshing, reload, refetch } = useData(load);
+  const data = listFor(answer, listKey);
   const people = data?.people;
   // A new list (any filter, or View as switching the role) starts again from the first page.
   useEffect(() => {
@@ -206,7 +211,7 @@ export default function Students(): ReactNode {
         <T tone="muted" accessibilityRole="alert">
           {error} Pull down to try again.
         </T>
-      ) : loading && !people ? (
+      ) : !people ? (
         <T tone="muted">Loading…</T>
       ) : people && people.length === 0 ? (
         <T tone="muted" style={{ textAlign: "center", paddingVertical: space(8) }}>

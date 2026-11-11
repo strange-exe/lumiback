@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.21.2",
+    "date": "2026-11-11",
+    "kind": "fix",
+    "title": "Students list fixes",
+    "summary": "The office's Students list shows only the people you asked for, and never shows anyone twice.",
+    "points": [
+      "For the hostel office: after you change a filter, Students shows Loading until the new list arrives, instead of the old list under the new filter.",
+      "If the list can't load properly, you see a message to try again instead of people repeated further down."
+    ]
+  },
+  {
     "version": "1.21.1",
     "date": "2026-11-10",
     "kind": "fix",
