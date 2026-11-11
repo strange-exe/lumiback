@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./fixtures";
 
 import { ADMIN_STATE, DEVELOPER_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { API, checkOut, designMatrix, ensureIn, watchForErrors } from "./helpers";

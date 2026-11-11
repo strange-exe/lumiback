@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "./fixtures";
 
 import { ADMIN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { designMatrix, KIOSK_TOKEN, watchForErrors } from "./helpers";

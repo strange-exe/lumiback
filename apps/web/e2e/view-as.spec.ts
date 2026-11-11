@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "./fixtures";
 
 import { ADMIN_STATE, DEVELOPER_STATE } from "../playwright.config";
 import { watchForErrors } from "./helpers";

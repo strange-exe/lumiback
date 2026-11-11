@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Page, type Route } from "@playwright/test";
+import { expect, test, type Browser, type Page, type Route } from "./fixtures";
 
 import { FAULT_HEADER } from "../src/lib/test-faults";
 import { API, signIn, STUDENT, watchForErrors } from "./helpers";

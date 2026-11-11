@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "./fixtures";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
 import { E2E_PASSWORD, signIn, watchForErrors } from "./helpers";

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./fixtures";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
 import { ADMIN, API, designMatrix, signIn, watchForErrors } from "./helpers";

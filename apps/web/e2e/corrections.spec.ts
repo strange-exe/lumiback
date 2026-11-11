@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./fixtures";
 
 import { ADMIN_STATE } from "../playwright.config";
 import { istInputValue } from "../src/features/outings/time";

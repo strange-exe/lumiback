@@ -7,7 +7,7 @@ import {
   type Browser,
   type Locator,
   type Page,
-} from "@playwright/test";
+} from "./fixtures";
 
 import { ADMIN_STATE, STUDENT_STATE } from "../playwright.config";
 import { formatTime } from "../src/features/outings/time";

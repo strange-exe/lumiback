@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./fixtures";
 
 import { ADMIN_STATE } from "../playwright.config";
 import { FAULT_HEADER } from "../src/lib/test-faults";

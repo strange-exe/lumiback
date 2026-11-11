@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator } from "./fixtures";
 
 import { ADMIN_STATE, STUDENT_STATE } from "../playwright.config";
 import { allowLocation, API, checkOut, ensureIn, watchForErrors } from "./helpers";

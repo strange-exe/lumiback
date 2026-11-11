@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Page } from "./fixtures";
 
 import { ADMIN_STATE, HEAD_WARDEN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";

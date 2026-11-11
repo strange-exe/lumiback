@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./fixtures";
 
 import { ADMIN_STATE, DEVELOPER_STATE, WARDEN_STATE } from "../playwright.config";
 import { KIND_LABEL, type AnnounceKind } from "../src/features/developer/announce";

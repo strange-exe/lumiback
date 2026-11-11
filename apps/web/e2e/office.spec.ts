@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
 import { watchForErrors } from "./helpers";
