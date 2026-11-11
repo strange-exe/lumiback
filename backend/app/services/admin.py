@@ -656,23 +656,25 @@ async def students(
     (the caller passes it for admins only; wardens and head wardens see students only).
     By name, `limit` at a time; `after` is the last person of the page before (an unknown id,
     or someone this office doesn't look after, is an empty page, never the first one again)."""
+    # Who this office may list at all; the page cursor is resolved under the same clauses.
+    scope = [staff.covers(User.hostel_id)]  # imported students who haven't set up too
+    if not staff.user.is_admin:  # wardens and head wardens: students, not staff
+        scope.append(User.role == UserRole.STUDENT)
     query = (
         select(User, Hostel.name)
         .outerjoin(Hostel, Hostel.id == User.hostel_id)
-        .where(staff.covers(User.hostel_id))  # imported students who haven't set up too
+        .where(*scope)
         .order_by(User.name, User.id)
         .limit(limit)
     )
     if after is not None:
-        mark = await session.get(User, after)
-        if mark is None or not staff.covers_student(mark):
-            return []
-        if not staff.user.is_admin and mark.role != UserRole.STUDENT:
-            return []  # not on a warden's list (staff), so no place to page on from
+        mark = (
+            await session.execute(select(User.name, User.id).where(User.id == after, *scope))
+        ).one_or_none()
+        if mark is None:
+            return []  # unknown, or not on this office's list: no place to page on from
         query = query.where(tuple_(User.name, User.id) > tuple_(mark.name, mark.id))
-    if not staff.user.is_admin:  # wardens and head wardens: students, not staff
-        query = query.where(User.role == UserRole.STUDENT)
-    elif roles:
+    if staff.user.is_admin and roles:
         query = query.where(User.role.in_(roles))
     if hostel_id is not None:
         query = query.where(User.hostel_id == hostel_id)
