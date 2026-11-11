@@ -76,6 +76,7 @@ const POLL_MS = 5_000; // join requests show up within a few seconds
 // the backend's grace (30 s).
 const STAY_CHECK_MS = 1_000;
 const STAY_RETRY_MS = 5_000;
+const STAY_TRIES = 6; // the first try and five retries: about the backend's 30 s grace
 const WATCH: PositionOptions = { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 };
 const HEARTBEAT: PositionOptions = {
   enableHighAccuracy: true,
@@ -307,8 +308,13 @@ export function ShareProvider({
     // short grace later unless this tab says it stayed (the student cancelled "Leave site?").
     const leaving = `/api/share/${sessionId}/leaving`;
     let stayTimer: number | undefined;
+    let disposed = false; // a reply landing after cleanup must not start another retry
+    let tries = 0;
     const stay = (): void => {
+      tries += 1;
       const retry = (): void => {
+        // Past the backend's grace the share has ended either way; stop asking.
+        if (disposed || tries >= STAY_TRIES) return;
         stayTimer = window.setTimeout(stay, STAY_RETRY_MS);
       };
       void fetch(leaving, { method: "DELETE" })
@@ -322,6 +328,7 @@ export function ShareProvider({
       navigator.sendBeacon(leaving);
       // Runs only if this page is still here a moment later: the student stayed.
       window.clearTimeout(stayTimer);
+      tries = 0;
       stayTimer = window.setTimeout(stay, STAY_CHECK_MS);
     };
     const onHide = (event: PageTransitionEvent): void => {
@@ -331,6 +338,7 @@ export function ShareProvider({
     window.addEventListener("beforeunload", warn);
     window.addEventListener("pagehide", onHide);
     return () => {
+      disposed = true;
       window.clearTimeout(stayTimer);
       window.removeEventListener("beforeunload", warn);
       window.removeEventListener("pagehide", onHide);
