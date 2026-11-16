@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.22.0",
+    "date": "2026-11-16",
+    "kind": "feature",
+    "title": "Sheets you can swipe away",
+    "summary": "Install build 5: pull a sheet down by its handle to close it, and the screen behind fades instead of sliding.",
+    "points": [
+      "Pull any sheet down by its handle or title to close it. A quick flick is enough; let go early and it settles back.",
+      "When a sheet opens or closes, the dimmed screen behind it fades instead of sliding up with it.",
+      "With animations turned off in Android's settings, sheets simply fade in and out.",
+      "Starting two shares at the same moment keeps both, and after you sign out this phone no longer gets your notifications."
+    ]
+  },
+  {
     "version": "1.21.2",
     "date": "2026-11-11",
     "kind": "fix",

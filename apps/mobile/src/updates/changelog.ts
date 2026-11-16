@@ -41,6 +41,8 @@ export const NATIVE_BUILDS: Readonly<Record<string, number>> = {
   "3b9a63d6b753fdb9d3d3308930fcc962c8ca8b15": 3,
   // Build 4 (1.21.0): glass tab bar (expo-blur), bold lantern notification icon, orange accent.
   fa85eb700ea05170d641b7b6fe5c2c0b6c1efa65: 4,
+  // Build 5 (1.22.0): Reanimated, worklets and gesture-handler (sheets you can swipe away).
+  "436637811e98372663d9dfefc975ca677157676f": 5,
 };
 
 /**
