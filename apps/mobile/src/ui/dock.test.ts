@@ -11,7 +11,8 @@ import {
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import { useAuth } from "@/lib/auth";
-import { CENTRE_GAP, Dock, labelBeside, SCAN_SIZE } from "@/ui/dock";
+import { clearSafeReturn, safeReturnFor, setSafeReturnTicked } from "@/gate/intent";
+import { CENTRE_GAP, Dock, SCAN_SIZE } from "@/ui/dock";
 import { sceneTarget } from "@/ui/glass";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
@@ -199,19 +200,30 @@ describe("Dock (students)", () => {
     expect(haptic.tap).toHaveBeenCalledTimes(1);
   });
 
-  it("names only the active tab: beside its icon when it fits, under it when it doesn't", async () => {
-    expect(labelBeside(412, 1)).toBe(true);
-    expect(labelBeside(360, 1)).toBe(false);
-    expect(labelBeside(412, 1.3)).toBe(false);
-    for (const [width, direction] of [
-      [412, "row"],
-      [360, "column"],
-      [320, "column"],
-    ] as const) {
+  it("carries Today's ticked safe-return box to the scanner as an armed intent", async () => {
+    const root = (await render()).root;
+    setSafeReturnTicked(true);
+    try {
+      act(() => (one(scans(root)).props.onPress as () => void)());
+      const [to] = (router.push as jest.Mock).mock.calls[0] as [
+        { pathname: string; params: { intent: string } },
+      ];
+      expect(to.pathname).toBe("/scan");
+      // The id the scanner gets is the one armed at the press, so the scan screen honours it.
+      expect(safeReturnFor(to.params)).toBe(true);
+    } finally {
+      clearSafeReturn();
+    }
+  });
+
+  it("names every tab, under its icon, at every width", async () => {
+    for (const width of [412, 360, 320]) {
       const root = (await render({ index: 2, width })).root;
-      expect(words(root)).toEqual(["History"]);
-      const label = one(root.findAllByType(Text));
-      expect(flat(label.parent!).flexDirection).toBe(direction);
+      expect(words(root)).toEqual(["Today", "Live", "History", "Profile"]);
+      for (const label of root.findAllByType(Text)) {
+        expect(flat(label.parent!).flexDirection).toBe("column");
+        expect(label.props.adjustsFontSizeToFit).toBe(true);
+      }
       act(() => tree?.unmount());
     }
   });

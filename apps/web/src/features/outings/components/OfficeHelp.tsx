@@ -123,6 +123,11 @@ export function OfficeHelp({ office }: { office: OfficeContact | null | undefine
     setLocating(true);
     const fix = await oneFix();
     setLocating(false);
+    // Cancelled (or Escape) while the location was coming: the student changed their mind.
+    if (!dialog.current?.open) {
+      inFlight.current = false;
+      return;
+    }
     const form = new FormData();
     if (fix) {
       form.set("lat", String(fix.latitude));

@@ -3,7 +3,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { Animated, Easing, RefreshControl, Text, View } from "react-native";
 
-import { armSafeReturn } from "@/gate/intent";
+import { setSafeReturnTicked } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { canAsk } from "@/lib/corrections";
@@ -52,7 +52,12 @@ import { NoticeSheet } from "@/screens/office/NoticeSheet";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { OutOffice } from "@/screens/out-office";
 import { RequestSheet } from "@/screens/outing-request";
-import { SafeReturnStatus, SafeReturnTick, sendForOuting } from "@/screens/safe-return";
+import {
+  SafeReturnHint,
+  SafeReturnStatus,
+  SafeReturnTick,
+  sendForOuting,
+} from "@/screens/safe-return";
 import { stopOutingShare } from "@/location/task";
 import { IN, timeLate, timeLeft } from "@/lib/led";
 import { tourTarget } from "@/tour/store";
@@ -305,19 +310,34 @@ function StudentToday(): ReactNode {
         <RulesCard rules={data.rules} request={data.request} onChange={reload} />
       ) : null}
 
+      {/* Before the first trip, how tapping out works is the next thing to read. */}
+      {!loading && !data?.recent?.length && data?.summary?.total === 0 ? <HowItWorks /> : null}
+
       <View style={{ gap: space(3) }}>
         <T tone="label" style={{ color: c.muted }}>
           Quick actions
         </T>
-        <View style={{ flexDirection: "row", gap: space(3) }}>
+        <View
+          style={{
+            backgroundColor: c.surface,
+            borderColor: c.line,
+            borderWidth: 1,
+            borderRadius: radius.card,
+            borderCurve: "continuous",
+            overflow: "hidden",
+          }}
+        >
           <QuickAction
-            icon="navigate"
+            icon="navigate-outline"
             title="Share live location"
             detail="Let a friend follow your way back"
             onPress={() => router.navigate({ pathname: "/live", params: { view: "share" } })}
           />
+          <View
+            style={{ height: 1, backgroundColor: c.line, marginLeft: space(4) + 24 + space(3) }}
+          />
           <QuickAction
-            icon="people"
+            icon="people-outline"
             title="Follow someone"
             detail="Enter a code a friend sent you"
             onPress={() => router.navigate({ pathname: "/live", params: { view: "follow" } })}
@@ -325,22 +345,43 @@ function StudentToday(): ReactNode {
         </View>
       </View>
 
-      {loading ? null : data?.recent && data.recent.length > 0 ? (
+      {!loading && data?.recent?.length ? (
         <Recent outings={data.recent} summary={data.summary} />
-      ) : data?.summary?.total === 0 ? (
-        <HowItWorks />
       ) : null}
     </Screen>
   );
 }
 
+/** The board's outline while Today loads: same panel, label line, figure and title blocks. */
 function HeroSkeleton(): ReactNode {
   const c = useColors();
+  const block = (width: number | `${number}%`, height: number): ReactNode => (
+    <View style={{ width, height, borderRadius: 6, backgroundColor: c.line }} />
+  );
   return (
     <View
+      accessible
       accessibilityLabel="Loading"
-      style={{ height: 300, borderRadius: radius.board, backgroundColor: c.line, opacity: 0.6 }}
-    />
+      style={{
+        backgroundColor: c.board,
+        borderColor: c.boardLine,
+        borderWidth: 1,
+        borderRadius: radius.board,
+        borderCurve: "continuous",
+        padding: space(6),
+        gap: space(5),
+      }}
+    >
+      <View style={{ gap: space(3) }}>
+        {block(96, 14)}
+        {block(176, 56)}
+      </View>
+      <View style={{ gap: space(2) }}>
+        {block("60%", 26)}
+        {block("90%", 14)}
+        {block("70%", 14)}
+      </View>
+    </View>
   );
 }
 
@@ -418,7 +459,19 @@ function AtHostel({
             : used
               ? `You've used today's approved outing. You can ask the hostel office for another below; it needs their OK too.${freeEveningNote(rules!, now)}`
               : `${rules!.label} outings need the hostel office's OK first. Ask below, then scan at the gate once it's approved.`
-          : `Scan the code at the gate to tap out. You'll be due back by ${formatTime(backBy!)}.`;
+          : `Tap Scan below at the gate to tap out. You'll be due back by ${formatTime(backBy!)}${
+              // No hostel chosen: these are the default times, not their hostel's.
+              rules!.hostel == null ? ", the default time until you choose your hostel" : ""
+            }.`;
+
+  // The dock's Scan is the one tap-out action; it reads this visible box while Today is on
+  // screen (src/gate/intent.ts), and leaving Today (or the box going away) clears it.
+  useFocusEffect(
+    useCallback(() => {
+      setSafeReturnTicked(canGoOut && safeReturn);
+      return () => setSafeReturnTicked(false);
+    }, [canGoOut, safeReturn]),
+  );
 
   return (
     <>
@@ -429,43 +482,32 @@ function AtHostel({
               Heading out?
             </Text>
             <Text style={[type.body, { color: c.boardMuted }]}>{body}</Text>
+            {/* The countdown (and on form days, until when): once, here, not on a second card. */}
+            {line && line.closed !== "after" ? (
+              // The words say it ("Outings close in 40 min"); red only adds weight in the last hour.
+              <Text style={[type.caption, { color: line.urgent ? c.ledDanger : c.boardMuted }]}>
+                {line.detail}
+              </Text>
+            ) : null}
           </View>
           {canGoOut ? (
             <SafeReturnTick offer={offer} checked={safeReturn} onChange={setFollow} />
           ) : null}
-          <View style={{ gap: space(2) }}>
+          {canGoOut ? (
             <Button
-              label="Scan at the gate"
-              // Not the next step when outings are closed or need approval first: the card
-              // below says what to do, so this steps back (the gate still explains if scanned).
-              variant={canGoOut ? "primary" : "onHeroOutline"}
-              icon={<Ionicons name="scan" size={20} color={canGoOut ? c.onAccent : c.onBoard} />}
+              label="Log a trip without scanning"
+              variant="onBoardOutline"
+              accessibilityLabel="Log a trip without scanning (self-reported)"
+              style={{ minHeight: 44 }}
               onPress={() => {
                 haptic.tap();
-                // The tick travels as an in-memory intent (src/gate/intent.ts), never as a
-                // parameter a link could set: only this visible box turns safe return on.
-                router.push(
-                  canGoOut && safeReturn
-                    ? { pathname: "/scan", params: { intent: armSafeReturn() } }
-                    : "/scan",
-                );
+                setOpen(true);
               }}
             />
-            {canGoOut ? (
-              <Button
-                label="Log a trip without scanning"
-                variant="onHeroOutline"
-                accessibilityLabel="Log a trip without scanning (self-reported)"
-                style={{ minHeight: 44 }}
-                onPress={() => {
-                  haptic.tap();
-                  setOpen(true);
-                }}
-              />
-            ) : null}
-          </View>
+          ) : null}
         </LedBoard>
       </FadeIn>
+      {canGoOut ? <SafeReturnHint offer={offer} /> : null}
       <LogTripSheet
         open={open}
         rules={rules}
@@ -652,7 +694,7 @@ function Out({
               </Text>
             ) : (
               <View style={{ gap: space(2) }}>
-                <Text style={[type.body, { color: c.onHero }]}>
+                <Text style={[type.body, { color: c.onBoard }]}>
                   You&apos;re late. Tell the hostel office you&apos;re OK; answering now is fine.
                   With no answer 10 minutes after the 30-minute alert, or still not back an hour
                   after answering, the hostel office is told and may call you or your emergency
@@ -662,7 +704,7 @@ function Out({
                   <View style={{ flex: 1 }}>
                     <Button
                       label="On my way"
-                      variant="onHero"
+                      variant="onBoard"
                       busy={busy === "on_my_way"}
                       busyLabel="Sending…"
                       onPress={() => void reply("on_my_way")}
@@ -671,7 +713,7 @@ function Out({
                   <View style={{ flex: 1 }}>
                     <Button
                       label="I'm safe"
-                      variant="onHeroOutline"
+                      variant="onBoardOutline"
                       busy={busy === "safe"}
                       busyLabel="Sending…"
                       onPress={() => void reply("safe")}
@@ -724,7 +766,9 @@ function Out({
           accessibilityLabel="Forgot to tap in? Tell the hostel office when you came back"
           style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
         >
-          <Text style={[type.label, { color: c.accentText }]}>Forgot to tap in?</Text>
+          <Text style={[type.label, { color: c.ink, textDecorationLine: "underline" }]}>
+            Forgot to tap in?
+          </Text>
         </Press>
       ) : null}
       {fixing ? (
@@ -954,6 +998,14 @@ function RulesCard({
     }
   };
 
+  // Today's hours and countdown are on the Heading out? card; this card is only for what the
+  // student can do about them: choose a hostel, and on form days, the request.
+  const used = formNeeded && step === "used";
+  if (rules.hostel != null && !canAsk && !used && !asking) return null;
+  // A rule between the hostel prompt and the request part, only when both show.
+  const divider =
+    rules.hostel == null ? { borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) } : {};
+
   return (
     <View
       style={{
@@ -966,33 +1018,6 @@ function RulesCard({
         padding: space(4),
       }}
     >
-      <View
-        accessible
-        accessibilityLabel={`Today's rules: ${line.title}. ${line.detail}`}
-        style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
-      >
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            backgroundColor: c.accentSoft,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Ionicons name={formNeeded ? "document-text" : "time"} size={18} color={c.accentText} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <T tone="label" style={{ fontSize: 15 }}>
-            {line.title}
-          </T>
-          <T tone="caption" style={line.urgent ? { color: c.danger } : undefined}>
-            {line.detail}
-          </T>
-        </View>
-      </View>
-
       {rules.hostel == null ? (
         <Press
           onPress={() => {
@@ -1002,18 +1027,17 @@ function RulesCard({
           accessibilityLabel="Choose your hostel so these are your hostel's times"
           style={{ flexDirection: "row", alignItems: "center", gap: space(2), minHeight: 44 }}
         >
-          <Ionicons name="home-outline" size={18} color={c.accentText} />
-          <T tone="label" style={{ flex: 1, color: c.accentText }}>
+          {/* Its own tone: a setup gap to close, not the accent's "go" and not an error. */}
+          <Ionicons name="home-outline" size={18} color={c.warn} />
+          <T tone="label" style={{ flex: 1, color: c.warn }}>
             Choose your hostel so these are your hostel&apos;s times
           </T>
-          <Ionicons name="chevron-forward" size={16} color={c.accentText} />
+          <Ionicons name="chevron-forward" size={16} color={c.warn} />
         </Press>
       ) : null}
 
       {canAsk ? (
-        <View
-          style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
-        >
+        <View style={[{ gap: space(2) }, divider]}>
           {!live || step === "ask" || step === "declined" ? (
             <>
               {live?.status === "declined" ? (
@@ -1073,11 +1097,9 @@ function RulesCard({
           )}
           <FormError message={error} />
         </View>
-      ) : formNeeded && step === "used" ? (
+      ) : used ? (
         // Too late to ask for another today: just say it's done.
-        <View
-          style={{ gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(3) }}
-        >
+        <View style={[{ gap: space(2) }, divider]}>
           <StatusChip label="Used today" tone="accent" />
           <T tone="small">Your approved outing for today is done.</T>
         </View>
@@ -1119,51 +1141,40 @@ function QuickAction({
   detail,
   onPress,
 }: {
-  icon: "navigate" | "people";
+  icon: "navigate-outline" | "people-outline";
   title: string;
   detail: string;
   onPress: () => void;
 }): ReactNode {
   const c = useColors();
+  // A list row (Material's one-line-plus-supporting-text item): secondary to the board, so
+  // no tinted tile and no card of its own.
   return (
-    <View style={{ flex: 1 }}>
-      <Press
-        onPress={() => {
-          haptic.tap();
-          onPress();
-        }}
-        accessibilityLabel={title}
-        style={{
-          backgroundColor: c.surface,
-          borderColor: c.line,
-          borderWidth: 1,
-          borderRadius: radius.card,
-          borderCurve: "continuous",
-          padding: space(4),
-          gap: space(3),
-          minHeight: 132,
-        }}
-      >
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            backgroundColor: c.accentSoft,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Ionicons name={icon} size={20} color={c.accentText} />
-        </View>
-        <View style={{ gap: 2 }}>
-          <T tone="label" style={{ fontSize: 15 }}>
-            {title}
-          </T>
-          <T tone="caption">{detail}</T>
-        </View>
-      </Press>
-    </View>
+    <Press
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${detail}`}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space(3),
+        paddingHorizontal: space(4),
+        paddingVertical: space(3),
+        minHeight: 64,
+      }}
+    >
+      <Ionicons name={icon} size={24} color={c.muted} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <T tone="label" style={{ fontSize: 15 }}>
+          {title}
+        </T>
+        <T tone="caption">{detail}</T>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={c.muted} />
+    </Press>
   );
 }
 
@@ -1190,10 +1201,10 @@ function Recent({
           hitSlop={8}
           style={{ flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 }}
         >
-          <T tone="label" style={{ color: c.accentText, fontVariant: ["tabular-nums"] }}>
+          <T tone="label" style={{ color: c.ink, fontVariant: ["tabular-nums"] }}>
             {rate ? `${rate}, see all` : "See all"}
           </T>
-          <Ionicons name="chevron-forward" size={16} color={c.accentText} />
+          <Ionicons name="chevron-forward" size={16} color={c.ink} />
         </Press>
       </View>
       <View>
@@ -1251,12 +1262,13 @@ function HowItWorks(): ReactNode {
                 width: 28,
                 height: 28,
                 borderRadius: 14,
-                backgroundColor: c.accentSoft,
+                borderWidth: 1,
+                borderColor: c.line,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: c.accentText }}>
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: c.ink }}>
                 {i + 1}
               </Text>
             </View>

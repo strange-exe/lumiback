@@ -17,6 +17,14 @@ export function dayEndWait(now = Date.now()): number {
   return left <= DAY_END_MARGIN_MS ? left + 1000 : 0;
 }
 
+/**
+ * The IST calendar date `days` from today, as YYYY-MM-DD (a date input's value). The app's
+ * days are IST days; a UTC date (`toISOString`) lags them by one from 00:00 to 05:30 IST.
+ */
+export function istDate(days = 0, now = Date.now()): string {
+  return new Date(now + IST_OFFSET_MS + days * DAY_MS).toISOString().slice(0, 10);
+}
+
 /** Every spec's `test`: as Playwright's, plus the day-end wait before each test. */
 export const test = base.extend<{ dayEnd: void }>({
   dayEnd: [

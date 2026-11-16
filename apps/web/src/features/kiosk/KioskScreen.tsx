@@ -82,12 +82,21 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
 
   useEffect(() => {
     const token = readToken();
+    // One polling loop: `timer` is set only while a poll waits to run, and `loading` while one
+    // runs, so coming back to the tab can't start a second loop beside a request in flight.
     let timer: number | undefined;
+    let loading = false;
     let stopped = false;
     let last: KioskCode | null = null;
 
     const later = (ms: number): void => {
-      if (!stopped) timer = window.setTimeout(load, ms);
+      window.clearTimeout(timer);
+      timer = undefined;
+      if (stopped) return;
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void load();
+      }, ms);
     };
     const offline = (): void => {
       const usable = last && Date.parse(last.refresh_at) + STILL_VALID_FOR_MS > Date.now();
@@ -100,6 +109,16 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
     };
 
     async function load(): Promise<void> {
+      if (loading || stopped) return;
+      loading = true;
+      try {
+        await poll();
+      } finally {
+        loading = false;
+      }
+    }
+
+    async function poll(): Promise<void> {
       if (!token) {
         setView({ kind: "no-token" });
         return;
@@ -144,13 +163,24 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
         else offline();
         return;
       }
-      last = (await response.json()) as KioskCode;
+      let code: KioskCode;
+      try {
+        code = (await response.json()) as KioskCode;
+      } catch {
+        // Not the code (a gateway's error page answered 200): treat as offline and ask again,
+        // or the loop ends here and the tablet shows a code that expires while it looks live.
+        offline();
+        return;
+      }
+      if (stopped) return;
+      last = code;
       // Fetch just after the code rolls over. Clamped, so a tablet with a wrong clock still
-      // refreshes at least every 20 s (each code stays valid for ~60 s).
-      const wait = Math.min(
-        20_000,
-        Math.max(2_000, Date.parse(last.refresh_at) - Date.now() + 300),
-      );
+      // refreshes at least every 20 s (each code stays valid for ~60 s). An unreadable time
+      // would make the wait NaN, which setTimeout runs at once: ask again in 20 s instead.
+      const untilNext = Date.parse(last.refresh_at) - Date.now() + 300;
+      const wait = Number.isFinite(untilNext)
+        ? Math.min(20_000, Math.max(2_000, untilNext))
+        : 20_000;
       setView({
         kind: "code",
         code: last,
@@ -166,8 +196,11 @@ export function KioskScreen({ apiUrl }: { apiUrl: string }): ReactNode {
     if (!token) void fetch(`${apiUrl}/health`, { cache: "no-store" }).catch(() => undefined);
     void load();
     const wake = (): void => {
-      if (document.visibilityState === "visible" && timer !== undefined) {
+      // Only a loop that is waiting: none (no link, replaced) has no timer, and one mid-request
+      // schedules its own next poll.
+      if (document.visibilityState === "visible" && timer !== undefined && !loading) {
         window.clearTimeout(timer);
+        timer = undefined;
         void load();
       }
     };

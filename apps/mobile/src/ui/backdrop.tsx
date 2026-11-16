@@ -75,7 +75,8 @@ export function fieldDots(width: number, height: number): FieldDot[] {
         y: row * PITCH + CENTRE,
         // In [0.06, 0.84], so its rise (-0.05) and fade (+0.16) stay inside the 0..1 pass.
         at: 0.1 + diagonal * 0.7 + (noise(col, row, 2) - 0.5) * 0.08,
-        peak: 0.35 + noise(col, row, 3) * 0.55,
+        // Kept low (owner, 2026-11-14: "keep it, make it quieter"): a texture, not a signal.
+        peak: 0.15 + noise(col, row, 3) * 0.25,
       });
     }
   }
@@ -122,7 +123,8 @@ function LedField(): ReactNode {
             width: DOT,
             height: DOT,
             borderRadius: DOT / 2,
-            backgroundColor: c.led,
+            // Neutral: orange on this screen means "out" and the primary action, nothing else.
+            backgroundColor: c.muted,
             // Dark until the wave reaches it, brightest as it passes, then a slower fade.
             opacity: wave.interpolate({
               inputRange: [0, d.at - 0.05, d.at, d.at + 0.16, 1],

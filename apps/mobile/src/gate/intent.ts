@@ -63,7 +63,24 @@ export function consumeSafeReturn(id: unknown, now = Date.now()): boolean {
   return ok;
 }
 
-/** Forget any armed intent (tests; also safe to call on sign-out). */
+/**
+ * Whether Today's box is ticked right now. Scan is the dock's button, outside Today, so Today
+ * reports the box here while it is on screen (and clears it when it leaves), and the button arms
+ * the intent at the moment it is pressed. Only that in-app box sets this; a link never can.
+ */
+let ticked = false;
+
+export function setSafeReturnTicked(on: boolean): void {
+  ticked = on;
+}
+
+/** The route params for opening Scan: an armed intent while Today's box is ticked, else none. */
+export function scanParams(now = Date.now()): { intent?: string } {
+  return ticked ? { intent: armSafeReturn(now) } : {};
+}
+
+/** Forget any armed intent and the tick (tests; also safe to call on sign-out). */
 export function clearSafeReturn(): void {
   pending = null;
+  ticked = false;
 }

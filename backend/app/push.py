@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.email import Email, Mailer
-from app.models import PushTicket, PushToken, User, UserRole
+from app.models import PushTicket, PushToken, RefreshToken, User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +314,29 @@ class PushOutcome:
     failed: int = 0  # any error but DeviceNotRegistered (worth trying again later)
 
 
+def live_token():
+    """A push token whose phone is still signed in: its sign-in (refresh-token family) is
+    neither revoked nor expired. A token whose sign-in ran out, or ended while the phone was
+    registering it, would show this account's notifications on a signed-out phone. Tokens
+    from before devices had ids (no family) count until their owner's next sign-out.
+
+    One rule for sending and for "has the app", or a notice is pushed to nobody and never
+    emailed."""
+    signed_in = exists().where(
+        RefreshToken.family_id == PushToken.family_id,
+        RefreshToken.user_id == PushToken.user_id,
+        RefreshToken.revoked_at.is_(None),
+        RefreshToken.expires_at > func.now(),
+    )
+    return or_(PushToken.family_id.is_(None), signed_in)
+
+
+async def has_app(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """True if the user has the app on a phone that is still signed in."""
+    found = await session.scalar(select(exists().where(PushToken.user_id == user_id, live_token())))
+    return bool(found)
+
+
 async def push_devices(
     sessionmaker: async_sessionmaker[AsyncSession],
     sender: PushSender,
@@ -323,7 +346,7 @@ async def push_devices(
     """Send to every device the user is signed in on; raises if the database can't be read
     (the outbox then tries again). Dead tokens are deleted, accepted tickets kept for the
     receipt check."""
-    query = select(PushToken.token).where(PushToken.user_id == user_id)
+    query = select(PushToken.token).where(PushToken.user_id == user_id, live_token())
     if not message.urgent:  # muted on that phone (urgent safety messages still go through)
         query = query.where(~PushToken.muted.contains([message.channel]))
     async with sessionmaker() as session:
@@ -538,13 +561,13 @@ async def notify_or_email(
     try:
         async with sessionmaker() as session:
             user = await session.get(User, user_id)
-            has_app = await session.scalar(select(exists().where(PushToken.user_id == user_id)))
+            app_on_phone = await has_app(session, user_id)
     except Exception:
         logger.exception("notify user %s failed", user_id)
         return
     if user is None:
         return
-    if has_app:
+    if app_on_phone:
         delivered = (
             await notify_user(sessionmaker, sender, user_id, message) if sender is not None else 0
         )

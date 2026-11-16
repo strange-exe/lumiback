@@ -9,6 +9,7 @@ import {
   REFRESH_COOKIE,
   REFRESH_MAX_AGE,
 } from "@/lib/cookies";
+import { whenRefreshUnavailable } from "@/lib/refresh-policy";
 import type { TokenPair } from "@/lib/types";
 
 /**
@@ -79,9 +80,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const clientIp = clientIpFrom(request.headers, IP_TRUST);
   const outcome = await refreshOnce(refresh, clientIp);
-  // The backend is down for a moment: keep the refresh cookie (this request goes on without an
-  // access token) instead of signing the person out.
-  if (outcome.kind === "unavailable") return NextResponse.next();
+  // The backend is down for a moment: keep the refresh cookie instead of signing the person out.
+  // A page goes on without an access token; an API call is told to try again (see the policy).
+  if (outcome.kind === "unavailable") {
+    if (whenRefreshUnavailable(request.nextUrl.pathname) === "continue") return NextResponse.next();
+    return NextResponse.json(
+      { detail: "The server is starting up. Try again in a moment." },
+      { status: 503, headers: { "Retry-After": "5", "Cache-Control": "no-store" } },
+    );
+  }
   const tokens = outcome.kind === "ok" ? outcome.tokens : null;
 
   // Downstream pages and actions must see the updated cookies on THIS request...

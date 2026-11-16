@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, exists, insert, or_, select, update
+from sqlalchemy import and_, exists, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -187,7 +187,9 @@ async def reply(session: AsyncSession, student_id: uuid.UUID, answer: LateReply)
                 Outing.returned_at.is_(None),
                 Outing.expected_return_at < now,
             )
-            .values(late_reply=answer, late_replied_at=now)
+            # A second answer changes what was said but not when: the REPLY_COVERS hour runs
+            # from the first, so answering again can't hold the escalation off indefinitely.
+            .values(late_reply=answer, late_replied_at=func.coalesce(Outing.late_replied_at, now))
             .returning(Outing)
         )
     ).scalar_one_or_none()

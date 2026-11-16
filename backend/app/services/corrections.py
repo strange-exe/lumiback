@@ -143,11 +143,19 @@ async def _apply(
             raise Refused(409, "This outing just ended. Reload and try again.")
         back = closed.back
     else:
-        await session.execute(
+        # Only if the record still says what this request read: another correction landing in
+        # between must not be overwritten, nor its time recorded here as "before".
+        changed = await session.execute(
             update(Outing)
-            .where(Outing.id == outing.id)
+            .where(
+                Outing.id == outing.id,
+                Outing.returned_at == old_returned,
+                Outing.in_via == old_via,
+            )
             .values(returned_at=when, in_via=InVia.STAFF)
         )
+        if changed.rowcount != 1:
+            raise Refused(409, "This outing was just changed. Reload and try again.")
     return old_returned, old_via, back
 
 

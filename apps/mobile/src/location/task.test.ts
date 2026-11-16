@@ -162,6 +162,20 @@ describe("an app share and a safe-return share at once", () => {
     expect(await sendingShareIds()).toEqual(["app1", "out1"]);
   });
 
+  it("two shares started at the same moment are both kept", async () => {
+    // Each start reads the stored list and writes it back; unserialized, the second write
+    // drops the first share while the service keeps running for it.
+    await Promise.all([startSending("app1", later()), startSending("out1", later())]);
+    expect((await sendingShareIds()).sort()).toEqual(["app1", "out1"]);
+  });
+
+  it("stopping one share while another starts keeps the new one", async () => {
+    await startSending("app1", later());
+    mockHasStarted.mockResolvedValue(true);
+    await Promise.all([stopSending("app1"), startSending("out1", later())]);
+    expect(await sendingShareIds()).toEqual(["out1"]);
+  });
+
   it("every fix goes to both shares", async () => {
     const { defineTask } = jest.requireMock("expo-task-manager");
     const tick = defineTask.mock.calls[0][1];

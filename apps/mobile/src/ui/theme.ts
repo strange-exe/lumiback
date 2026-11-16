@@ -3,7 +3,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * "LED night" (owner's pick, 2026-11-07; frozen spec in .claude/design.md). Graphite neutrals,
- * one signal orange, and a dark LED board as every status screen's focal surface. The orange
+ * one signal orange, and an LED board as every status screen's focal surface (white in light
+ * mode, lit and dark in dark mode since 2026-11-14). The orange
  * accent is a fill (with ink text on it); as text or links it is `accentText`, which passes AA.
  * Red and green are semantic only (late / back), never decoration.
  */
@@ -29,20 +30,26 @@ const light = {
   warnSoft: "#fdecd0",
   danger: "#b42318",
   dangerSoft: "#fbe5e2",
-  /** The dark LED panel (the status board). Same in both modes, a touch lifted in dark. */
-  board: "#0d0e10",
-  onBoard: "#f2f2f3",
-  boardMuted: "#9a9aa3",
-  boardLine: "#24252a",
+  /**
+   * The status board follows the theme (owner, 2026-11-14: "Board matches theme"): a white
+   * panel on the light page with ink type, a dark lit panel in dark mode. The LED colours on
+   * it are the AA text colours here, since labels on the board are written in them; they glow
+   * only in dark mode (ui/led.tsx).
+   */
+  board: "#ffffff",
+  onBoard: "#111113",
+  boardMuted: "#56565d",
+  boardLine: "#dcdce0",
   /** Lit LED cells by state: out, back (in), late. */
-  led: "#ff6a2b",
-  ledGood: "#5ed38c",
-  ledDanger: "#ff5a4e",
-  /** Unlit LED cells: the led colour at 12% alpha. */
-  ledGhost: "#ff6a2b1f",
+  led: "#b33a0c",
+  ledGood: "#17703f",
+  ledDanger: "#b42318",
+  /** Unlit LED cells: a neutral tint. */
+  ledGhost: "#1111130f",
   /** The background dot grid. */
   dot: "#d2d2d7",
-  // Older names for the board, kept so every screen reads the board tokens through them.
+  // Always-dark surfaces in both modes: the camera screen (scan.tsx) and the profile monogram.
+  // Content on a status board uses the board tokens above, never these.
   hero: "#0d0e10",
   onHero: "#f2f2f3",
   heroMuted: "#9a9aa3",

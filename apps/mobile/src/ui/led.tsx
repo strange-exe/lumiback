@@ -4,7 +4,7 @@ import { Animated, Easing, Text, View, type TextStyle } from "react-native";
 import { layout, ROWS } from "@/lib/glyphs";
 import { type LedReading, type LedState } from "@/lib/led";
 import { useLoop, useMotionSetting } from "@/ui/motion";
-import { radius, space, type, useColors, type Colors } from "@/ui/theme";
+import { radius, space, type, useColors, useIsDark, type Colors } from "@/ui/theme";
 
 /**
  * The LED board (owner's pick, "LED night"; spec in .claude/design.md): a dark panel whose one
@@ -30,6 +30,7 @@ export function LedFigure({
   size?: number;
 }): ReactNode {
   const c = useColors();
+  const dark = useIsDark();
   const color = ledColor(c, reading.state);
   const reduced = useMotionSetting();
   const [lit] = useState(() => new Animated.Value(1));
@@ -100,7 +101,8 @@ export function LedFigure({
       }}
     />
   );
-  const glow = `0 0 ${Math.round(pitch * 0.7)}px ${color}b3`;
+  // Lit dots glow on the dark board only; on the white board a glow just blurs the figure.
+  const glow = dark ? `0 0 ${Math.round(pitch * 0.7)}px ${color}b3` : undefined;
   const panel = { width: columns * pitch, height: ROWS * pitch };
   const layer = { position: "absolute", left: 0, top: 0, ...panel } as const;
 
@@ -277,10 +279,12 @@ export function LedBoard({
   children?: ReactNode;
 }): ReactNode {
   const c = useColors();
+  const dark = useIsDark();
   const labelColor = labelTone === "muted" ? c.boardMuted : ledColor(c, labelTone);
   return (
     <View>
-      {glow ? <BoardGlow /> : null}
+      {/* The breathing light is a dark-mode thing: on the light page it reads as a stain. */}
+      {glow && dark ? <BoardGlow /> : null}
       <View
         style={{
           backgroundColor: c.board,

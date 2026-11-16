@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type APIRequestContext, type Browser, type Page } from "./fixtures";
+import { expect, istDate, test, type APIRequestContext, type Browser, type Page } from "./fixtures";
 
 import { ADMIN_STATE, HEAD_WARDEN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";
@@ -55,6 +55,81 @@ test.describe("gate kiosk", () => {
     await expect(page.getByRole("img", { name: "Gate code for North Gate" })).toBeVisible();
     expect(errors).toEqual([]);
     await page.context().close();
+  });
+
+  test("a garbled answer leaves it polling, so the code comes back", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const page = await context.newPage();
+    let garble = false; // set once a code shows (dev mode's double effect also asks at start)
+    let asked = 0;
+    await page.route("**/kiosk/qr", async (route) => {
+      asked += 1;
+      if (garble) {
+        garble = false;
+        // A proxy error page answered 200 (a captive portal, a gateway): not the code's JSON.
+        await route.fulfill({ status: 200, contentType: "text/html", body: "<html>Bad gateway" });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.goto(`/kiosk#k=${KIOSK_TOKEN}`);
+    await expect(page.getByRole("img", { name: "Gate code for North Gate" })).toBeVisible();
+    garble = true;
+    const before = asked;
+    // The scheduled refresh gets the garbled answer; the loop must still ask again after it.
+    await expect.poll(() => asked, { timeout: 40_000 }).toBeGreaterThanOrEqual(before + 2);
+    await context.close();
+  });
+
+  test("coming back to the tab mid-request never starts a second polling loop", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const page = await context.newPage();
+    let asked = 0;
+    let hold = false; // set once a code shows (dev mode's double effect also asks at start)
+    let heldAt = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/kiosk/qr", async (route) => {
+      asked += 1;
+      if (hold) {
+        if (!heldAt) heldAt = asked;
+        await held; // the scheduled refresh is still on its way...
+      }
+      await route.continue();
+    });
+    await page.goto(`/kiosk#k=${KIOSK_TOKEN}`);
+    await expect(page.getByRole("img", { name: "Gate code for North Gate" })).toBeVisible();
+    hold = true;
+    await expect.poll(() => heldAt, { timeout: 25_000 }).toBeGreaterThan(0);
+    // ...when the tablet's screen comes back on.
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.waitForTimeout(1_000); // a second loop would ask at once
+    expect(asked).toBe(heldAt);
+    release();
+    await context.close();
+  });
+
+  test("a code with an unreadable refresh time doesn't make it ask nonstop", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const page = await context.newPage();
+    let asked = 0;
+    await page.route("**/kiosk/qr", async (route) => {
+      asked += 1;
+      const response = await route.fetch();
+      const code = (await response.json()) as Record<string, unknown>;
+      // Security audit run-15: a bad time would make the next poll's wait NaN, i.e. 0 ms.
+      await route.fulfill({ response, json: { ...code, refresh_at: "soon" } });
+    });
+    await page.goto(`/kiosk#k=${KIOSK_TOKEN}`);
+    await expect(page.getByRole("img", { name: "Gate code for North Gate" })).toBeVisible();
+    const before = asked;
+    await page.waitForTimeout(3_000); // a sane loop waits at least 2 s between asks
+    expect(asked - before).toBeLessThanOrEqual(1);
+    await context.close();
   });
 
   test("without a kiosk link it explains how to set up", async ({ browser }) => {
@@ -248,7 +323,7 @@ test.describe("as an admin", () => {
     await expect(page.locator('input[value="Hostel 7"]')).toHaveCount(0);
 
     const holidays = page.getByRole("region", { name: "Holidays" });
-    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const tomorrow = istDate(1);
     await holidays.getByLabel("Date").fill(tomorrow);
     await holidays.getByLabel("Holiday").fill("Founders' Day");
     await holidays.getByRole("button", { name: "Add holiday" }).click();
@@ -429,7 +504,7 @@ test.describe("as an admin", () => {
 
   test("requests: look up an earlier day, then back to today", async ({ page }) => {
     await page.goto("/admin/requests");
-    const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const yesterday = istDate(-1);
     await page.getByLabel("Show another day").fill(yesterday);
     await page.getByRole("button", { name: "Show", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`day=${yesterday}`));

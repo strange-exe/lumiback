@@ -279,6 +279,14 @@ describe("a forced sign-out leaves nothing of the student on the phone", () => {
     expect(safeReturnFor({ intent: id })).toBe(false);
     act(() => tree.unmount());
   });
+
+  it("forgets the phone's push token, so it no longer counts as signed up for pushes", async () => {
+    const { tree } = await mountQuietly();
+    mockCalls.length = 0;
+    await act(async () => mockSignedOutListener?.());
+    expect(mockCalls).toContain("forgetPushToken");
+    act(() => tree.unmount());
+  });
 });
 
 describe("the office's remembered hostel and filter choices belong to one person", () => {

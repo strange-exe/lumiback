@@ -73,11 +73,26 @@ async function saveShares(shares: ActiveShare[]): Promise<void> {
   else await SecureStore.setItemAsync(ACTIVE_KEY, JSON.stringify({ shares }));
 }
 
+let storageQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs one read-change-write of the stored list at a time. Each change reads the whole list and
+ * writes it back, so two at once (a start beside the task marking a problem, a stop beside a
+ * start) would let the later write drop the earlier one's share.
+ */
+function withShares<T>(change: () => Promise<T>): Promise<T> {
+  const run = storageQueue.then(change, change);
+  storageQueue = run.catch(() => undefined);
+  return run;
+}
+
 /** Changes one stored share, if this phone still sends for it. */
-async function updateShare(sessionId: string, patch: Partial<ActiveShare>): Promise<void> {
-  const shares = await activeShares();
-  if (!shares.some((s) => s.sessionId === sessionId)) return;
-  await saveShares(shares.map((s) => (s.sessionId === sessionId ? { ...s, ...patch } : s)));
+function updateShare(sessionId: string, patch: Partial<ActiveShare>): Promise<void> {
+  return withShares(async () => {
+    const shares = await activeShares();
+    if (!shares.some((s) => s.sessionId === sessionId)) return;
+    await saveShares(shares.map((s) => (s.sessionId === sessionId ? { ...s, ...patch } : s)));
+  });
 }
 
 const ending = new Set<string>();
@@ -211,13 +226,15 @@ export async function startSending(sessionId: string, endsAt: string): Promise<S
   const { granted } = await Location.requestForegroundPermissionsAsync();
   if (!granted) return "denied";
 
-  const others = await activeShares().catch(() => []);
-  const previous = others.find((s) => s.sessionId === sessionId);
-  await saveShares([
-    ...others.filter((s) => s.sessionId !== sessionId),
-    // Resuming the same share must not re-announce requests already shown.
-    { sessionId, endsAt, notified: previous?.notified ?? [] },
-  ]);
+  await withShares(async () => {
+    const others = await activeShares().catch(() => []);
+    const previous = others.find((s) => s.sessionId === sessionId);
+    await saveShares([
+      ...others.filter((s) => s.sessionId !== sessionId),
+      // Resuming the same share must not re-announce requests already shown.
+      { sessionId, endsAt, notified: previous?.notified ?? [] },
+    ]);
+  });
   lastSent.delete(sessionId);
   lastChecked.delete(sessionId);
   ending.delete(sessionId);
@@ -265,10 +282,12 @@ export async function sendingShareIds(): Promise<string[]> {
 export async function stopSending(sessionId?: string): Promise<void> {
   let rest: ActiveShare[] = [];
   try {
-    if (sessionId !== undefined) {
-      rest = (await activeShares()).filter((s) => s.sessionId !== sessionId);
-    }
-    await saveShares(rest);
+    await withShares(async () => {
+      if (sessionId !== undefined) {
+        rest = (await activeShares()).filter((s) => s.sessionId !== sessionId);
+      }
+      await saveShares(rest);
+    });
   } catch (error) {
     rest = [];
     throw error;

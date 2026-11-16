@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 
 import { api } from "@/lib/api";
 import { loadPrefs } from "@/lib/prefs";
+import { sessionGeneration } from "@/lib/session";
 import { loadViewAs } from "@/lib/view-as";
 import { mutedChannels } from "@/notify/plan";
 
@@ -42,7 +43,10 @@ async function register(): Promise<void> {
   // This app draws the update announcement itself (update-task.ts), so the server sends it
   // data-only here and the notice keeps its buttons with the app closed.
   const body = { token, platform: "android", muted, draws_updates: true };
+  const session = sessionGeneration();
   await api("/devices/push-token", { method: "POST", body });
+  // Signed out (or someone else signed in) while this was on its way: not this phone's token now.
+  if (sessionGeneration() !== session) return;
   await SecureStore.setItemAsync(KEY, token);
 }
 

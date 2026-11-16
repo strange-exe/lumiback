@@ -214,6 +214,23 @@ def test_an_answer_holds_off_for_an_hour_then_still_out_is_escalated(
     assert escalation["late_reply"] == reply
 
 
+def test_answering_again_does_not_restart_the_hour(client, db, push, riya, warden):
+    """A second answer may change what was said, but the hour runs from the first one: replying
+    every 59 minutes must not keep the office from ever hearing about a student still out."""
+    go_out(client, riya)
+    late_by(db, 31)
+    run_sweep(client, push)
+    client.post("/outings/current/late-reply", json={"reply": "on_my_way"}, headers=riya)
+    db.execute(text("UPDATE outings SET late_replied_at = now() - interval '59 minutes'"))
+    db.commit()
+    r = client.post("/outings/current/late-reply", json={"reply": "safe"}, headers=riya)
+    assert r.status_code == 200, r.text
+    assert r.json()["late_reply"] == "safe"
+    db.execute(text("UPDATE outings SET late_replied_at = late_replied_at - interval '2 minutes'"))
+    db.commit()
+    assert run_sweep(client, push).escalated == 1
+
+
 def test_tapping_in_stops_the_escalation(client, db, push, riya):
     go_out(client, riya)
     late_by(db, 41, alerted_minutes_ago=11)

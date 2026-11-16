@@ -30,6 +30,7 @@ jest.mock("expo-notifications", () => ({
   scheduleNotificationAsync: jest.fn(async () => "id"),
 }));
 jest.mock("@/lib/api", () => ({ api: jest.fn(async () => undefined) }));
+jest.mock("@/lib/session", () => ({ sessionGeneration: () => 0 }));
 jest.mock("@/lib/prefs", () => ({
   loadPrefs: jest.fn(async () => ({
     followRequests: true,

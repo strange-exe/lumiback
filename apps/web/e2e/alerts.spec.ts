@@ -113,6 +113,51 @@ test.describe("as a student who is out", () => {
     }
     expect(errors).toEqual([]);
   });
+
+  test("cancelling while it gets the location sends nothing", async ({ page, request }) => {
+    const errors = watchForErrors(page);
+    // A fix that arrives only when the test says so: the student cancels while it is pending.
+    await page.addInitScript(() => {
+      const held: (() => void)[] = [];
+      (window as unknown as { releaseFix: () => void }).releaseFix = () =>
+        held.splice(0).forEach((go) => go());
+      navigator.geolocation.getCurrentPosition = (success) => {
+        held.push(() =>
+          success({
+            coords: { latitude: 30.2687, longitude: 77.9947, accuracy: 20 },
+            timestamp: Date.now(),
+          } as GeolocationPosition),
+        );
+      };
+    });
+    await handleAllHelp(request);
+    try {
+      await checkOut(page, "Alerts cancel check");
+      const office = page.getByRole("region", { name: "Hostel office" });
+      const dialog = page.getByRole("dialog", { name: "Send a help alert?" });
+      await openDialog(office.getByRole("button", { name: "Help", exact: true }), dialog);
+      await dialog.getByRole("button", { name: "Send help alert" }).click();
+      await expect(dialog.getByText("Getting your location…")).toBeVisible();
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toBeHidden();
+      // A send is a server action: a POST from the page right after the fix arrives.
+      const posted = page
+        .waitForRequest((r) => r.method() === "POST", { timeout: 3_000 })
+        .then(
+          () => true,
+          () => false,
+        );
+      await page.evaluate(() => (window as unknown as { releaseFix: () => void }).releaseFix());
+      expect(await posted).toBe(false);
+      const open = await request.get(`${API}/admin/help?state=open`, { headers: asAdmin() });
+      expect(await open.json()).toEqual([]);
+      await expect(office.getByRole("status")).toHaveCount(0);
+    } finally {
+      await ensureIn(page);
+      await handleAllHelp(request);
+    }
+    expect(errors).toEqual([]);
+  });
 });
 
 test.describe("the office", () => {

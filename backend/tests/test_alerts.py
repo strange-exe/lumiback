@@ -381,6 +381,36 @@ def test_a_claimed_alert_is_not_sent_by_a_second_sender(client, db, push, mailer
     assert sent == outbox.Delivery()  # leased: nobody else may send it
 
 
+def test_an_alert_cancelled_while_sending_stays_cancelled(client, db):
+    """Account deletion cancels a queued alert while a sender holds it: the sender finishing
+    afterwards must not stamp it sent too (a row is sent or failed, never both)."""
+    state = client.app.state
+
+    async def enqueue_one() -> None:
+        async with state.sessionmaker() as session:
+            await outbox.enqueue(
+                session,
+                key="test:cancel-race",
+                kind="test",
+                mode=OutboxMode.EMAIL,
+                email=Email("a@example.com", "Subject", "Body"),
+            )
+            await session.commit()
+
+    async def cancel_it() -> None:
+        async with state.sessionmaker() as session:
+            assert await outbox.cancel(session, ["test:cancel-race"]) == 1
+            await session.commit()
+
+    client.portal.call(enqueue_one)
+    claimed = client.portal.call(outbox._claim, state.sessionmaker, None)
+    assert claimed is not None
+    client.portal.call(cancel_it)
+    client.portal.call(outbox._finish, state.sessionmaker, claimed, None)
+    [row] = rows(db)
+    assert row.failed_at is not None and row.sent_at is None
+
+
 def test_sent_alerts_are_deleted_after_a_week(client, db, push, anna):
     go_out(client, anna)
     db.execute(text(LATE_31))
@@ -1064,6 +1094,23 @@ def test_the_last_try_of_a_push_or_email_alert_is_emailed(client, db, admin, ann
     assert [m.subject for m in mail_to(mailer, "anna@geu.ac.in")] == ["notice"]
     [row] = rows(db)
     assert row.sent_at is not None and row.failed_at is None and row.payload == {}
+
+
+def test_a_notice_for_a_phone_whose_sign_in_ended_is_emailed(client, db, push, mailer, admin, anna):
+    """Push skips a phone whose sign-in ran out (security audit run-15), so that phone is no
+    app: the notice is emailed instead of being "sent" to nobody."""
+    anna_id = user_id(client, admin, "anna@geu.ac.in")
+    db.execute(
+        text(
+            "UPDATE refresh_tokens SET expires_at = now() - interval '1 minute' WHERE user_id = :u"
+        ),
+        {"u": anna_id},
+    )
+    db.commit()
+    queue(client, ("notice", "notice", PUSH_OR_EMAIL, anna_id, False))
+    assert deliver(client, push, mailer).sent == 1
+    assert sent_to(push, ANNA) == []
+    assert [m.subject for m in mail_to(mailer, "anna@geu.ac.in")] == ["notice"]
 
 
 def test_a_queued_alert_follows_an_email_change(client, db, push, mailer, admin, anna):

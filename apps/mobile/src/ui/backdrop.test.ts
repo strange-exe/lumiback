@@ -52,7 +52,8 @@ describe("LED field dots", () => {
       expect(d.at - 0.05).toBeGreaterThanOrEqual(0);
       expect(d.at + 0.16).toBeLessThanOrEqual(1);
       expect(d.peak).toBeGreaterThan(0);
-      expect(d.peak).toBeLessThanOrEqual(0.9);
+      // A quiet texture (owner, 2026-11-14): no dot gets brighter than 40%.
+      expect(d.peak).toBeLessThanOrEqual(0.4);
     }
   });
 

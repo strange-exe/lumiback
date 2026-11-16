@@ -4,6 +4,8 @@ import {
   consumeSafeReturn,
   INTENT_TTL_MS,
   safeReturnFor,
+  scanParams,
+  setSafeReturnTicked,
 } from "@/gate/intent";
 
 beforeEach(() => clearSafeReturn());
@@ -53,5 +55,20 @@ describe("safe-return intent (Today's tick, carried in memory to Scan)", () => {
   it("nothing armed means no safe return", () => {
     expect(safeReturnFor({}, 0)).toBe(false);
     expect(safeReturnFor({ intent: undefined }, 0)).toBe(false);
+  });
+
+  it("Scan's params carry an armed intent only while Today's box is ticked", () => {
+    expect(scanParams(0)).toEqual({});
+    setSafeReturnTicked(true);
+    const { intent } = scanParams(5);
+    expect(safeReturnFor({ intent }, 6)).toBe(true);
+    // Unticking (or leaving Today) stops later presses arming anything.
+    setSafeReturnTicked(false);
+    expect(scanParams(7)).toEqual({});
+    // clearSafeReturn (sign-out) drops the tick as well as the armed id.
+    setSafeReturnTicked(true);
+    clearSafeReturn();
+    expect(scanParams(8)).toEqual({});
+    expect(safeReturnFor({ intent }, 8)).toBe(false);
   });
 });

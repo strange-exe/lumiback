@@ -230,7 +230,15 @@ export function Clock({
   );
 }
 
-type Variant = "primary" | "secondary" | "danger" | "quiet" | "onHero" | "onHeroOutline";
+type Variant =
+  | "primary"
+  | "secondary"
+  | "danger"
+  | "quiet"
+  | "onHero"
+  | "onHeroOutline"
+  | "onBoard"
+  | "onBoardOutline";
 
 export function Button({
   label,
@@ -259,6 +267,9 @@ export function Button({
     quiet: { bg: "transparent", fg: c.accentText },
     onHero: { bg: c.onHero, fg: c.hero },
     onHeroOutline: { bg: "transparent", fg: c.onHero, border: c.heroLine },
+    // On a status board, which is light or dark with the theme.
+    onBoard: { bg: c.onBoard, fg: c.board },
+    onBoardOutline: { bg: "transparent", fg: c.onBoard, border: c.boardMuted },
   };
   const { bg, fg, border } = look[variant];
   return (

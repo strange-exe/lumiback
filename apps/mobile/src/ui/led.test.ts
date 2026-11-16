@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import * as RN from "react-native";
 import { AccessibilityInfo, Animated, StyleSheet, Text, type ViewStyle } from "react-native";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
@@ -6,9 +7,12 @@ import { layout, ROWS } from "@/lib/glyphs";
 import { IN, spokenMinutes, timeLate, timeLeft, type LedReading } from "@/lib/led";
 import { LedFigure } from "@/ui/led";
 
-const LED = "#ff6a2b";
-const LED_DANGER = "#ff5a4e";
-const LED_GOOD = "#5ed38c";
+// The light theme's board (white): the LED colours are the AA text colours.
+const LED = "#b33a0c";
+const LED_DANGER = "#b42318";
+const LED_GOOD = "#17703f";
+// The dark theme's lit board.
+const DARK_LED = "#ff6a2b";
 
 /** Stands in for a started animation, so the test can see what was asked to run. */
 function stub(): Animated.CompositeAnimation {
@@ -122,6 +126,21 @@ describe("LedFigure", () => {
     expect(litColor((await render(IN)).root)).toBe(LED_GOOD);
   });
 
+  it("glows in the dark theme's orange on the dark board", async () => {
+    const scheme = jest.spyOn(RN, "useColorScheme").mockReturnValue("dark");
+    try {
+      const { root } = await render(timeLeft(30));
+      expect(litColor(root)).toBe(DARK_LED);
+      const lit = dotsIn(byId(root, "led-lit"));
+      expect(lit.every((s) => typeof s.boxShadow === "string")).toBe(true);
+    } finally {
+      act(() => tree?.unmount());
+      tree = undefined;
+      // react-native's export is a getter jest can't restore through restoreAllMocks.
+      scheme.mockReturnValue("light");
+    }
+  });
+
   it("draws every dot of the panel, dim, with the figure's dots lit over it", async () => {
     const { root } = await render(timeLeft(72));
     const panel = byId(root, "led-panel");
@@ -130,11 +149,12 @@ describe("LedFigure", () => {
     const unlit = dotsIn(byId(root, "led-unlit"));
     expect(unlit).toHaveLength(19 * ROWS);
     // Unlit: the led colour at 13% alpha, never a readable colour.
-    expect(new Set(unlit.map((s) => s.backgroundColor))).toEqual(new Set(["#ff6a2b21"]));
+    expect(new Set(unlit.map((s) => s.backgroundColor))).toEqual(new Set([`${LED}21`]));
     const lit = dotsIn(byId(root, "led-lit"));
     const expected = layout("1:12").chars.reduce((n, ch) => n + ch.dots.length, 0);
     expect(lit).toHaveLength(expected);
-    expect(lit.every((s) => typeof s.boxShadow === "string")).toBe(true); // the glow
+    // On the white board the dots are flat: a glow there only blurs the figure.
+    expect(lit.every((s) => s.boxShadow === undefined)).toBe(true);
     // The colon's own group (the one that blinks) holds just its two dots.
     expect(dotsIn(byId(root, "led-colon"))).toHaveLength(2);
     // No text inside the panel: the figure is dots, and its words are the label.

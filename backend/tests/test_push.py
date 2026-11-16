@@ -587,6 +587,55 @@ def test_notify_user_counts_the_phones_it_reached(client, push):
     assert send(PushMessage(title="Late", body="OK?", urgent=True)) == 1  # muted, but urgent
 
 
+@pytest.mark.parametrize(
+    "ended",
+    [
+        "UPDATE refresh_tokens SET expires_at = now() - interval '1 minute'",  # sign-in ran out
+        # Revoked while the phone's registration was still on its way (the row outlived it).
+        "UPDATE refresh_tokens SET revoked_at = now()",
+    ],
+)
+def test_a_phone_whose_sign_in_ended_gets_no_push(client, db, push, ended):
+    """The phone is signed out (its sign-in expired, or ended as it registered): it must not
+    keep showing this account's notifications, urgent ones included."""
+    from app.push import notify_user
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya, TOKEN)
+    me = client.get("/auth/me", headers=riya).json()["id"]
+    db.execute(text(ended))
+    db.commit()
+    maker = client.app.state.sessionmaker
+    message = PushMessage(title="Late", body="OK?", urgent=True)
+    assert client.portal.call(notify_user, maker, push, uuid.UUID(me), message) == 0
+    assert push.outbox == []
+
+
+def test_a_notice_for_a_phone_whose_sign_in_ended_is_emailed(client, db, push):
+    """That phone gets no push (above), so it doesn't count as the app: email instead."""
+    from app.email import Email, MemoryMailer
+    from app.push import notify_or_email
+
+    _, riya = signup(client, "riya@example.com", "Riya")
+    register_token(client, riya, TOKEN)
+    me = client.get("/auth/me", headers=riya).json()["id"]
+    db.execute(text("UPDATE refresh_tokens SET expires_at = now() - interval '1 minute'"))
+    db.commit()
+    mailer = MemoryMailer()
+    message = PushMessage(title="Hi", body="There", channel="share-status")
+    client.portal.call(
+        notify_or_email,
+        client.app.state.sessionmaker,
+        push,
+        mailer,
+        uuid.UUID(me),
+        message,
+        lambda user: Email(user.email, "Hi", "There"),
+    )
+    assert push.outbox == []
+    assert [m.to for m in mailer.outbox] == ["riya@example.com"]
+
+
 @dataclasses.dataclass
 class PoolWatchingSender(MemoryPushSender):
     """Records how many pool connections are checked out while each send waits on Expo."""

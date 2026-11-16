@@ -55,7 +55,6 @@ from app.email import Email, Mailer
 from app.models import (
     AlertOutbox,
     OutboxMode,
-    PushToken,
     SessionStatus,
     ShareSession,
     ShareViewer,
@@ -63,7 +62,7 @@ from app.models import (
     UserRole,
     ViewerStatus,
 )
-from app.push import PushMessage, PushOutcome, PushSender, push_devices
+from app.push import PushMessage, PushOutcome, PushSender, has_app, push_devices
 
 logger = logging.getLogger(__name__)
 
@@ -276,8 +275,7 @@ async def _recipient(sessionmaker: async_sessionmaker[AsyncSession], row: _Claim
             )
             if not granted:
                 raise _GiveUp
-        has_app = await session.scalar(select(exists().where(PushToken.user_id == user.id)))
-        return _Recipient(user.email, bool(has_app))
+        return _Recipient(user.email, await has_app(session, user.id))
 
 
 def _email(row: _Claimed, to: str | None) -> Email:
@@ -381,7 +379,18 @@ async def _finish(
                 "last_error": error[:200],
             }
             outcome = "retry"
-        await session.execute(update(AlertOutbox).where(AlertOutbox.id == row.id).values(values))
+        # Only while this sender still holds the row: one cancelled meanwhile stays cancelled,
+        # and one claimed again after the lease ran out (attempts moved on) is the new holder's.
+        await session.execute(
+            update(AlertOutbox)
+            .where(
+                AlertOutbox.id == row.id,
+                AlertOutbox.sent_at.is_(None),
+                AlertOutbox.failed_at.is_(None),
+                AlertOutbox.attempts == row.attempts,
+            )
+            .values(values)
+        )
         await session.commit()
     return outcome
 

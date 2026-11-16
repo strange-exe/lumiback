@@ -22,8 +22,34 @@ export async function sendForOuting(sessionId: string): Promise<OutingShareStart
 }
 
 /**
- * On the "Heading out?" card: the tick (when the profile has an emergency email), or a short
- * hint to add one. Applies to both scanning at the gate and logging a trip.
+ * Below the "Heading out?" card, when the profile has no emergency email: a quiet row to add
+ * one. It sits on the page, not the board, so the board holds only what tapping out needs.
+ */
+export function SafeReturnHint({ offer }: { offer: SafeReturnOffer }): ReactNode {
+  const c = useColors();
+  if (offer.kind !== "hint") return null;
+  return (
+    <Press
+      onPress={() => {
+        haptic.tap();
+        router.navigate("/profile/outing-details");
+      }}
+      accessibilityRole="link"
+      accessibilityLabel="Add your emergency contact's email so they can follow you until you're back"
+      style={{ flexDirection: "row", alignItems: "center", gap: space(2), minHeight: 44 }}
+    >
+      <Ionicons name="mail-outline" size={18} color={c.muted} />
+      <Text style={[type.caption, { flex: 1, color: c.muted }]}>
+        Add your emergency contact&apos;s email to let them follow until you&apos;re back.
+      </Text>
+      <Ionicons name="chevron-forward" size={16} color={c.muted} />
+    </Press>
+  );
+}
+
+/**
+ * On the "Heading out?" card, when the profile has an emergency email: the tick. Applies to
+ * both scanning at the gate (the dock's Scan reads it) and logging a trip.
  */
 export function SafeReturnTick({
   offer,
@@ -35,26 +61,7 @@ export function SafeReturnTick({
   onChange: (next: boolean) => void;
 }): ReactNode {
   const c = useColors();
-  if (offer.kind === "none") return null;
-  if (offer.kind === "hint") {
-    return (
-      <Press
-        onPress={() => {
-          haptic.tap();
-          router.navigate("/profile/outing-details");
-        }}
-        accessibilityRole="link"
-        accessibilityLabel="Add your emergency contact's email so they can follow you until you're back"
-        style={{ flexDirection: "row", alignItems: "center", gap: space(2), minHeight: 44 }}
-      >
-        <Ionicons name="mail-outline" size={18} color={c.heroAccent} />
-        <Text style={[type.caption, { flex: 1, color: c.heroMuted }]}>
-          Add your emergency contact&apos;s email to let them follow until you&apos;re back.
-        </Text>
-        <Ionicons name="chevron-forward" size={16} color={c.heroMuted} />
-      </Press>
-    );
-  }
+  if (offer.kind !== "tick") return null;
   const label = `Let ${offer.name} follow until I'm back`;
   return (
     <Press
@@ -70,11 +77,11 @@ export function SafeReturnTick({
       <Ionicons
         name={checked ? "checkbox" : "square-outline"}
         size={24}
-        color={checked ? c.heroAccent : c.onHero}
+        color={checked ? c.accent : c.onBoard}
       />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[type.label, { color: c.onHero }]}>{label}</Text>
-        <Text style={[type.caption, { color: c.heroMuted }]}>
+        <Text style={[type.label, { color: c.onBoard }]}>{label}</Text>
+        <Text style={[type.caption, { color: c.boardMuted }]}>
           We email them a link to your live location. It stops when you&apos;re back, and
           they&apos;re told if you&apos;re 30 minutes late.
         </Text>
@@ -143,7 +150,7 @@ export function SafeReturnStatus({
   if (status === "loading") return null;
   if (status === "stopped") {
     return (
-      <Text style={[type.caption, { color: c.heroMuted }]} accessibilityRole="text">
+      <Text style={[type.caption, { color: c.boardMuted }]} accessibilityRole="text">
         You stopped sharing with your emergency contact. Their link no longer works.
       </Text>
     );
@@ -154,37 +161,37 @@ export function SafeReturnStatus({
         <Ionicons
           name={status === "sending" ? "radio" : "pause-circle-outline"}
           size={18}
-          color={status === "sending" ? c.heroAccent : c.heroMuted}
+          color={status === "sending" ? c.ledGood : c.boardMuted}
         />
-        <Text style={[type.label, { flex: 1, color: c.onHero }]}>
+        <Text style={[type.label, { flex: 1, color: c.onBoard }]}>
           {status === "sending"
             ? "Your emergency contact can follow you until you're back"
             : "Your emergency contact can't see where you are right now"}
         </Text>
       </View>
       {status === "clock" || status === "refused" ? (
-        <Text style={[type.caption, { color: c.heroMuted }]} accessibilityRole="alert">
+        <Text style={[type.caption, { color: c.boardMuted }]} accessibilityRole="alert">
           {REFUSED[status]}
         </Text>
       ) : null}
       {status === "paused" ? (
         <>
           {problem ? (
-            <Text style={[type.caption, { color: c.heroMuted }]} accessibilityRole="alert">
+            <Text style={[type.caption, { color: c.boardMuted }]} accessibilityRole="alert">
               {problem}
             </Text>
           ) : null}
           {fix ? (
             <Button
               label={settingsLabel(fix)}
-              variant="onHeroOutline"
+              variant="onBoardOutline"
               style={{ minHeight: 44 }}
               onPress={() => void openLocationSettings(fix)}
             />
           ) : null}
           <Button
             label="Send my location"
-            variant="onHeroOutline"
+            variant="onBoardOutline"
             busy={busy}
             busyLabel="Starting…"
             style={{ minHeight: 44 }}

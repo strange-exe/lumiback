@@ -1,9 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, Tabs } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
-import { Pressable, Text, useWindowDimensions, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { scanParams } from "@/gate/intent";
 import { useAuth } from "@/lib/auth";
 import { isStaff } from "@/lib/office";
 import type { TargetId } from "@/tour/steps";
@@ -37,20 +38,8 @@ export const SCAN_SIZE = dock.scan + dock.ring * 2;
 export const CENTRE_GAP = SCAN_SIZE + 12;
 /** How far Scan's ring rises above the pill's top edge. */
 const RAISE = dock.rise + dock.ring;
-/** The widest tab name ("History") at 13 px in Instrument Sans SemiBold, measured from the font. */
-const LABEL_WIDTH = 45;
 /** Tab names grow with the font size setting up to this much; the dock has no room beyond it. */
 const LABEL_SCALE = 1.3;
-
-/**
- * Whether the active tab's name fits beside its icon (as in the old dock) in half the pill. On
- * narrower phones, or with a larger font, it goes under the icon instead: still shown, never cut.
- */
-export function labelBeside(width: number, fontScale: number): boolean {
-  const half = (width - SIDE * 2 - PAD * 2 - CENTRE_GAP) / 2;
-  const active = 12 + 22 + 6 + LABEL_WIDTH * Math.min(fontScale, LABEL_SCALE) + 12;
-  return half >= active + 2 + TAB;
-}
 
 /**
  * Floating glass dock: the four destinations in one smoked-glass pill, two each side, and Scan
@@ -61,19 +50,18 @@ export function labelBeside(width: number, fontScale: number): boolean {
 export function Dock({ state, navigation }: DockProps): ReactNode {
   const c = useColors();
   const insets = useSafeAreaInsets();
-  const { width, fontScale } = useWindowDimensions();
   const { user } = useAuth();
   const staff = isStaff(user?.role);
   const active = state.routes[state.index];
   const target = sceneTarget(active?.key ?? "");
 
-  const item = (name: string, look: "beside" | "under" | "staff"): ReactNode => {
+  // Every tab shows its name (an icon alone is a guess): students' four tabs put it under the
+  // icon, which fits in half the pill on a 360 dp phone; staff's two put it beside.
+  const item = (name: string, look: "under" | "staff"): ReactNode => {
     const tab = TABS[name];
     const route = state.routes.find((r) => r.name === name);
     if (!tab || !route) return null;
     const focused = active?.name === name;
-    // Staff have two tabs: both keep their names, so the compact bar keeps one width.
-    const labelled = focused || look === "staff";
     const under = look === "under";
     const color = focused ? c.onDock : c.dockMuted;
     return (
@@ -111,7 +99,7 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           style={{
             height: ITEM,
             minWidth: TAB,
-            paddingHorizontal: labelled ? (under ? 10 : look === "staff" ? 16 : 12) : 0,
+            paddingHorizontal: under ? 4 : 16,
             borderRadius: ITEM / 2,
             borderCurve: "continuous",
             flexDirection: under ? "column" : "row",
@@ -122,20 +110,21 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
           }}
         >
           <Ionicons name={focused ? tab.active : tab.icon} size={22} color={color} />
-          {labelled ? (
-            <Text
-              numberOfLines={1}
-              maxFontSizeMultiplier={LABEL_SCALE}
-              style={{
-                fontFamily: fonts.semibold,
-                fontSize: 13,
-                lineHeight: under ? 16 : undefined,
-                color,
-              }}
-            >
-              {tab.label}
-            </Text>
-          ) : null}
+          <Text
+            numberOfLines={1}
+            maxFontSizeMultiplier={LABEL_SCALE}
+            // A large font setting on a narrow phone shrinks the name to fit, never cuts it.
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            style={{
+              fontFamily: focused ? fonts.semibold : fonts.medium,
+              fontSize: under ? 12 : 13,
+              lineHeight: under ? 16 : undefined,
+              color,
+            }}
+          >
+            {tab.label}
+          </Text>
         </View>
       </Pressable>
     );
@@ -173,10 +162,9 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
     );
   }
 
-  const look = labelBeside(width, fontScale) ? "beside" : "under";
   const half = (names: string[]): ReactNode => (
     <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 2 }}>
-      {names.map((name) => item(name, look))}
+      {names.map((name) => item(name, "under"))}
     </View>
   );
   return (
@@ -228,7 +216,9 @@ function ScanButton(): ReactNode {
       <Press
         onPress={() => {
           haptic.tap();
-          router.push("/scan");
+          // Today's safe-return box, if it is ticked, travels as an in-memory intent.
+          const params = scanParams();
+          router.push(params.intent ? { pathname: "/scan", params } : "/scan");
         }}
         accessibilityLabel="Scan at the gate"
         style={{

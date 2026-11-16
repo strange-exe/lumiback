@@ -173,6 +173,48 @@ def test_cancelling_an_open_outing_closes_it(client, db, office, riya):
     assert returned == left
 
 
+def test_a_correction_read_before_another_change_is_refused(client, db, office, riya):
+    """Two people correcting one outing at once: the one that read it first must not overwrite
+    the other's change, or record what it said "before" from a stale copy."""
+    import uuid
+
+    from app.models import CorrectionKind, Outing
+    from app.services import corrections
+    from app.services.corrections import Refused
+
+    outing = go_out(client, db, riya, hours_ago=3)
+    r = correct(client, office, outing["id"], kind="return", returned_at=ago(2), reason="Seen")
+    assert r.status_code == 200, r.text
+    state = client.app.state
+
+    async def stale_then_change() -> None:
+        async with state.sessionmaker() as session:
+            stale = await session.get(Outing, uuid.UUID(outing["id"]))
+            assert stale is not None
+            async with state.sessionmaker() as other:  # the second person's change lands first
+                await other.execute(
+                    text(
+                        "UPDATE outings SET returned_at = now() - interval '90 minutes' "
+                        "WHERE id = :id"
+                    ),
+                    {"id": outing["id"]},
+                )
+                await other.commit()
+            await corrections._apply(
+                session,
+                stale,
+                CorrectionKind.RETURN_TIME,
+                datetime.now(UTC) - timedelta(hours=1),
+                "",
+            )
+
+    with pytest.raises(Refused) as refused:
+        client.portal.call(stale_then_change)
+    assert refused.value.status == 409
+    left, returned, _ = outing_row(db, outing["id"])
+    assert abs((returned - left) - timedelta(minutes=90)) < timedelta(seconds=5)  # theirs stands
+
+
 def test_wardens_correct_only_their_hostels_outings(client, db, office):
     default = next(
         r for r in client.get("/admin/rule-sets", headers=office).json() if r["is_default"]

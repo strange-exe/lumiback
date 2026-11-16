@@ -75,6 +75,10 @@ export function useAuth(): AuthValue {
  * location service has stopped. */
 async function forgetStudentOnPhone(): Promise<void> {
   clearSafeReturn();
+  // A session the server ended can't remove its token (that needs the session), and the
+  // server stops pushing to a sign-in that ended. Forgetting it here keeps the location task
+  // from skipping its local alerts on the belief that pushes still come.
+  await forgetPushToken();
   void syncReturnReminders(null).catch(() => undefined);
   await clearTodayCache(); // Today offline's copy of their trip
   await stopSending().catch(() => undefined);
