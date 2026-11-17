@@ -65,6 +65,9 @@ const light = {
   onDock: "#f2f2f3",
   dockMuted: "#9a9aa3",
   dockActive: "#2b2c31",
+  /** Scan's fill and its glyph: the deeper orange in both themes, so a light glyph passes 3:1. */
+  scan: "#e8501a",
+  onScan: "#f1f1f2",
   scrim: "rgba(8, 9, 10, 0.72)",
 };
 
@@ -108,10 +111,15 @@ const dark: typeof light = {
   onDock: "#f2f2f3",
   dockMuted: "#9a9aa3",
   dockActive: "#303137",
+  // The dark theme's own accent (#ff6a2b) is too bright for a light glyph (2.9:1).
+  scan: "#e8501a",
+  onScan: "#f2f2f3",
   scrim: "rgba(0, 0, 0, 0.78)",
 };
 
 export type Colors = typeof light;
+/** Both palettes, for tests that check every theme. */
+export const palettes = { light, dark } as const;
 
 /** Instrument Sans for every word in the app. LED figures are dots (ui/led.tsx), not a font. */
 export const fonts = {

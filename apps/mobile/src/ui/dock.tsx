@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, Tabs } from "expo-router";
-import type { ComponentProps, ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useState, type ComponentProps, type ReactNode } from "react";
+import { Animated, Easing, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { scanParams } from "@/gate/intent";
@@ -12,6 +12,7 @@ import { tourTarget } from "@/tour/store";
 import { Glass, sceneTarget } from "@/ui/glass";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
+import { useLoop } from "@/ui/motion";
 import { dock, fonts, useColors } from "@/ui/theme";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -40,6 +41,25 @@ export const CENTRE_GAP = SCAN_SIZE + 12;
 const RAISE = dock.rise + dock.ring;
 /** Tab names grow with the font size setting up to this much; the dock has no room beyond it. */
 const LABEL_SCALE = 1.3;
+/** Scan's glyph: a QR code inside the scanner's corner brackets, and the line that sweeps it. */
+const GLYPH = 30;
+const QR = 14;
+const LINE = 3;
+/** The line's sweep (eased at both ends, never linear): down the brackets, back up, a rest. */
+const SWEEP = { duration: 950, easing: Easing.inOut(Easing.sin), useNativeDriver: true } as const;
+const FADE_IN = {
+  toValue: 1,
+  duration: 160,
+  easing: Easing.out(Easing.quad),
+  useNativeDriver: true,
+} as const;
+const FADE_OUT = {
+  toValue: 0,
+  duration: 200,
+  easing: Easing.in(Easing.quad),
+  useNativeDriver: true,
+} as const;
+const SWEEP_REST = 1400;
 
 /**
  * Floating glass dock: the four destinations in one smoked-glass pill, two each side, and Scan
@@ -208,9 +228,34 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
   );
 }
 
-/** Scan: an accent circle in a page-coloured ring, so it reads apart from what scrolls behind. */
+/**
+ * Scan: an accent circle in a page-coloured ring, so it reads apart from what scrolls behind.
+ * Its glyph is a QR code in the scanner's corner brackets, and a scan line sweeps down through
+ * it and back up, then rests, so the button reads as "scan" before anyone taps it. Pressing it
+ * squeezes slightly (Press). With Android animations off the line never shows.
+ */
 function ScanButton(): ReactNode {
   const c = useColors();
+  const [sweep] = useState(() => new Animated.Value(0)); // 0 top of the brackets, 1 bottom
+  const [shown] = useState(() => new Animated.Value(0));
+  useLoop(
+    () =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(shown, FADE_IN),
+            Animated.timing(sweep, { ...SWEEP, toValue: 1 }),
+          ]),
+          Animated.timing(sweep, { ...SWEEP, toValue: 0 }),
+          Animated.timing(shown, FADE_OUT),
+          Animated.delay(SWEEP_REST),
+        ]),
+      ),
+    () => {
+      sweep.setValue(0);
+      shown.setValue(0);
+    },
+  );
   return (
     <View ref={tourTarget("scan")} collapsable={false}>
       <Press
@@ -238,10 +283,39 @@ function ScanButton(): ReactNode {
             borderRadius: dock.scan / 2,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: c.accent,
+            // Scan's own deeper orange in both themes, so its light glyph passes 3:1 (theme.ts).
+            backgroundColor: c.scan,
           }}
         >
-          <Ionicons name="scan" size={28} color={c.onAccent} />
+          <View
+            style={{ width: GLYPH, height: GLYPH, alignItems: "center", justifyContent: "center" }}
+          >
+            <Ionicons name="scan" size={GLYPH} color={c.onScan} style={{ position: "absolute" }} />
+            <Ionicons name="qr-code" size={QR} color={c.onScan} />
+            <Animated.View
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 2,
+                right: 2,
+                height: LINE,
+                borderRadius: LINE / 2,
+                backgroundColor: c.onScan,
+                opacity: shown,
+                transform: [
+                  {
+                    translateY: sweep.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [3, GLYPH - LINE - 3],
+                    }),
+                  },
+                ],
+              }}
+            />
+          </View>
         </View>
       </Press>
     </View>

@@ -16,7 +16,7 @@ import { CENTRE_GAP, Dock, SCAN_SIZE } from "@/ui/dock";
 import { sceneTarget } from "@/ui/glass";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
-import { dock, dockClearance, useColors } from "@/ui/theme";
+import { dock, dockClearance, palettes, useColors } from "@/ui/theme";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn() } }));
 // The icon font needs native modules jest doesn't have; a named stand-in keeps the icon's props.
@@ -188,9 +188,46 @@ describe("Dock (students)", () => {
     const ring = flat(scan);
     expect(ring.width).toBe(SCAN_SIZE);
     expect(ring.borderRadius).toBe(SCAN_SIZE / 2);
-    const icon = scan.find((n) => n.props.name === "scan");
-    const circle = icon.parent!;
+    const circle = scan.find((n) => n.type === View && flat(n).backgroundColor === colours().scan);
     expect(flat(circle)).toMatchObject({ width: dock.scan, height: dock.scan });
+  });
+
+  it("draws a QR code in the scanner's brackets, its scan line hidden from screen readers", async () => {
+    const scan = one(scans((await render()).root));
+    expect(scan.findAll((n) => n.props.name === "scan")).toHaveLength(1);
+    expect(scan.findAll((n) => n.props.name === "qr-code")).toHaveLength(1);
+    // The glyph is the theme's onScan, never a fixed ink.
+    for (const name of ["scan", "qr-code"]) {
+      expect(scan.find((n) => n.props.name === name).props.color).toBe(colours().onScan);
+    }
+    // The sweeping line is decoration: Scan is announced once, by its label.
+    const line = one(
+      scan.findAll(
+        (n) =>
+          typeof n.type === "string" && n.props.importantForAccessibility === "no-hide-descendants",
+      ),
+    );
+    expect(line.props).toMatchObject({ accessibilityElementsHidden: true, pointerEvents: "none" });
+    expect(scan.props.accessibilityLabel).toBe("Scan at the gate");
+  });
+
+  it("gives Scan's glyph at least the 3:1 an icon needs, light on orange, in both themes", () => {
+    // WCAG relative luminance and contrast ratio, from #rrggbb.
+    const lum = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    const ratio = (a: string, b: string): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi! + 0.05) / (lo! + 0.05);
+    };
+    for (const p of Object.values(palettes)) {
+      expect(ratio(p.onScan, p.scan)).toBeGreaterThanOrEqual(3);
+      expect(lum(p.onScan)).toBeGreaterThan(lum(p.scan)); // light glyph, as in both themes
+    }
   });
 
   it("opens the scanner with a tap when Scan is pressed", async () => {
@@ -291,9 +328,12 @@ describe("Dock glass", () => {
     const root = (await render({ reduceTransparency: true })).root;
     expect(blurs(root)).toHaveLength(0);
     const c = colours();
-    expect(root.findAll((n) => n.type === View && flat(n).backgroundColor === c.dock)).toHaveLength(
-      1,
+    // The pill itself, not Scan's line (drawn in the same ink as the dock).
+    const inScan = new Set(scans(root).flatMap((s) => s.findAll(() => true)));
+    const fills = root.findAll(
+      (n) => n.type === View && !inScan.has(n) && flat(n).backgroundColor === c.dock,
     );
+    expect(fills).toHaveLength(1);
     expect(
       root.findAll((n) => n.type === View && flat(n).backgroundColor === c.dockGlass),
     ).toHaveLength(0);
