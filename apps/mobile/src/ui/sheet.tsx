@@ -65,6 +65,7 @@ export function Sheet({
   const y = useSharedValue(screen); // points below its resting place (off screen until it opens)
   const fade = useSharedValue(0); // the whole sheet's opacity (reduced motion)
   const height = useSharedValue(screen);
+  const from = useSharedValue(0); // where the finger touched down for the current drag
 
   useEffect(() => {
     if (open) {
@@ -114,14 +115,21 @@ export function Sheet({
     }
   };
 
+  // Travel is measured from where the finger touched down. The pan's own translation restarts
+  // when it activates, which drops everything moved before then: in a quick flick Android can
+  // batch the whole movement into the activating event, leaving a translation of zero.
   const drag = Gesture.Pan()
     .enabled(!reduced)
     .activeOffsetY([-8, 8])
+    .onBegin((e) => {
+      from.set(e.absoluteY);
+    })
     .onUpdate((e) => {
-      y.set(dragOffset(e.translationY));
+      y.set(dragOffset(e.absoluteY - from.get()));
     })
     .onEnd((e) => {
-      if (shouldDismiss(e.translationY, e.velocityY, height.get())) {
+      const travel = e.absoluteY - from.get();
+      if (shouldDismiss(travel, e.velocityY, height.get())) {
         scheduleOnRN(haptic.snap); // the commit, in the same frame as the sheet letting go
         const left = Math.max(0, height.get() - y.get());
         const ms = Math.min(EXIT.duration, Math.max(120, (left / Math.max(e.velocityY, 1)) * 1000));

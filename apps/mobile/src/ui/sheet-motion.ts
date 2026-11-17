@@ -16,7 +16,9 @@ const UP_LIMIT = 24;
 export function shouldDismiss(translation: number, velocity: number, height: number): boolean {
   "worklet";
   if (velocity < -FLICK / 2) return false; // flung back up: the person changed their mind
-  if (velocity > FLICK && translation > 0) return true;
+  // A flick counts even with no travel: Android can deliver a whole quick flick as one batched
+  // move, so the gesture starts, moves and ends at the same point with only its speed to go on.
+  if (velocity > FLICK && translation >= 0) return true;
   return translation > Math.max(FLOOR, height * SHARE);
 }
 

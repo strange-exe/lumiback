@@ -12,6 +12,11 @@ describe("shouldDismiss", () => {
     expect(shouldDismiss(30, 900, height)).toBe(true);
   });
 
+  it("closes on a fast flick that reports no travel (a whole flick delivered in one batch)", () => {
+    // Seen on Android: begin, then start, update and end all at translation 0, velocity 1675.
+    expect(shouldDismiss(0, 1675, height)).toBe(true);
+  });
+
   it("stays open on a flick back up, even after a long drag", () => {
     expect(shouldDismiss(300, -900, height)).toBe(false);
   });
