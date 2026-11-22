@@ -13,15 +13,24 @@ from pydantic import SecretStr
 from app.email import Email, ResendMailer, build_message
 from app.email_templates import (
     HTML_NOTICES,
+    Fix,
     account_link_email,
+    call_me_email,
     escalation_email,
+    escalation_follow_up_email,
+    follower_email,
+    help_contact_email,
+    help_office_email,
     ist_stamp,
     late_alert_email,
     late_alert_notice,
     notice_email,
+    office_notice_email,
     password_reset_email,
     request_decision_email,
     request_decision_notice,
+    request_waiting_email,
+    running_late_office_email,
     safe_return_overdue_email,
     set_logo,
     set_reply_to,
@@ -238,16 +247,26 @@ def test_late_alert_says_when_and_where_to_answer():
 
 def test_only_inbox_tested_notices_send_html():
     """HTML_NOTICES lists the kinds that reached the GEU inbox as HTML (2026-10-09, and
-    safe_return_start and safe_return_overdue at GEU and Gmail on 2026-11-06)."""
+    safe_return_start and safe_return_overdue at GEU and Gmail on 2026-11-06, and
+    escalation_follow_up on 2026-11-21). The office, follower and help notices switched on
+    2026-11-22 at the owner's request without their own inbox test."""
     assert HTML_NOTICES == {
         "approved",
         "declined",
         "escalation",
+        "escalation_follow_up",
         "safe_return_start",
         "safe_return_overdue",
         "account_invite",
         "account_reset",
         "safe_return_back",
+        "request_waiting",
+        "call_me",
+        "office_notice",
+        "running_late_office",
+        "follower",
+        "help_office",
+        "help_contact",
     }
     for invite in (True, False):
         link = account_link_email(
@@ -266,6 +285,74 @@ def test_only_inbox_tested_notices_send_html():
     )
     assert approved.html and escape("Today's outing is approved") in approved.html
     assert escalation_email(to="warden@geu.ac.in", count=1, web_url=WEB).html
+
+
+def _office_and_help_emails() -> dict[str, Email]:
+    at = datetime(2026, 11, 22, 14, 30, tzinfo=UTC)
+    return {
+        "request_waiting": request_waiting_email(
+            to="warden@geu.ac.in", backup=False, minutes=30, web_url=WEB
+        ),
+        "call_me": call_me_email(to="warden@geu.ac.in", student_id="s1", web_url=WEB),
+        "office_notice": office_notice_email(
+            to="riya@geu.ac.in", name="Riya", message="Come back", recall=True, web_url=WEB
+        ),
+        "running_late_office": running_late_office_email(
+            to="warden@geu.ac.in", minutes=20, due_at=at, was=at, web_url=WEB
+        ),
+        "follower": follower_email(
+            to="friend@gmail.com",
+            student="Riya",
+            heading="Riya is back",
+            paragraph="Back.",
+            web_url=WEB,
+        ),
+        "help_office": help_office_email(
+            to="warden@geu.ac.in", at=at, fix=Fix(30.3, 78.0, 12), web_url=WEB
+        ),
+        "help_contact": help_contact_email(
+            to="mum@gmail.com",
+            contact_name="Asha",
+            student="Riya Sharma",
+            at=at,
+            phone="+919876543210",
+            office_phone=None,
+            follower=False,
+        ),
+    }
+
+
+@pytest.mark.parametrize("kind", list(_office_and_help_emails()))
+def test_office_and_help_notices_are_html_and_urgent_ones_have_no_button(kind):
+    """Switched to HTML keeping each notice's link style: urgent (alert-tone) notices show the
+    address with no link, since a red alert plus a button read as phishing (late alert,
+    2026-10-09)."""
+    email = _office_and_help_emails()[kind]
+    assert email.html, kind
+    assert email.body  # the plain-text part is always there
+    if kind in ("call_me", "office_notice", "help_office", "help_contact"):
+        assert "<a href" not in email.html.split("Sent to")[0], kind  # no button or link
+    # The text part keeps every action link.
+    for url in (
+        "/admin/requests",
+        "/admin/people/s1",
+        "/home",
+        "/admin",
+        "/share",
+        "/admin/escalations",
+    ):
+        if url in email.html:
+            assert url in email.body
+
+
+@pytest.mark.parametrize("handed_over", [False, True])
+def test_follow_up_is_html_with_the_escalations_button(handed_over):
+    """The inbox-tested shape (2026-11-21): the escalation email's layout, one button."""
+    email = escalation_follow_up_email(to="warden@geu.ac.in", handed_over=handed_over, web_url=WEB)
+    assert email.html
+    assert 'href="https://lumiback.test/admin/escalations"' in email.html
+    assert "Open Escalations" in email.html
+    assert "/admin/escalations" in email.body  # the text part keeps the link too
 
 
 OVERDUE_LINK = "https://lumiback.test/watch/abc#key=k"

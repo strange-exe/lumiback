@@ -239,19 +239,36 @@ def password_reset_email(
 #   Unlike "late", it goes to someone who asked to follow the outing.
 # - "account_invite", "account_reset" and "safe_return_back": switched to HTML on 2026-11-07 at
 #   the owner's request ("the password link email isn't formatted"), in the shape that passed
-#   above (brand-first subject, short paragraphs, one button or none). Not inbox-tested on their
-#   own yet: run .claude/scripts/html_inbox_test.py for them before a large import.
+#   above (brand-first subject, short paragraphs, one button or none). Inbox at GEU Microsoft 365
+#   with plain-text controls before and after (2026-11-06 and again 2026-11-21).
+# - "escalation_follow_up" (added 2026-11-08 as plain text): in the escalation email's shape
+#   (one "Open Escalations" button), both variants (still unclaimed, handed to the head wardens)
+#   reached the GEU inbox, like the plain-text controls before and after (2026-11-21,
+#   .claude/scripts/follow_up_html_inbox_test.py).
+# - "request_waiting", "call_me", "office_notice", "running_late_office", "follower",
+#   "help_office" and "help_contact": switched to HTML on 2026-11-22 at the owner's request,
+#   WITHOUT their own inbox test (each plain version was never tested either). Each keeps its link
+#   style: urgent ones show the address with no link. If an office or contact reports a missing
+#   help email, test help_office and help_contact first: they are urgent, like "late".
 
 HTML_NOTICES = frozenset(
     {
         "approved",
         "declined",
         "escalation",
+        "escalation_follow_up",
         "safe_return_start",
         "safe_return_overdue",
         "account_invite",
         "account_reset",
         "safe_return_back",
+        "request_waiting",
+        "call_me",
+        "office_notice",
+        "running_late_office",
+        "follower",
+        "help_office",
+        "help_contact",
     }
 )
 
@@ -723,7 +740,6 @@ def escalation_follow_up_email(*, to: str, handed_over: bool, web_url: str) -> E
             action=("Open Escalations", f"{web_url}/admin/escalations"),
             note=None,
             reason=OFFICE_REASON,
-            link="plain",
         )
     )
 
