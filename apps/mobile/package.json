@@ -66,5 +66,20 @@
     "testMatch": [
       "<rootDir>/src/**/*.test.ts"
     ]
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo",
+        "expo-constants",
+        "expo-dev-client",
+        "expo-location",
+        "expo-notifications",
+        "expo-router",
+        "expo-splash-screen",
+        "expo-task-manager",
+        "expo-updates"
+      ]
+    }
   }
 }
