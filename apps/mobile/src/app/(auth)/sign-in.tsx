@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Illustration } from "@/ui/illustration";
 import { Button, Field, FormError, Notice, PasswordField, Screen, T } from "@/ui/kit";
+import { Sheet } from "@/ui/sheet";
 import { fonts, space, useColors } from "@/ui/theme";
 
 export default function SignIn(): ReactNode {
@@ -18,7 +19,13 @@ export default function SignIn(): ReactNode {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 5 wrong passwords in a row: sign-in is paused for this email; a reset lets them in now.
+  const [locked, setLocked] = useState(false);
   const passwordRef = useRef<TextInput>(null);
+  const resetPassword = (): void => {
+    setLocked(false);
+    router.push({ pathname: "/forgot-password", params: { email: email.trim() } });
+  };
 
   const submit = async (): Promise<void> => {
     if (!email.trim() || !password) return setError("Enter your university email and password.");
@@ -29,11 +36,13 @@ export default function SignIn(): ReactNode {
     } catch (e) {
       // Only an unverified email goes to the code screen; a turned-off account (also a 403)
       // shows the server's own words.
-      const refusal = e instanceof ApiError ? signInRefusal(e.status, e.detail) : null;
+      const refusal =
+        e instanceof ApiError ? signInRefusal(e.status, e.detail, e.problem?.code ?? null) : null;
       if (refusal?.verify) {
         router.push({ pathname: "/verify", params: { email: email.trim().toLowerCase() } });
       } else {
         setError(refusal ? refusal.message : "Something went wrong. Try again.");
+        if (refusal?.locked) setLocked(true);
       }
       setPassword(""); // only the password needs typing again
     } finally {
@@ -105,6 +114,16 @@ export default function SignIn(): ReactNode {
           </Link>
         </T>
       </View>
+      <Sheet open={locked} onClose={() => setLocked(false)} title="Forgot your password?">
+        <T tone="muted">
+          That&apos;s 5 wrong passwords in a row, so sign-in for this email is paused for up to 15
+          minutes. Reset your password with a code we email you to sign in now.
+        </T>
+        <View style={{ gap: space(3) }}>
+          <Button label="Reset password" onPress={resetPassword} />
+          <Button label="Not now" variant="secondary" onPress={() => setLocked(false)} />
+        </View>
+      </Sheet>
     </Screen>
   );
 }

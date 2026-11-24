@@ -284,6 +284,8 @@ export interface Redeemed {
 /** Result shape for Server Actions used with useActionState. */
 export interface FormState {
   error: string | null;
+  /** The API's code for the error, when it sent one (e.g. "login_locked"). */
+  code?: string | null;
   notice?: string | null;
   /**
    * What the student typed, handed back after an error. React resets a form once its action

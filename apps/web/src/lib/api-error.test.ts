@@ -3,12 +3,39 @@ import { test } from "node:test";
 
 import {
   ApiError,
+  errorFrom,
   reachBackend,
   readableDetail,
   UNREACHABLE,
   VIEW_AS_READ_ONLY,
 } from "./api-error.ts";
 import { READ_ONLY } from "./view-as.ts";
+
+test("a structured detail keeps its code and shows its message", () => {
+  const error = errorFrom(429, {
+    detail: { code: "login_locked", message: "Too many wrong passwords." },
+  });
+  assert.equal(error.status, 429);
+  assert.equal(error.code, "login_locked");
+  assert.equal(error.detail, "Too many wrong passwords.");
+});
+
+test("a plain sentence has no code", () => {
+  const error = errorFrom(401, { detail: "Invalid email or password" });
+  assert.equal(error.detail, "Invalid email or password");
+  assert.equal(error.code, null);
+});
+
+test("a validation list shows its first message", () => {
+  const error = errorFrom(422, { detail: [{ msg: "Value error, Too short" }] });
+  assert.equal(error.detail, "Too short");
+});
+
+test("an empty or odd body falls back by status", () => {
+  assert.equal(errorFrom(429, null).detail, "Too many attempts. Wait a moment and try again.");
+  assert.equal(errorFrom(500, { detail: { code: 7 } }).detail, "Something went wrong. Try again.");
+  assert.equal(errorFrom(500, { detail: { code: 7 } }).code, null);
+});
 
 test("a network failure becomes a 503 ApiError that forms can show", async () => {
   const failing = () => Promise.reject(new TypeError("fetch failed"));

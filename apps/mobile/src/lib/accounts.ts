@@ -198,12 +198,18 @@ export function personBody(form: PersonForm): { body: NewPerson } | { error: str
   return { body };
 }
 
+/** The API's code for 5 wrong passwords in a row on one email (a password reset lifts it). */
+export const LOGIN_LOCKED = "login_locked";
+
 /** The sign-in screen's reaction to a refused sign-in: only "Email not verified" goes to the
- * code screen; every other refusal (a turned-off account included) is shown as the server says. */
+ * code screen; a locked email also offers a password reset; every other refusal (a turned-off
+ * account included) is shown as the server says. */
 export function signInRefusal(
   status: number,
   detail: string,
-): { verify: true } | { verify: false; message: string } {
+  code: string | null = null,
+): { verify: true } | { verify: false; message: string; locked?: true } {
   if (status === 403 && detail === "Email not verified") return { verify: true };
+  if (code === LOGIN_LOCKED) return { verify: false, locked: true, message: detail };
   return { verify: false, message: detail };
 }

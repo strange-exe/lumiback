@@ -207,13 +207,23 @@ def test_wrong_password_and_unknown_email_look_identical(client):
     assert wrong.json() == unknown.json()
 
 
+def _wrong(client, email: str = "a@example.com"):
+    return client.post("/auth/login", json={"email": email, "password": "wrong-pass-1"})
+
+
 def test_email_locked_after_five_failures_even_with_correct_password(client, clock):
     register(client, "a@example.com")
-    for _ in range(5):
-        r = client.post("/auth/login", json={"email": "a@example.com", "password": "wrong-pass-1"})
-        assert r.status_code == 401
+    for _ in range(4):
+        assert _wrong(client).status_code == 401
+    # The 5th wrong password in a row says so, so the apps can offer a password reset now.
+    fifth = _wrong(client)
+    assert fifth.status_code == 429
+    assert fifth.json()["detail"]["code"] == "login_locked"
+    assert "Reset your password" in fifth.json()["detail"]["message"]
+    assert 0 < int(fifth.headers["Retry-After"]) <= 15 * 60
     locked = client.post("/auth/login", json={"email": "a@example.com", "password": PASSWORD})
     assert locked.status_code == 429
+    assert locked.json()["detail"]["code"] == "login_locked"
     assert "Retry-After" in locked.headers
 
     clock.advance(15 * 60 + 1)  # window passes
@@ -235,11 +245,43 @@ def test_successful_login_resets_failure_count(client, clock):
     assert login(client, "a@example.com")  # not locked: counter restarted after success
 
 
+def test_lockout_looks_the_same_for_unknown_emails(client):
+    register(client, "a@example.com")
+    for _ in range(4):
+        _wrong(client)
+        _wrong(client, "z@example.com")
+    known, unknown = _wrong(client), _wrong(client, "z@example.com")
+    assert known.status_code == unknown.status_code == 429
+    assert known.json() == unknown.json()
+
+
 def test_login_is_rate_limited_per_ip_across_emails(client, clock):
     for i in range(20):
         client.post("/auth/login", json={"email": f"x{i}@example.com", "password": "whatever-1"})
     r = client.post("/auth/login", json={"email": "new@example.com", "password": "whatever-1"})
     assert r.status_code == 429
+    assert r.json()["detail"] == "Too many attempts. Try again later."  # not an email lockout
+
+
+def test_right_passwords_do_not_use_up_the_ip_limit(client, clock):
+    # One hostel network can be one IP: students signing in correctly never block the next one.
+    register(client, "a@example.com")
+    for _ in range(25):
+        assert login(client, "a@example.com")
+    for i in range(20):
+        assert _wrong(client, f"x{i}@example.com").status_code == 401  # all 20 still allowed
+    assert _wrong(client, "y@example.com").status_code == 429
+
+
+def test_tries_on_a_locked_email_do_not_use_up_the_ip_limit(client, clock):
+    # No password is checked while an email is locked, so retrying it isn't guessing.
+    for _ in range(5):
+        _wrong(client)
+    for _ in range(30):
+        assert _wrong(client).json()["detail"]["code"] == "login_locked"
+    for i in range(15):  # 5 + 15 = the 20 failures the IP may have
+        assert _wrong(client, f"x{i}@example.com").status_code == 401
+    assert _wrong(client, "y@example.com").status_code == 429
 
 
 # ---------- access tokens ----------

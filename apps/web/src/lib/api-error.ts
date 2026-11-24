@@ -9,12 +9,42 @@ export class ApiError extends Error {
   // Plain fields, not parameter properties: `node --test` strips types and can't run those.
   readonly status: number;
   readonly detail: string;
+  /** A structured detail's `code` (e.g. "login_locked"); null for a plain sentence. */
+  readonly code: string | null;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code: string | null = null) {
     super(`${status}: ${detail}`);
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
+}
+
+/**
+ * The ApiError for an error response body: a string detail, a structured `{code, message}`, or
+ * FastAPI's validation list. Anything else falls back to a safe sentence for the status.
+ */
+export function errorFrom(status: number, payload: unknown): ApiError {
+  const detail =
+    payload && typeof payload === "object" && "detail" in payload
+      ? (payload as { detail: unknown }).detail
+      : undefined;
+  if (typeof detail === "string") return new ApiError(status, readableDetail(status, detail));
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const { code, message } = detail as { code?: unknown; message?: unknown };
+    if (typeof code === "string" && typeof message === "string") {
+      return new ApiError(status, message, code);
+    }
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown };
+    if (typeof first.msg === "string") {
+      return new ApiError(status, first.msg.replace(/^Value error, /, ""));
+    }
+  }
+  if (status === 429)
+    return new ApiError(status, "Too many attempts. Wait a moment and try again.");
+  return new ApiError(status, "Something went wrong. Try again.");
 }
 
 /** What a form shows when the API didn't answer at all (DNS, refused connection, reset). */

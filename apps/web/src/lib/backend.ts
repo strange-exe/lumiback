@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies, headers } from "next/headers";
 
-import { ApiError, reachBackend, readableDetail } from "@/lib/api-error";
+import { ApiError, errorFrom, reachBackend } from "@/lib/api-error";
 import { clientIpFrom, visitorHeaders } from "@/lib/client-ip";
 import { BACKEND_URL, INTERNAL_API_SECRET, IP_TRUST } from "@/lib/config";
 import { FAULT_HEADER, faultsEnabled, shouldFail } from "@/lib/test-faults";
@@ -23,20 +23,6 @@ interface CallOptions {
    * header): for asking who they really are once the API refused their view.
    */
   asSelf?: boolean;
-}
-
-/** Human-readable message from a FastAPI error body (string detail or validation list). */
-function detailOf(payload: unknown, status: number): string {
-  if (payload && typeof payload === "object" && "detail" in payload) {
-    const detail = (payload as { detail: unknown }).detail;
-    if (typeof detail === "string") return readableDetail(status, detail);
-    if (Array.isArray(detail) && detail.length > 0) {
-      const first = detail[0] as { msg?: unknown };
-      if (typeof first.msg === "string") return first.msg.replace(/^Value error, /, "");
-    }
-  }
-  if (status === 429) return "Too many attempts. Wait a moment and try again.";
-  return "Something went wrong. Try again.";
 }
 
 /** E2E only (see test-faults.ts): fail this call if the test asked for it. */
@@ -100,7 +86,7 @@ export async function streamBackend(path: string, options: CallOptions = {}): Pr
   const response = await send(path, options);
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null);
-    throw new ApiError(response.status, detailOf(payload, response.status));
+    throw errorFrom(response.status, payload);
   }
   return response;
 }
@@ -110,7 +96,7 @@ export async function callBackend<T>(path: string, options: CallOptions = {}): P
 
   if (response.status === 204 || response.status === 202) return undefined as T;
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, detailOf(payload, response.status));
+  if (!response.ok) throw errorFrom(response.status, payload);
   return payload as T;
 }
 

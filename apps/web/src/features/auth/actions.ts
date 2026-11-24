@@ -18,7 +18,7 @@ function text(form: FormData, key: string): string {
 }
 
 function failure(error: unknown, fields?: Record<string, string>): FormState {
-  if (error instanceof ApiError) return { error: error.detail, fields };
+  if (error instanceof ApiError) return { error: error.detail, code: error.code, fields };
   throw error; // unexpected: let the error boundary handle it
 }
 

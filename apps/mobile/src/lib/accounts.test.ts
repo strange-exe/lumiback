@@ -345,4 +345,20 @@ describe("signInRefusal", () => {
       message: "Invalid email or password",
     });
   });
+
+  it("offers a password reset once the email is locked, by its code", () => {
+    const message = "Too many wrong passwords. Reset your password to sign in now.";
+    expect(signInRefusal(429, message, "login_locked")).toEqual({
+      verify: false,
+      locked: true,
+      message,
+    });
+  });
+
+  it("a network-wide limit is only a message: a reset wouldn't lift it", () => {
+    expect(signInRefusal(429, "Too many attempts. Try again later.")).toEqual({
+      verify: false,
+      message: "Too many attempts. Try again later.",
+    });
+  });
 });

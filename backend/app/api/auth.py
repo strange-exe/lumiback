@@ -56,7 +56,9 @@ from app.services import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 REGISTER_PER_IP = Limit(max_hits=5, window_seconds=3600)
-LOGIN_PER_IP = Limit(max_hits=20, window_seconds=900)
+# Wrong passwords only: a hostel network can put every student behind one IP, so right ones
+# must never use this up.
+LOGIN_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=900)
 LOGIN_FAILURES_PER_EMAIL = Limit(max_hits=5, window_seconds=900)
 REFRESH_PER_IP = Limit(max_hits=30, window_seconds=60)
 VERIFY_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
@@ -80,6 +82,22 @@ TURNED_OFF = HTTPException(
     detail="This account has been turned off. Ask your hostel office to turn it back on.",
 )
 INVALID_CODE = HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+LOGIN_LOCKED_CODE = "login_locked"  # the apps offer a password reset when they see it
+
+
+def login_locked(e: RateLimited) -> HTTPException:
+    """5 wrong passwords in a row for this email (known or not: the answer is the same)."""
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": LOGIN_LOCKED_CODE,
+            "message": "Too many wrong passwords. Reset your password to sign in now, "
+            "or try again in up to 15 minutes.",
+        },
+        headers={"Retry-After": str(e.retry_after)},
+    )
+
+
 LINK_FAILED = HTTPException(
     status.HTTP_404_NOT_FOUND,
     detail="This link has expired or was already used. Use Forgot password to get a new one.",
@@ -334,14 +352,25 @@ async def login(
     limiter: LimiterDep,
 ) -> TokenOut:
     email = body.email.lower()
-    await enforce(limiter, "login:ip", client_ip(request), LOGIN_PER_IP)
     # Every try is counted before verifying, atomically (so a burst can't all pass the check
     # before any is recorded), and a locked email stays locked even with the right password.
-    # A right password clears the count below.
-    await enforce(limiter, "login:email", email, LOGIN_FAILURES_PER_EMAIL)
+    # A right password takes its tries back below, so only wrong ones add up.
+    try:
+        ip_hits = await limiter.hit_all([("login:ip", client_ip(request), LOGIN_FAILURES_PER_IP)])
+    except RateLimited as e:
+        raise too_many(e) from None
+    try:
+        await limiter.hit("login:email", email, LOGIN_FAILURES_PER_EMAIL)
+    except RateLimited as e:
+        await limiter.undo(ip_hits)  # no password is checked while locked: not a guess
+        raise login_locked(e) from None
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not await verify_password_async(user.password_hash if user else None, body.password):
+        try:  # this wrong password may have been the 5th in a row: say so now
+            await limiter.check("login:email", email, LOGIN_FAILURES_PER_EMAIL)
+        except RateLimited as e:
+            raise login_locked(e) from None
         raise INVALID_LOGIN
     assert user is not None
     # Like every sign-out (refresh_tokens._lock_user): a reset, password change or turn-off at
@@ -358,6 +387,7 @@ async def login(
         raise INVALID_LOGIN
     user = locked
 
+    await limiter.undo(ip_hits)  # the password was right: not a guess
     await limiter.reset("login:email", email)
     if not user.active:
         raise TURNED_OFF  # only revealed after the correct password; first, so a turned-off
