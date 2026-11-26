@@ -2,8 +2,9 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { cache } from "react";
 
-import { ApiError, callBackend } from "@/lib/backend";
+import { callBackend } from "@/lib/backend";
 import {
   ACCESS_COOKIE,
   ACCESS_MAX_AGE,
@@ -13,15 +14,9 @@ import {
   REFRESH_MAX_AGE,
 } from "@/lib/cookies";
 import { FILTERS_COOKIE, parseFilters, type Remembered } from "@/lib/filters";
+import { whoIsSignedIn, type Found } from "@/lib/me";
 import { isAdminRole, type TokenPair, type User, type ViewRole } from "@/lib/types";
-import {
-  canViewAs,
-  endsViewAs,
-  VIEW_AS_COOKIE,
-  viewingAsOf,
-  viewRole,
-  type EndTarget,
-} from "@/lib/view-as";
+import { canViewAs, VIEW_AS_COOKIE, viewingAsOf, viewRole, type EndTarget } from "@/lib/view-as";
 
 /** Store a fresh token pair. Only valid inside Server Actions and Route Handlers. */
 export async function storeTokens(tokens: TokenPair): Promise<void> {
@@ -67,25 +62,18 @@ export async function viewingAs(): Promise<ViewRole | null> {
 }
 
 /**
- * Who /auth/me says is signed in. While a developer views as a role, `role` is that role and
- * `viewing_as` equals it. `stale`: this browser's view is no good (the API ignored or refused
- * it), so the user returned is the real one and the cookie must be cleared.
+ * Who /auth/me says is signed in (lib/me.ts), asked once per request: the layout and the page
+ * both need it. React.cache keeps the answer for one server render only, never across requests,
+ * so an account turned off or demoted loses access on its very next request. A Server Action's
+ * own body isn't memoized at all, and the render after it (sign-in, sign-out, View as) starts
+ * empty. Keyed by the token and the view-as role as well, so a changed cookie is asked again.
  */
-async function me(token: string): Promise<{ user: User; stale: boolean } | null> {
-  const viewing = await viewingAs();
-  try {
-    const user = await callBackend<User>("/auth/me", { token });
-    return { user, stale: viewing !== null && viewingAsOf(user) !== viewing };
-  } catch (error) {
-    if (!(error instanceof ApiError)) throw error;
-    if (viewing && endsViewAs(error.status, error.detail)) {
-      // Ask again as the person themselves (no header), so they stay signed in.
-      const self = await callBackend<User>("/auth/me", { token, asSelf: true }).catch(() => null);
-      return self ? { user: { ...self, viewing_as: null }, stale: true } : null;
-    }
-    if (error.status === 401 || error.status === 403) return null;
-    throw error;
-  }
+const lookUp = cache((token: string, viewing: ViewRole | null): Promise<Found | null> =>
+  whoIsSignedIn((asSelf) => callBackend<User>("/auth/me", { token, asSelf }), viewing),
+);
+
+async function me(token: string): Promise<Found | null> {
+  return lookUp(token, await viewingAs());
 }
 
 /** The signed-in student, or null. Never throws for auth failures. */

@@ -88,7 +88,7 @@ export default async function RegisterPage({ searchParams }: PageProps): Promise
             Register
           </h1>
           <p className="text-sm text-muted">
-            Updates every 30 s · {overview.active_gates}{" "}
+            Updates every minute · {overview.active_gates}{" "}
             {overview.active_gates === 1 ? "gate" : "gates"} taking scans
           </p>
         </div>

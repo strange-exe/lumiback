@@ -88,7 +88,7 @@ export const STEPS: readonly TourStep[] = [
     audience: "staff",
     since: "1.13.0",
     title: "The register",
-    body: "Who's out now, who's late, and today's gate scans, updated every 30 seconds. Below it are everyone who's out and everyone who was late today, and you can correct a return from there.",
+    body: "Who's out now, who's late, and today's gate scans, updated every minute. Below it are everyone who's out and everyone who was late today, and you can correct a return from there.",
     changed: "The register's counts are now on a dark board with dot-matrix figures, like the app.",
   },
   {
