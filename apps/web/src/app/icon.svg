@@ -1,9 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#0d0e10"/>
-  <g transform="translate(16 16) scale(0.064) translate(-512 -503)">
-    <path d="M445.5 407a66.5 66.5 0 0 1 133 0" fill="none" stroke="#fff" stroke-width="33" stroke-linecap="round"/>
-    <path d="M404 432h216l-24 50H428z" fill="#fff"/>
-    <rect x="412" y="482" width="200" height="200" rx="70" fill="#fff"/>
-    <rect x="456" y="522" width="112" height="118" rx="26" fill="#ff6a2b"/>
+  <rect width="32" height="32" rx="7" fill="#141c22"/>
+  <rect x="2" y="2" width="28" height="28" rx="5" fill="#f3f0e8"/>
+  <g transform="translate(16 15.375) scale(0.5)">
+    <path d="M-4 -15V-18A4 4 0 0 1 4 -18V-15" fill="none" stroke="#141c22" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M-8 -15H8L15 -11V-8.5H-15V-11Z" fill="#141c22" stroke="#141c22" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M-8 22H8A1.5 1.5 0 0 1 9.5 23.5V24.5A1.5 1.5 0 0 1 8 26H-8A1.5 1.5 0 0 1 -9.5 24.5V23.5A1.5 1.5 0 0 1 -8 22Z" fill="#141c22"/>
+    <path d="M-4 -8H4A8 8 0 0 1 12 0V16A8 8 0 0 1 4 24H-4A8 8 0 0 1 -12 16V0A8 8 0 0 1 -4 -8Z" fill="#141c22"/>
+    <rect x="-6" y="-3" width="12" height="21" rx="4" fill="#5fe0cf"/>
   </g>
 </svg>

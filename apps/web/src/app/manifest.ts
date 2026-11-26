@@ -20,10 +20,17 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: PAGE,
     theme_color: PAGE,
     categories: ["lifestyle", "utilities"],
+    // The lantern (picked 2026-11-26). Not /icons/icon-192.png: that is the email logo
+    // (backend/app/email_templates.py), frozen until email delivery is retested with a new image.
     icons: [
-      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icons/lantern-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/lantern-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/icons/lantern-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
     ],
   };
 }

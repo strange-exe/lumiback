@@ -11,21 +11,7 @@ const DELETABLE = { email: "e2e-delete@geu.ac.in", password: STUDENT.password };
 test.describe("signed out", () => {
   test.use({ storageState: SIGNED_OUT });
 
-  test("installable: manifest and icons are served", async ({ request }) => {
-    const manifest = await request.get("/manifest.webmanifest");
-    expect(manifest.ok()).toBe(true);
-    const body = (await manifest.json()) as {
-      name: string;
-      display: string;
-      icons: { src: string; purpose: string }[];
-    };
-    expect(body).toMatchObject({ name: "Lumiback", display: "standalone" });
-    expect(body.icons.map((i) => i.purpose).sort()).toEqual(["any", "any", "maskable"]);
-    for (const icon of [...body.icons.map((i) => i.src), "/apple-icon.png"]) {
-      const response = await request.get(icon);
-      expect(response.headers()["content-type"], icon).toContain("image/png");
-    }
-  });
+  // The manifest and icon checks live in e2e/icons.spec.ts.
 
   test("the privacy notice is public and linked from sign-up", async ({ page }) => {
     await page.goto("/register");
