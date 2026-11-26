@@ -3,7 +3,8 @@ import { router } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
 import { View } from "react-native";
 
-import { canEditRules, everyHostel, isAdmin } from "@/lib/office";
+import { boardRowDetail, OUT_NOTICE } from "@/lib/board";
+import { canEditRules, canPostToBoard, everyHostel, isAdmin } from "@/lib/office";
 import type { OfficeOverview, Role } from "@/lib/types";
 import { FormError, LoadFailed, Row, Section, StatusChip, T } from "@/ui/kit";
 import { LedBoard, LedFigure } from "@/ui/led";
@@ -22,6 +23,7 @@ export function OfficeHome({
   refreshing,
   onRetry,
   onSendNotice,
+  boardActive,
 }: {
   role: Role | undefined;
   overview: OfficeOverview | undefined;
@@ -29,8 +31,11 @@ export function OfficeHome({
   loading: boolean;
   refreshing: boolean;
   onRetry: () => Promise<void>;
-  /** Opens "Send a notice" (the sheet lives with the screen, which makes the API call). */
+  /** Opens "Message students who are out" (the sheet lives with the screen, which makes the
+   * API call). */
   onSendNotice: () => void;
+  /** Posts up on the hostel board, once loaded (undefined: not known). */
+  boardActive?: number;
 }): ReactNode {
   const c = useColors();
   const all = everyHostel(role);
@@ -148,13 +153,6 @@ export function OfficeHome({
             trailing={chevron}
             onPress={() => router.push("/office/late")}
           />
-          <Row
-            leading={icon("megaphone-outline")}
-            title="Send a notice"
-            detail="To students out now, or ask them back"
-            trailing={chevron}
-            onPress={onSendNotice}
-          />
         </Section>
         {/* A refresh failed: these are the last counts that loaded. */}
         <FormError message={error} />
@@ -177,6 +175,25 @@ export function OfficeHome({
   return (
     <>
       {today}
+      {/* Always shown: telling students works whether or not today's counts loaded. */}
+      <Section title="Tell students">
+        {canPostToBoard(role) ? (
+          <Row
+            leading={icon("newspaper-outline")}
+            title="Post to the hostel board"
+            detail={boardRowDetail(boardActive)}
+            trailing={chevron}
+            onPress={() => router.push("/office/board")}
+          />
+        ) : null}
+        <Row
+          leading={icon("megaphone-outline")}
+          title={OUT_NOTICE.title}
+          detail={OUT_NOTICE.detail}
+          trailing={chevron}
+          onPress={onSendNotice}
+        />
+      </Section>
       <Section title={all ? "Hostels and setup" : "Your hostels"}>
         <Row
           leading={icon("people-outline")}

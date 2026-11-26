@@ -7,7 +7,8 @@ import { setSafeReturnTicked } from "@/gate/intent";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { canAsk } from "@/lib/corrections";
-import { everyHostel, isStaff, ROLE_LABEL } from "@/lib/office";
+import { activeCount } from "@/lib/board";
+import { canPostToBoard, everyHostel, isStaff, ROLE_LABEL } from "@/lib/office";
 import { office } from "@/lib/office-api";
 import {
   asksAgain,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/rules";
 import { clockParts, formatDay, formatMinutes, formatTime, progress } from "@/lib/time";
 import type {
+  BoardPost,
   Campus,
   Outing,
   OutingPage,
@@ -44,7 +46,12 @@ import { loadTodayCache, saveTodayCache } from "@/lib/today-cache-store";
 import { useData } from "@/lib/use-data";
 import { useNow } from "@/lib/use-now";
 import { sentence } from "@/lib/words";
-import { allowNotifications, syncReturnReminders } from "@/notify/notify";
+import {
+  allowNotifications,
+  dismissStaleBoardNotifications,
+  syncReturnReminders,
+} from "@/notify/notify";
+import { BoardCard, CARD_POSTS, useMarkSeen, useOnScreen } from "@/screens/board";
 import { CorrectionSheet } from "@/screens/correction-sheet";
 import { OfflineTrip } from "@/screens/offline-trip";
 import { RunningLate } from "@/screens/running-late";
@@ -52,6 +59,7 @@ import { NoticeSheet } from "@/screens/office/NoticeSheet";
 import { OfficeHome, officeScope } from "@/screens/office/OfficeHome";
 import { OutOffice } from "@/screens/out-office";
 import { RequestSheet } from "@/screens/outing-request";
+import { PhaseStrip } from "@/screens/phase-strip";
 import {
   SafeReturnHint,
   SafeReturnStatus,
@@ -96,6 +104,8 @@ interface TodayData {
   recent: Outing[] | null;
   /** For the safe-return tick (null: not loaded, so neither the tick nor the hint). */
   profile: Profile | null;
+  /** The hostel board's posts (null: not loaded, so no card). */
+  board: BoardPost[] | null;
   /** Lumiback can't be reached: the last trip it showed, read-only (null when online). */
   offline: OfflineView | null;
 }
@@ -116,6 +126,13 @@ function StaffToday(): ReactNode {
   const { user } = useAuth();
   const load = useCallback(() => office.overview(), []);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
+  // The board row's "N active posts": loaded on its own, so a failure never hides the office.
+  const poster = canPostToBoard(user?.role);
+  const loadBoard = useCallback(
+    () => (poster ? office.board().then((b) => activeCount(b.posts)) : Promise.resolve(undefined)),
+    [poster],
+  );
+  const board = useData(loadBoard);
   const [noticing, setNoticing] = useState(false);
   // Keep the counts current while Today is on screen, like the website's register.
   useFocusEffect(
@@ -131,7 +148,10 @@ function StaffToday(): ReactNode {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => void reload()}
+          onRefresh={() => {
+            void reload();
+            void board.refetch();
+          }}
           colors={[c.accent]}
           tintColor={c.accent}
         />
@@ -147,6 +167,7 @@ function StaffToday(): ReactNode {
         refreshing={refreshing}
         onRetry={reload}
         onSendNotice={() => setNoticing(true)}
+        boardActive={board.data}
       />
       {noticing ? (
         <NoticeSheet everyHostel={everyHostel(user?.role)} onClose={() => setNoticing(false)} />
@@ -204,12 +225,18 @@ function StudentToday(): ReactNode {
   const load = useCallback(async (): Promise<TodayData> => {
     // Whose Today this is: a sign-out or another sign-in mid-load never keeps it for offline.
     const session = sessionGeneration();
+    // When the board was asked for: pushes shown after this aren't judged on its answer.
+    const boardAsked = Date.now();
     const rest = Promise.all([
       api<OutingSummary>("/outings/summary").catch(() => null),
       api<Campus>("/campus").catch(() => undefined),
       api<OutingPage>("/outings?limit=4").catch(() => null),
       api<OutingRequest | null>("/outings/request").catch(() => null),
       api<Profile>("/profile").catch(() => null),
+      student.board().then(
+        (b) => b.posts,
+        () => null,
+      ),
     ]);
     let outing: Outing | null;
     try {
@@ -229,13 +256,16 @@ function StudentToday(): ReactNode {
             request: null,
             recent: null,
             profile: null,
+            board: null,
             offline,
           };
         }
       }
       throw e;
     }
-    const [summary, campus, page, request, profile] = await rest;
+    const [summary, campus, page, request, profile, board] = await rest;
+    // Board notifications for posts that ended or were taken down leave the shade.
+    if (board) void dismissStaleBoardNotifications(board, boardAsked);
     // Every load (focus, refresh, after an action) re-aligns the reminders, even for an
     // outing changed on the web or one that just ended.
     void syncReturnReminders(outing?.expected_return_at ?? null);
@@ -244,7 +274,17 @@ function StudentToday(): ReactNode {
     const recent = page ? page.items.filter((o) => o.status === "returned").slice(0, 3) : null;
     const rules = campus?.today ?? null;
     const rulesStatus: RulesStatus = campus === undefined ? "failed" : rules ? "ok" : "none";
-    return { outing, summary, rules, rulesStatus, request, recent, profile, offline: null };
+    return {
+      outing,
+      summary,
+      rules,
+      rulesStatus,
+      request,
+      recent,
+      profile,
+      board,
+      offline: null,
+    };
   }, [userId, cache]);
   const { data, error, loading, refreshing, reload, refetch } = useData(load);
   const offline = data?.offline ?? null;
@@ -261,11 +301,19 @@ function StudentToday(): ReactNode {
   // "Can't scan? Log a trip instead" on the scanner lands here with a fresh `at`: open the sheet.
   const { action, at } = useLocalSearchParams<{ action?: string; at?: string }>();
   const logRequest = action === "log" ? (at ?? null) : null;
+  // The board card's posts count as read once the card is on screen, not when they load.
+  const markSeen = useMarkSeen();
+  const board = data?.board ?? null;
+  const onSeen = useCallback(() => {
+    if (board) markSeen(board.slice(0, CARD_POSTS));
+  }, [board, markSeen]);
+  const boardView = useOnScreen(onSeen);
 
   return (
     <Screen
       edges={["top"]}
       scan
+      onViewport={boardView.onViewport}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -309,6 +357,8 @@ function StudentToday(): ReactNode {
       {data?.rules ? (
         <RulesCard rules={data.rules} request={data.request} onChange={reload} />
       ) : null}
+      {/* After the live rules: what the hostel office posted. */}
+      {board ? <BoardCard posts={board} onLayout={boardView.onLayout} /> : null}
 
       {/* Before the first trip, how tapping out works is the next thing to read. */}
       {!loading && !data?.recent?.length && data?.summary?.total === 0 ? <HowItWorks /> : null}
@@ -649,7 +699,7 @@ function Out({
   return (
     <FadeIn style={{ gap: space(4) }}>
       <View style={{ gap: space(2) }}>
-        <StatusChip label={overdue ? "Late" : "Out"} tone={overdue ? "danger" : "accent"} />
+        <StatusChip label={overdue ? "Late" : "Out"} tone={overdue ? "danger" : "out"} />
         <Text style={[type.title, { color: c.ink }]} numberOfLines={2} accessibilityRole="header">
           {outing.destination ?? "Out and about"}
         </Text>
@@ -905,56 +955,6 @@ function TripLine({ done, overdue }: { done: number; overdue: boolean }): ReactN
   );
 }
 
-/** Where the trip is, in four steps: left, out now, due (or late), in. */
-function PhaseStrip({ outing, overdue }: { outing: Outing; overdue: boolean }): ReactNode {
-  const c = useColors();
-  const due = formatTime(outing.expected_return_at);
-  const steps = [
-    { label: `Left ${formatTime(outing.left_at)}`, state: "done" },
-    { label: "Out now", state: overdue ? "done" : "now" },
-    { label: overdue ? "Late" : `Due ${due}`, state: overdue ? "late" : "next" },
-    { label: "In", state: "next" },
-  ] as const;
-  return (
-    <View
-      accessible
-      accessibilityLabel={`Left ${formatTime(outing.left_at)}, ${overdue ? `late, was due ${due}` : `out now, due ${due}`}, not back in yet`}
-      style={{ flexDirection: "row", gap: space(1.5) }}
-    >
-      {steps.map((s) => {
-        const bar =
-          s.state === "done"
-            ? c.ink
-            : s.state === "now"
-              ? c.accent
-              : s.state === "late"
-                ? c.danger
-                : c.line;
-        const ink = s.state === "next" ? c.muted : s.state === "late" ? c.danger : c.ink;
-        return (
-          <View key={s.label} style={{ flex: 1, gap: space(2) }}>
-            <View style={{ height: 3, borderRadius: 2, backgroundColor: bar }} />
-            <Text
-              numberOfLines={1}
-              style={[
-                type.caption,
-                {
-                  color: ink,
-                  fontFamily:
-                    s.state === "now" || s.state === "late" ? fonts.semibold : fonts.medium,
-                  fontVariant: ["tabular-nums"],
-                },
-              ]}
-            >
-              {s.label}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 /**
  * Today's rules (from the student's hostel), and on form days the outing request: ask, wait,
  * approved, or declined with the office's note.
@@ -1191,7 +1191,17 @@ function Recent({
     summary?.on_time_rate == null ? null : `${Math.round(summary.on_time_rate * 100)}% on time`;
   return (
     <View style={{ gap: space(3) }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      {/* With a large font the link drops under the heading instead of running into it and off
+          the right edge (recent-header.test.ts). */}
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          columnGap: space(3),
+        }}
+      >
         <T tone="label" style={{ color: c.muted }}>
           Recent trips
         </T>
@@ -1199,9 +1209,14 @@ function Recent({
           onPress={() => router.navigate("/history")}
           accessibilityLabel={`${rate ? `${rate}. ` : ""}See all trips in History`}
           hitSlop={8}
-          style={{ flexDirection: "row", alignItems: "center", gap: 2, minHeight: 32 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 2,
+            minHeight: 32,
+          }}
         >
-          <T tone="label" style={{ color: c.ink, fontVariant: ["tabular-nums"] }}>
+          <T tone="label" style={{ flexShrink: 1, color: c.ink, fontVariant: ["tabular-nums"] }}>
             {rate ? `${rate}, see all` : "See all"}
           </T>
           <Ionicons name="chevron-forward" size={16} color={c.ink} />

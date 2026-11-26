@@ -279,7 +279,7 @@ function Start({ onStarted }: { onStarted: () => Promise<void> }): ReactNode {
           label="Start sharing"
           busy={busy}
           busyLabel="Starting…"
-          icon={<Ionicons name="navigate" size={18} color={c.onAccent} />}
+          icon="navigate"
           onPress={() => void start()}
         />
       </Card>
@@ -478,7 +478,7 @@ function Live({
 
       <Button
         label="Invite someone"
-        icon={<Ionicons name="person-add" size={18} color={c.onAccent} />}
+        icon="person-add"
         onPress={() => {
           haptic.tap();
           invite.ensureFresh();
@@ -685,7 +685,8 @@ function InviteSheet({
 
       <Button
         label="Send on WhatsApp"
-        icon={<Ionicons name="logo-whatsapp" size={20} color={c.onAccent} />}
+        icon="logo-whatsapp"
+        iconSize={20}
         onPress={() => {
           if (!code) return;
           haptic.tap();
@@ -697,13 +698,7 @@ function InviteSheet({
           <Button
             label={copied ? "Copied" : "Copy code"}
             variant="secondary"
-            icon={
-              <Ionicons
-                name={copied ? "checkmark" : "copy-outline"}
-                size={18}
-                color={c.accentText}
-              />
-            }
+            icon={copied ? "checkmark" : "copy-outline"}
             onPress={() => {
               if (!code) return;
               void Clipboard.setStringAsync(code.code).then(() => {
@@ -717,7 +712,7 @@ function InviteSheet({
           <Button
             label="More apps"
             variant="secondary"
-            icon={<Ionicons name="share-social-outline" size={18} color={c.accentText} />}
+            icon="share-social-outline"
             onPress={() => {
               if (!code) return;
               void ShareSheet.share({ message: text }).catch(() => undefined);

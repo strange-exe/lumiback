@@ -12,19 +12,17 @@ import { useAuth } from "@/lib/auth";
 import { isStaff, ROLE_LABEL } from "@/lib/office";
 import { buildLines } from "@/lib/build-info";
 import { WEB_URL } from "@/lib/config";
-import { usePrefs } from "@/lib/prefs";
+import { allSwitchesOn, usePrefs } from "@/lib/prefs";
 import { saveMyData } from "@/lib/my-data";
 import { apiStatusRows, appStatusRows, type ApiStatus, type StatusRow } from "@/lib/status";
 import { formatDate, formatStamp } from "@/lib/time";
 import type { Profile as ProfileData } from "@/lib/types";
 import { useData } from "@/lib/use-data";
 import { canViewAs, isDeveloperAsSelf, useViewAs } from "@/lib/view-as";
-import { Press, Row, Screen, Section, T } from "@/ui/kit";
-import { fonts, radius, space, useColors } from "@/ui/theme";
+import { chipColours, Press, Row, Screen, Section, T } from "@/ui/kit";
+import { appearanceSummary, fonts, radius, space, useColors } from "@/ui/theme";
 import { CURRENT, NATIVE_BUILDS } from "@/updates/changelog";
 import { showUpdatePrompt, useNativeUpdate } from "@/updates/UpdatePrompt";
-
-const APPEARANCE = { system: "Match phone", light: "Light", dark: "Dark" } as const;
 
 export default function Profile(): ReactNode {
   const { user, signOut } = useAuth();
@@ -149,7 +147,7 @@ export default function Profile(): ReactNode {
           detail={
             blocked
               ? "Blocked in Android settings"
-              : [prefs.followRequests, prefs.returnReminders, prefs.shareStatus].every(Boolean)
+              : allSwitchesOn(prefs, !isStaff(user.role))
                 ? "All on"
                 : "Some off"
           }
@@ -159,7 +157,7 @@ export default function Profile(): ReactNode {
         <Row
           leading={icon("contrast-outline")}
           title="Appearance"
-          detail={APPEARANCE[prefs.appearance]}
+          detail={appearanceSummary(prefs.theme, prefs.appearance)}
           trailing={chevron}
           onPress={() => router.push("/profile/appearance")}
         />
@@ -265,7 +263,8 @@ export default function Profile(): ReactNode {
 
 function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): ReactNode {
   const c = useColors();
-  const color = tone === "accent" ? c.accentText : c.good;
+  // The kit's chip colours: an update to get is ink on the hairline fill (teal means "out").
+  const [fill, color] = chipColours(c, tone);
   return (
     <View
       style={{
@@ -275,7 +274,7 @@ function Badge({ text, tone }: { text: string; tone: "accent" | "good" }): React
         minHeight: 28,
         paddingHorizontal: space(3),
         borderRadius: radius.pill,
-        backgroundColor: tone === "accent" ? c.accentSoft : c.goodSoft,
+        backgroundColor: fill,
       }}
     >
       <Ionicons

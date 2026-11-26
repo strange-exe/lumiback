@@ -1,4 +1,3 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { useState, type ReactNode } from "react";
 import { AccessibilityInfo, Alert, Linking, View } from "react-native";
 
@@ -97,7 +96,7 @@ export function OutOffice({ office }: { office: OfficeContact | null | undefined
           label="Call the hostel office"
           variant="secondary"
           accessibilityLabel={`Call the hostel office, ${formatPhone(action.phone)}`}
-          icon={<Ionicons name="call" size={18} color={c.accentText} />}
+          icon="call"
           onPress={() => {
             haptic.tap();
             callOffice(action.phone);
@@ -109,7 +108,7 @@ export function OutOffice({ office }: { office: OfficeContact | null | undefined
           variant="secondary"
           busy={asking}
           busyLabel="Asking…"
-          icon={<Ionicons name="call-outline" size={18} color={c.accentText} />}
+          icon="call-outline"
           onPress={() => void askForCall()}
         />
       )}
@@ -126,7 +125,8 @@ export function OutOffice({ office }: { office: OfficeContact | null | undefined
         label="Help"
         variant="danger"
         accessibilityLabel="Help: send a help alert to the hostel office"
-        icon={<Ionicons name="alert-circle" size={20} color={c.surface} />}
+        icon="alert-circle"
+        iconSize={20}
         onPress={() => {
           haptic.tap();
           setHelping(true);
@@ -157,7 +157,6 @@ function HelpSheet({
   office: OfficeContact | null | undefined;
   onClose: () => void;
 }): ReactNode {
-  const c = useColors();
   const [step, setStep] = useState<Step>({ kind: "confirm" });
   const [error, setError] = useState<string | null>(null);
   const busy = step.kind === "locating" || step.kind === "sending";
@@ -202,7 +201,7 @@ function HelpSheet({
             <Button
               label="Call the hostel office"
               accessibilityLabel={`Call the hostel office, ${formatPhone(action.phone)}`}
-              icon={<Ionicons name="call" size={18} color={c.onAccent} />}
+              icon="call"
               onPress={() => callOffice(action.phone)}
             />
           </View>

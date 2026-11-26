@@ -12,7 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { installErrorReporting, setErrorRoute } from "@/lib/error-handler";
-import { loadPrefs } from "@/lib/prefs";
+import { applyStoredAppearance } from "@/lib/prefs";
 import { useWakeOnForeground } from "@/lib/wake-server";
 // The background tasks (location, update announcements) are defined in index.ts, not here: a
 // background launch never loads this layout.
@@ -43,11 +43,12 @@ function Navigator(): ReactNode {
     InstrumentSans_500Medium,
     InstrumentSans_600SemiBold,
   });
-  // Appearance and "seen onboarding" are read before the first frame: no flash of the wrong
-  // theme or of the onboarding screen.
+  // Appearance, the colour theme and "seen onboarding" are read before the first frame: no
+  // flash of the wrong theme or of the onboarding screen. Light or dark is applied again on each
+  // mount, as an Activity relaunch (font or display size change) resets it natively.
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   useEffect(() => {
-    void loadPrefs().finally(() => setPrefsLoaded(true));
+    void applyStoredAppearance().finally(() => setPrefsLoaded(true));
   }, []);
   // The splash covers only what is local (fonts, preferences); the server check that can take
   // up to a minute (a sleeping server waking) gets the app's own starting screen instead.
@@ -63,8 +64,8 @@ function Navigator(): ReactNode {
   if (!handedOff && status !== "offline") {
     return (
       <>
-        {/* The starting screen is the dark LED board in both modes. */}
-        <StatusBar style="light" />
+        {/* The starting screen is the status board, light or dark with the mode. */}
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
         <StartingScreen
           outcome={status === "loading" ? null : status}
           userName={user?.name ?? null}

@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { createElement } from "react";
 import {
   AccessibilityInfo,
+  Animated,
   Dimensions,
   StyleSheet,
   Text,
@@ -11,8 +12,9 @@ import {
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import { useAuth } from "@/lib/auth";
+import { setPrefs } from "@/lib/prefs";
 import { clearSafeReturn, safeReturnFor, setSafeReturnTicked } from "@/gate/intent";
-import { CENTRE_GAP, Dock, SCAN_SIZE } from "@/ui/dock";
+import { CENTRE_GAP, Dock, SCAN_MOTION, SCAN_SIZE, scanLoop } from "@/ui/dock";
 import { sceneTarget } from "@/ui/glass";
 import { haptic } from "@/ui/haptics";
 import { Press } from "@/ui/kit";
@@ -29,6 +31,10 @@ jest.mock(
 );
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
 jest.mock("@/ui/haptics", () => ({ haptic: { tap: jest.fn() } }));
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+}));
 jest.mock("react-native-safe-area-context", () => ({
   ...jest.requireActual("react-native-safe-area-context"),
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 24, left: 0 }),
@@ -211,7 +217,30 @@ describe("Dock (students)", () => {
     expect(scan.props.accessibilityLabel).toBe("Scan at the gate");
   });
 
-  it("gives Scan's glyph at least the 3:1 an icon needs, light on orange, in both themes", () => {
+  it("lifts Scan with the theme's own shadow, never a fixed colour", async () => {
+    const scan = one(scans((await render()).root));
+    expect(flat(scan).boxShadow).toBe(colours().scanShadow);
+    for (const p of Object.values(palettes)) expect(p.scanShadow).toMatch(/^0 \d+px \d+px rgba\(/);
+  });
+
+  it("gives the scan line a fading trail above it, hidden from screen readers", async () => {
+    const scan = one(scans((await render()).root));
+    const beam = one(
+      scan.findAll(
+        (n) =>
+          typeof n.type === "string" && n.props.importantForAccessibility === "no-hide-descendants",
+      ),
+    );
+    // The line, then two bands above it that fade the further they are from it.
+    const bands = beam.findAll((n) => n.type === View && typeof flat(n).opacity === "number");
+    expect(bands).toHaveLength(2);
+    const [near, far] = bands.map(flat).sort((a, b) => Number(b.opacity) - Number(a.opacity));
+    expect(Number(near!.bottom)).toBeLessThan(Number(far!.bottom)); // nearer the line
+    expect(Number(near!.opacity)).toBeLessThan(1);
+    for (const b of bands) expect(flat(b).backgroundColor).toBe(colours().onScan);
+  });
+
+  it("gives Scan's glyph at least the 3:1 an icon needs in every theme, light or dark glyph", () => {
     // WCAG relative luminance and contrast ratio, from #rrggbb.
     const lum = (hex: string): number => {
       const [r, g, b] = [1, 3, 5].map((i) => {
@@ -224,9 +253,29 @@ describe("Dock (students)", () => {
       const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
       return (hi! + 0.05) / (lo! + 0.05);
     };
+    expect(Object.keys(palettes)).toHaveLength(6); // three themes, light and dark
     for (const p of Object.values(palettes)) {
       expect(ratio(p.onScan, p.scan)).toBeGreaterThanOrEqual(3);
-      expect(lum(p.onScan)).toBeGreaterThan(lum(p.scan)); // light glyph, as in both themes
+    }
+    // Either way round passes: Dusk's dark Scan is a light orchid with a dark glyph.
+    expect(lum(palettes["dusk/dark"].onScan)).toBeLessThan(lum(palettes["dusk/dark"].scan));
+  });
+
+  it("fills Scan and draws its glyph in the chosen theme's colours, keeping the rise", async () => {
+    await act(async () => setPrefs({ theme: "dusk" }));
+    try {
+      const root = (await render()).root;
+      const scan = one(scans(root));
+      const dusk = palettes["dusk/light"];
+      expect(colours()).toBe(dusk);
+      const circle = scan.find((n) => n.type === View && flat(n).backgroundColor === dusk.scan);
+      expect(flat(circle)).toMatchObject({ width: dock.scan, height: dock.scan });
+      expect(scan.find((n) => n.props.name === "qr-code").props.color).toBe(dusk.onScan);
+      expect(flat(scan).boxShadow).toBe(dusk.scanShadow);
+      const box = root.find((n) => n.type === View && n.props.pointerEvents === "box-none");
+      expect(flat(box).height).toBe(dock.height + dock.rise + dock.ring);
+    } finally {
+      await act(async () => setPrefs({ theme: "gate" }));
     }
   });
 
@@ -260,6 +309,31 @@ describe("Dock (students)", () => {
       for (const label of root.findAllByType(Text)) {
         expect(flat(label.parent!).flexDirection).toBe("column");
         expect(label.props.adjustsFontSizeToFit).toBe(true);
+      }
+      act(() => tree?.unmount());
+    }
+  });
+
+  it("caps tab names at 1.3x the font size setting, on one line, shrinking before cutting", async () => {
+    // A characterisation guard: the cap already exists, so this has no red run of its own.
+    for (const role of ["student", "warden"] as const) {
+      const root = (await render({ role, fontScale: 2 })).root;
+      // Only the tab names: each tab holds exactly one Text, and it reads the tab's name.
+      const all = tabNodes(root);
+      expect(all).toHaveLength(role === "student" ? 4 : 2);
+      const labels = all.map((tab) => {
+        const texts = tab.findAllByType(Text);
+        expect(texts).toHaveLength(1);
+        expect(texts[0]!.props.children).toBe(tab.props.accessibilityLabel);
+        return texts[0]!;
+      });
+      for (const label of labels) {
+        const cap = label.props.maxFontSizeMultiplier as number;
+        expect(cap).toBeGreaterThanOrEqual(1);
+        expect(cap).toBeLessThanOrEqual(1.3);
+        expect(label.props.numberOfLines).toBe(1);
+        expect(label.props.adjustsFontSizeToFit).toBe(true);
+        expect(label.props.minimumFontScale).toBeLessThan(1);
       }
       act(() => tree?.unmount());
     }
@@ -342,6 +416,73 @@ describe("Dock glass", () => {
   it("is glass for staff too", async () => {
     const root = (await render({ role: "warden" })).root;
     expect(blurs(root)).toHaveLength(1);
+  });
+});
+
+describe("Scan's motion", () => {
+  // Driven on the JS side here (jest has no native driver), sampled every frame.
+  function run(): { beam: number; shown: number; pop: number; t: number }[] {
+    jest.useFakeTimers();
+    const v = {
+      beam: new Animated.Value(0),
+      shown: new Animated.Value(0),
+      pop: new Animated.Value(0),
+    };
+    const loop = scanLoop(v, false);
+    loop.start();
+    const frames = [];
+    const total = SCAN_MOTION.pass + SCAN_MOTION.fadeOut + SCAN_MOTION.rest + 400;
+    for (let t = 0; t <= total * 2; t += 16) {
+      jest.advanceTimersByTime(16);
+      frames.push({
+        t,
+        beam: (v.beam as unknown as { __getValue(): number }).__getValue(),
+        shown: (v.shown as unknown as { __getValue(): number }).__getValue(),
+        pop: (v.pop as unknown as { __getValue(): number }).__getValue(),
+      });
+    }
+    loop.stop();
+    jest.useRealTimers();
+    return frames;
+  }
+
+  it("passes the line down once while it shows, never back up: a scanner reads one way", () => {
+    const frames = run();
+    for (let i = 1; i < frames.length; i++) {
+      if (frames[i]!.shown > 0.01 && frames[i - 1]!.shown > 0.01) {
+        expect(frames[i]!.beam).toBeGreaterThanOrEqual(frames[i - 1]!.beam - 1e-6);
+      }
+    }
+    // It does reach the bottom, and it is back at the top for the next pass.
+    expect(Math.max(...frames.map((f) => f.beam))).toBeCloseTo(1, 2);
+    expect(frames.some((f, i) => i > 0 && f.beam < 0.01 && frames[i - 1]!.beam > 0.99)).toBe(true);
+  });
+
+  it("pops the QR code once the line has read it, then rests with nothing moving", () => {
+    const frames = run();
+    const peak = frames.reduce((a, f) => (f.pop > a.pop ? f : a));
+    expect(peak.pop).toBeGreaterThan(0.9);
+    // The pop comes after the line reached the bottom.
+    const bottom = frames.find((f) => f.beam > 0.99)!;
+    expect(peak.t).toBeGreaterThanOrEqual(bottom.t);
+    // A rest of at least 2 s where the line is hidden and the code is still.
+    let still = 0;
+    let longest = 0;
+    for (const f of frames) {
+      still = f.shown < 0.01 && Math.abs(f.pop) < 0.01 ? still + 16 : 0;
+      longest = Math.max(longest, still);
+    }
+    expect(longest).toBeGreaterThanOrEqual(2000);
+  });
+
+  it("eases everything: entrances out, exits in, the pass in-out, nothing linear", () => {
+    const { fadeInEasing, passEasing, fadeOutEasing } = SCAN_MOTION;
+    expect(fadeInEasing(0.25)).toBeGreaterThan(0.3); // ease-out: quick start
+    expect(fadeOutEasing(0.25)).toBeLessThan(0.2); // ease-in: slow start
+    expect(passEasing(0.15)).toBeLessThan(0.1); // in-out: slow at both ends
+    expect(passEasing(0.85)).toBeGreaterThan(0.9);
+    expect(SCAN_MOTION.pass).toBeGreaterThanOrEqual(900);
+    expect(SCAN_MOTION.pass).toBeLessThanOrEqual(1300);
   });
 });
 

@@ -1,9 +1,11 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { router } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { Alert, Linking, Pressable, RefreshControl, View } from "react-native";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { holidayCompose } from "@/lib/board";
 import { WEB_URL } from "@/lib/config";
 import { campusToday, canEditRules, DAY_LABEL, dayLine, parseHolidayDate } from "@/lib/office";
 import { office } from "@/lib/office-api";
@@ -73,7 +75,7 @@ export default function Rules(): ReactNode {
         <T
           accessibilityRole="link"
           onPress={() => void Linking.openURL(`${WEB_URL}/admin/rules`).catch(() => undefined)}
-          style={{ color: c.accentText }}
+          style={{ color: c.link }}
         >
           Edit rules on the website
         </T>
@@ -204,14 +206,18 @@ function Holidays({
 
 /** Admins and head wardens: a date and a name; adding a date that's already a holiday renames it. */
 function AddHoliday({ onAdded }: { onAdded: () => Promise<void> }): ReactNode {
+  const { user } = useAuth();
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // "Tell students": the hostel board, with the holiday's draft for every hostel.
+  const [tell, setTell] = useState<{ holiday: string; all: "1" } | null>(null);
 
   const add = async (): Promise<void> => {
     setNotice(null);
+    setTell(null);
     const parsed = parseHolidayDate(date, campusToday());
     if ("error" in parsed) return setError(parsed.error);
     const holidayName = name.trim();
@@ -224,6 +230,7 @@ function AddHoliday({ onAdded }: { onAdded: () => Promise<void> }): ReactNode {
       setDate("");
       setName("");
       setNotice(`Added ${holidayName} on ${holidayDate(parsed.day)}.`);
+      setTell(holidayCompose(parsed.day, user?.role));
       await onAdded();
     } catch (e) {
       haptic.warning();
@@ -254,6 +261,18 @@ function AddHoliday({ onAdded }: { onAdded: () => Promise<void> }): ReactNode {
         <T tone="muted" accessibilityRole="alert">
           {notice}
         </T>
+      ) : null}
+      {tell ? (
+        <Button
+          label="Tell students"
+          variant="secondary"
+          accessibilityLabel="Tell students on the hostel board"
+          onPress={() =>
+            router.push(
+              `/office/board/new?holiday=${encodeURIComponent(tell.holiday)}&all=${tell.all}`,
+            )
+          }
+        />
       ) : null}
       <Button label="Add holiday" busy={busy} busyLabel="Adding…" onPress={() => void add()} />
     </Card>

@@ -1,6 +1,6 @@
 /** What an LED board shows, and how it says it in words for TalkBack. */
 
-/** Out = led orange, late = red, in (back on campus) = green. */
+/** Out = the theme's led colour, late = red, in (back on campus) = green. */
 export type LedState = "out" | "late" | "in";
 
 export interface LedReading {

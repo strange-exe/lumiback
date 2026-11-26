@@ -15,12 +15,12 @@ import { space, type, useColors } from "@/ui/theme";
 
 /**
  * Shown at launch while a stored session is checked, which can take up to a minute when the
- * free server has to wake. An opening title on the dark LED board: a line draws, "Lumiback"
- * rises letter by letter above it, and an orange segment sweeps the line while the server
- * wakes. After a few seconds it says why, with a clock. Once the server answers it plays a short
- * hand-off ("Server started", "Signing you in", "Welcome back, Riya": only lines that are true
- * by then, see handoffSteps), fills the line, fades out and calls onDone. Offline hands over at
- * once to "Can't reach Lumiback". Everything honours Android's "Remove animations": the words
+ * free server has to wake. An opening title on the LED board (light or dark with the mode): a
+ * line draws, "Lumiback" rises letter by letter above it, and an LED-coloured segment sweeps the
+ * line while the server wakes. After a few seconds it says why, with a clock. Once the server
+ * answers it plays a short hand-off ("Server started", "Signing you in", "Welcome back, Riya":
+ * only lines that are true by then, see handoffSteps), fills the line, fades out and calls
+ * onDone. Offline hands over at once to "Can't reach Lumiback". Everything honours Android's "Remove animations": the words
  * still change, nothing moves.
  *
  * Motion is React Native's Animated on the native driver (opacity and transform only), so it
@@ -277,7 +277,7 @@ export function StartingScreen({
             ))}
           </View>
 
-          {/* The line: draws in, carries the sweeping segment, fills orange on the hand-off. */}
+          {/* The line: draws in, carries the sweeping segment, fills with the LED colour on the hand-off. */}
           <Animated.View
             onLayout={onLine}
             style={{

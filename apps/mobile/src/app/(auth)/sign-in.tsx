@@ -91,7 +91,7 @@ export default function SignIn(): ReactNode {
             href={{ pathname: "/forgot-password", params: { email: email.trim() } }}
             style={{
               alignSelf: "flex-end",
-              color: c.accentText,
+              color: c.link,
               fontFamily: fonts.semibold,
               paddingVertical: 4,
             }}
@@ -109,7 +109,7 @@ export default function SignIn(): ReactNode {
         </View>
         <T tone="small" style={{ textAlign: "center" }}>
           New here?{" "}
-          <Link href="/register" style={{ color: c.accentText, fontFamily: fonts.semibold }}>
+          <Link href="/register" style={{ color: c.link, fontFamily: fonts.semibold }}>
             Create your account
           </Link>
         </T>

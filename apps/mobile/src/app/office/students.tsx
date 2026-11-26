@@ -37,7 +37,7 @@ import { fonts, radius, space, useColors } from "@/ui/theme";
 
 const STATUS = {
   in: { label: "In", tone: "muted" },
-  out: { label: "Out", tone: "accent" },
+  out: { label: "Out", tone: "out" },
   overdue: { label: "Late", tone: "danger" },
 } as const;
 

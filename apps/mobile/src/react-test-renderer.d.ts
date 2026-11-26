@@ -20,6 +20,8 @@ declare module "react-test-renderer" {
 
   export interface ReactTestRenderer {
     root: ReactTestInstance;
+    /** Renders the same tree again with new props (state and refs are kept). */
+    update(element: ReactElement): void;
     unmount(): void;
   }
 

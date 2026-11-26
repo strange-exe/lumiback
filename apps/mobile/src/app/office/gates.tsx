@@ -1,4 +1,3 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 import * as Location from "expo-location";
 import { useCallback, useState, type ReactNode } from "react";
@@ -197,7 +196,6 @@ function GateCard({
 
 /** Standing at the gate: name it, and the phone's location becomes the gate's. */
 function AddGate({ onAdded }: { onAdded: (gate: string, url: string) => void }): ReactNode {
-  const c = useColors();
   const [name, setName] = useState("");
   const [radius, setRadius] = useState("75");
   const [busy, setBusy] = useState(false);
@@ -274,7 +272,7 @@ function AddGate({ onAdded }: { onAdded: (gate: string, url: string) => void }):
       <FormError message={error} />
       <Button
         label="Add gate here"
-        icon={<Ionicons name="locate" size={18} color={c.onAccent} />}
+        icon="locate"
         busy={busy}
         busyLabel="Finding you…"
         onPress={() => void add()}

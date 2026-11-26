@@ -163,7 +163,7 @@ export function EscalationCard({
           label="Log a call"
           variant="secondary"
           accessibilityLabel={`Log a call about ${e.name}`}
-          icon={<Ionicons name="call-outline" size={18} color={c.accentText} />}
+          icon="call-outline"
           onPress={() => setLogging(true)}
         />
       ) : null}
@@ -245,7 +245,7 @@ function LastSeenNote({ seen }: { seen: LastSeen | null }): ReactNode {
           <T
             accessibilityRole="link"
             onPress={() => void Linking.openURL(map).catch(() => undefined)}
-            style={{ color: c.accentText }}
+            style={{ color: c.link }}
           >
             Open map
           </T>

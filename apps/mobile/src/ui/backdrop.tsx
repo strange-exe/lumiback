@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Animated, Easing, Image, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { useLoop, useMotionSetting } from "@/ui/motion";
-import { useColors, useIsDark } from "@/ui/theme";
+import { useColors, useGlow, useIsDark } from "@/ui/theme";
 
 const DOTS = {
   light: require("../../assets/led/dot-light.png"),
@@ -30,7 +30,10 @@ const REST_MS = 1600;
  * inside a view that paints `page`.
  */
 export function DotBackground({ scan = false }: { scan?: boolean }): ReactNode {
+  const c = useColors();
   const dark = useIsDark();
+  // The scan band is decoration: LED night's alone. Gate glass and Dusk keep a still grid.
+  const glow = useGlow();
   return (
     <View
       pointerEvents="none"
@@ -41,10 +44,11 @@ export function DotBackground({ scan = false }: { scan?: boolean }): ReactNode {
       <Image
         source={dark ? DOTS.dark : DOTS.light}
         resizeMode="repeat"
-        style={{ width: "100%", height: "100%" }}
+        // The tile's dots take the theme's own dot colour.
+        style={{ width: "100%", height: "100%", tintColor: c.dot }}
       />
       <LedField />
-      {scan ? <ScanBand /> : null}
+      {scan && glow ? <ScanBand /> : null}
     </View>
   );
 }
@@ -123,7 +127,7 @@ function LedField(): ReactNode {
             width: DOT,
             height: DOT,
             borderRadius: DOT / 2,
-            // Neutral: orange on this screen means "out" and the primary action, nothing else.
+            // Neutral: the theme's colours on this screen mean "out" and the primary action.
             backgroundColor: c.muted,
             // Dark until the wave reaches it, brightest as it passes, then a slower fade.
             opacity: wave.interpolate({
@@ -160,6 +164,7 @@ function ScanBand(): ReactNode {
   );
   return (
     <Animated.Image
+      testID="scan-band"
       source={SCAN}
       resizeMode="stretch"
       style={{

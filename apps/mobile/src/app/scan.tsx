@@ -322,6 +322,7 @@ export default function Scan(): ReactNode {
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: space(3),
             paddingHorizontal: space(4),
             paddingTop: insets.top + space(2),
             paddingBottom: space(3),
@@ -329,7 +330,11 @@ export default function Scan(): ReactNode {
             backgroundColor: cameraOn ? "rgba(11, 12, 16, 0.6)" : "transparent",
           }}
         >
-          <Text style={[type.headline, { color: c.onHero }]} accessibilityRole="header">
+          {/* Shrinks (and wraps) at a large font setting so Close keeps its room on screen. */}
+          <Text
+            style={[type.headline, { flexShrink: 1, color: c.onHero }]}
+            accessibilityRole="header"
+          >
             {phase.kind === "done" || phase.kind === "confirm" || phase.kind === "stale"
               ? "Gate"
               : "Scan the gate screen"}

@@ -115,7 +115,7 @@ export function OfflineTrip({
           label="Call the hostel office"
           variant="secondary"
           accessibilityLabel={`Call the hostel office, ${formatPhone(phone)}`}
-          icon={<Ionicons name="call" size={18} color={c.accentText} />}
+          icon="call"
           onPress={() => {
             haptic.tap();
             call(phone);

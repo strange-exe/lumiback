@@ -3,14 +3,22 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useState, type ReactNode } from "react";
 import { Linking, Switch } from "react-native";
 
-import { setPrefs, usePrefs, type Prefs } from "@/lib/prefs";
+import { useAuth } from "@/lib/auth";
+import { isStaff } from "@/lib/office";
+import {
+  notificationSwitches,
+  setPrefs,
+  usePrefs,
+  type NotificationSwitch,
+  type Prefs,
+} from "@/lib/prefs";
 import { registerPush } from "@/notify/push";
 import { allowNotifications } from "@/notify/notify";
 import { haptic } from "@/ui/haptics";
 import { Button, Card, Row, Screen, Section, T } from "@/ui/kit";
 import { useColors } from "@/ui/theme";
 
-type Toggle = "followRequests" | "returnReminders" | "shareStatus";
+type Toggle = NotificationSwitch;
 
 const TOGGLES: { key: Toggle; title: string; detail: string }[] = [
   {
@@ -30,11 +38,19 @@ const TOGGLES: { key: Toggle; title: string; detail: string }[] = [
     detail:
       "When a live share ends on its own, and when the hostel office decides your outing request.",
   },
+  {
+    key: "hostelBoard",
+    title: "Hostel board",
+    detail: "New posts from your hostel office (timings, mess, laundry).",
+  },
 ];
 
 export default function NotificationSettings(): ReactNode {
   const c = useColors();
   const prefs = usePrefs();
+  const { user } = useAuth();
+  // The hostel board's switch is a student's only (staff get no board pushes).
+  const shown = notificationSwitches(!isStaff(user?.role));
   const [system, setSystem] = useState<"granted" | "denied" | "undetermined" | null>(null);
 
   // Re-checked on focus: the student may come back from Android settings.
@@ -73,7 +89,7 @@ export default function NotificationSettings(): ReactNode {
       ) : null}
 
       <Section footer="Changes apply straight away, on this phone.">
-        {TOGGLES.map((t) => (
+        {TOGGLES.filter((t) => shown.includes(t.key)).map((t) => (
           <Row
             key={t.key}
             title={t.title}

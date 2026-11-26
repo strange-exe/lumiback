@@ -113,7 +113,7 @@ function HelpCard({ help: h, onHandled }: { help: HelpRequest; onHandled: () => 
               accessibilityLabel={`Open map of ${h.name}'s location`}
               style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
             >
-              <T tone="label" style={{ color: c.accentText }}>
+              <T tone="label" style={{ color: c.link }}>
                 Open map
               </T>
             </Press>

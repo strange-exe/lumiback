@@ -3,16 +3,18 @@ import { AccessibilityInfo, Switch } from "react-native";
 
 import { noticeError, noticeResult, noticeText } from "@/lib/alerts";
 import { ApiError } from "@/lib/api";
+import { OUT_NOTICE } from "@/lib/board";
 import { office } from "@/lib/office-api";
 import { haptic } from "@/ui/haptics";
-import { Button, Field, FormError, Notice, Row, Section } from "@/ui/kit";
+import { Button, Field, FormError, Notice, Row, Section, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
 import { useColors } from "@/ui/theme";
 
 const MAX = 200;
 const RECALL = "Ask them to come back now";
 
-/** A one-line notice to the students out now (in this office's hostels), optionally a recall. */
+/** "Message students who are out": a one-line notice to the students out now (in this office's
+ * hostels), optionally a recall. Things every student should see go on the hostel board. */
 export function NoticeSheet({
   everyHostel,
   onClose,
@@ -30,7 +32,7 @@ export function NoticeSheet({
   const send = async (): Promise<void> => {
     const text = noticeText(message);
     if (!text) {
-      setError("Write the notice first.");
+      setError("Write the message first.");
       return;
     }
     setBusy(true);
@@ -57,11 +59,12 @@ export function NoticeSheet({
   };
 
   return (
-    <Sheet open onClose={onClose} title="Send a notice">
+    <Sheet open onClose={onClose} title={OUT_NOTICE.title}>
+      <T tone="muted">{OUT_NOTICE.detail}</T>
       <Field
         label="Message"
         hint={`Goes to students out now from ${everyHostel ? "every hostel" : "your hostels"}. One line, up to ${MAX} characters.`}
-        placeholder="The main gate closes at 9 tonight"
+        placeholder={OUT_NOTICE.placeholder}
         value={message}
         onChangeText={(next) => {
           setMessage(next);
@@ -91,7 +94,7 @@ export function NoticeSheet({
       <FormError message={error} />
       {result ? <Notice tone={result.sent > 0 ? "good" : "warn"}>{result.text}</Notice> : null}
       <Button
-        label={recall ? "Send and ask them back" : "Send notice"}
+        label={recall ? "Send and ask them back" : "Send message"}
         busy={busy}
         busyLabel="Sending…"
         onPress={() => void send()}

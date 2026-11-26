@@ -662,3 +662,74 @@ export interface PasswordChanged {
   /** False when this phone signed in before devices had ids: it was signed out too. */
   still_signed_in: boolean;
 }
+
+/** The hostel board (backend api/board.py). */
+export type BoardCategory = "timings" | "mess" | "laundry" | "maintenance" | "general";
+
+/** One post on a student's board (GET /board). `body` is plain text with LF line breaks. */
+export interface BoardPost {
+  id: number;
+  category: BoardCategory;
+  title: string;
+  body: string;
+  /** "Hostel office, <name>", "Hostel office" or "Campus office". */
+  from_label: string;
+  created_at: string;
+  expires_at: string;
+  seen: boolean;
+}
+
+/** GET /board: active posts, newest first, at most 30 ([] for anyone but a student). */
+export interface BoardList {
+  posts: BoardPost[];
+}
+
+export type BoardStatus = "active" | "ended" | "withdrawn";
+
+/** One post in the office's list (GET /admin/board). */
+export interface StaffBoardPost extends Omit<BoardPost, "seen"> {
+  status: BoardStatus;
+  all_hostels: boolean;
+  hostels: { id: string; name: string }[];
+  author: "You" | "Warden" | "Head warden" | "Admin" | "Developer";
+  /** Students it was for when sent. */
+  students: number;
+  /** Null below 5 students (the privacy floor). */
+  seen: number | null;
+  can_withdraw: boolean;
+}
+
+/** GET /admin/board: newest first, at most 50, in this office's scope. */
+export interface StaffBoardList {
+  posts: StaffBoardPost[];
+}
+
+/** POST /admin/board */
+export interface BoardPostBody {
+  category: BoardCategory;
+  title: string;
+  body: string;
+  hostel_ids: string[];
+  all_hostels: boolean;
+  expires_in_days: 1 | 3 | 7 | 30 | 60;
+  replace_timings: boolean;
+}
+
+/** GET /admin/board/reach, and what POST /admin/board answers besides the id. */
+export interface BoardReach {
+  students: number;
+  devices: number;
+}
+
+/** POST /admin/board's answer. */
+export interface BoardSent extends BoardReach {
+  id: number;
+}
+
+/** GET /admin/board/draft */
+export interface BoardDraft {
+  title: string;
+  body: string;
+  category: "timings";
+  too_long: boolean;
+}

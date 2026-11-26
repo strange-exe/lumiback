@@ -33,6 +33,9 @@ export default function OfficeLayout(): ReactNode {
         <Stack.Screen name="corrections" options={{ animation: "default" }} />
         <Stack.Screen name="late" options={{ animation: "default" }} />
         <Stack.Screen name="hostel" options={{ animation: "default" }} />
+        {/* The hostel board: the office's list, and writing a post (also from Rules). */}
+        <Stack.Screen name="board/index" options={{ animation: "default" }} />
+        <Stack.Screen name="board/new" options={{ animation: "default" }} />
         {/* A student's history, opened from Students or the register. */}
         <Stack.Screen name="student/[id]" options={{ animation: "default", title: "History" }} />
       </Stack>

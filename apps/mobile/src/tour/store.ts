@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { View } from "react-native";
 
+import type { Colors } from "@/ui/theme";
+
 import type { TargetId } from "./steps";
 
 export interface Rect {
@@ -89,4 +91,17 @@ export function placeCard({
   if (above >= top) return above;
   // Neither fits (a very tall highlight): overlap the highlight's top part, inside the screen.
   return Math.min(Math.max(top, below), screenHeight - bottom - cardHeight);
+}
+
+/**
+ * The ring around the highlighted control: the focus colour, as on the website. Its halo is
+ * decorative glow, so only a theme with glow (LED night) has one.
+ */
+export function ringLook(
+  c: Pick<Colors, "focus" | "led">,
+  glow: boolean,
+): { borderColor: string; boxShadow?: string } {
+  return glow
+    ? { borderColor: c.focus, boxShadow: `0 0 18px ${c.led}99` }
+    : { borderColor: c.focus };
 }

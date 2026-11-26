@@ -3,6 +3,7 @@ import {
   APP_UPDATE_CATEGORY,
   APP_UPDATE_TAG,
   APP_UPDATES_CHANNEL,
+  BOARD_CHANNEL,
   DEFAULT_TAP,
   tapTarget,
   endedMessage,
@@ -72,7 +73,12 @@ describe("app update announcements", () => {
     expect(APP_UPDATES_CHANNEL).toBe("app-updates");
     // The in-app mute switches stay as they are: app updates are muted in Android's settings.
     expect(
-      mutedChannels({ followRequests: false, returnReminders: false, shareStatus: false }),
+      mutedChannels({
+        followRequests: false,
+        returnReminders: false,
+        shareStatus: false,
+        hostelBoard: false,
+      }),
     ).not.toContain(APP_UPDATES_CHANNEL);
   });
 });
@@ -136,12 +142,25 @@ describe("endedMessage", () => {
 
 describe("mutedChannels", () => {
   it("lists exactly the switched-off channels", () => {
-    const on = { followRequests: true, returnReminders: true, shareStatus: true };
+    const on = {
+      followRequests: true,
+      returnReminders: true,
+      shareStatus: true,
+      hostelBoard: true,
+    };
     expect(mutedChannels(on)).toEqual([]);
     expect(mutedChannels({ ...on, followRequests: false })).toEqual(["follow-requests"]);
+    expect(mutedChannels({ ...on, hostelBoard: false })).toEqual(["hostel-board"]);
+    // All four off: the server's muted list takes at most 4 (backend PushTokenIn).
     expect(
-      mutedChannels({ followRequests: false, returnReminders: false, shareStatus: false }),
-    ).toEqual(["follow-requests", "return-reminders", "share-status"]);
+      mutedChannels({
+        followRequests: false,
+        returnReminders: false,
+        shareStatus: false,
+        hostelBoard: false,
+      }),
+    ).toEqual(["follow-requests", "return-reminders", "share-status", "hostel-board"]);
+    expect(BOARD_CHANNEL).toBe("hostel-board");
   });
 });
 
@@ -156,6 +175,19 @@ describe("notificationRoute", () => {
   it("opens the Follow view for an 'approved you' push, not the Share view", () => {
     expect(notificationRoute({ url: "/live?view=follow" })).toBe("/live?view=follow");
     expect(notificationRoute({ url: "/live?view=other" })).toBe("/today");
+  });
+
+  it("opens the hostel board for a board post, and nothing near it", () => {
+    expect(notificationRoute({ url: "/today/board" })).toBe("/today/board");
+    for (const url of [
+      "/board",
+      "/today/board?x",
+      "/today/board/",
+      "/today/boards",
+      "today/board",
+    ]) {
+      expect(notificationRoute({ url })).toBe("/today");
+    }
   });
 
   it("opens the corrections queue for staff and History for the student", () => {

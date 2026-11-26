@@ -1,15 +1,16 @@
 import { router } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
-import { Platform } from "react-native";
 
+import { boardTapParams, staleBoardNotifications } from "@/lib/board";
 import { loadPrefs } from "@/lib/prefs";
-import type { Viewer } from "@/lib/types";
+import type { BoardPost, Viewer } from "@/lib/types";
 import { loadViewAs } from "@/lib/view-as";
+import { CHANNELS, ensureChannels } from "@/notify/channels";
 import {
   APP_UPDATE_ACTIONS,
   APP_UPDATE_CATEGORY,
-  APP_UPDATES_CHANNEL,
+  BOARD_ROUTE,
   endedMessage,
   followRequestNotice,
   isDataOnlyUpdate,
@@ -21,6 +22,7 @@ import {
   type NotificationRoute,
 } from "@/notify/plan";
 import { registerPush } from "@/notify/push";
+import { notificationColour } from "@/ui/theme";
 import { openAnnouncedUpdate, WHATS_NEW } from "@/updates/announced";
 
 /**
@@ -32,11 +34,7 @@ import { openAnnouncedUpdate, WHATS_NEW } from "@/updates/announced";
  * Reminders are scheduled with Android's inexact alarms: without the exact-alarm permission
  * (which Play reserves for alarm and calendar apps) they can land a few minutes late in doze.
  */
-const CHANNELS = {
-  requests: "follow-requests",
-  reminders: "return-reminders",
-  status: "share-status",
-} as const;
+export { ensureChannels };
 
 // Show banners while the app is open too: a join request matters even on another tab. A
 // data-only update push is the exception: it has no title or body of its own, and the
@@ -56,43 +54,6 @@ Notifications.setNotificationHandler({
     };
   },
 });
-
-let channels: Promise<void> | null = null;
-
-/** Exported for the update task, which can run before anything else in the app has. */
-export function ensureChannels(): Promise<void> {
-  if (Platform.OS !== "android") return Promise.resolve();
-  channels ??= (async () => {
-    await Notifications.setNotificationChannelAsync(CHANNELS.requests, {
-      name: "Follow requests",
-      description: "Someone asked to see your live location.",
-      importance: Notifications.AndroidImportance.HIGH,
-    });
-    await Notifications.setNotificationChannelAsync(CHANNELS.reminders, {
-      name: "Return reminders",
-      description: "Before and when you're due back from an outing.",
-      importance: Notifications.AndroidImportance.HIGH,
-    });
-    await Notifications.setNotificationChannelAsync(CHANNELS.status, {
-      // Same id as before: Android keeps the student's settings and updates the name.
-      name: "Sharing and requests",
-      description:
-        "When a live share ends on its own, and when the hostel office decides your outing request.",
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-    // New: Android sets a channel's importance once, when it's created. Default (sound, no
-    // pop-up), and people can turn it off in Android's settings for Lumiback.
-    await Notifications.setNotificationChannelAsync(APP_UPDATES_CHANNEL, {
-      name: "App updates",
-      description: "When a new version of Lumiback is ready.",
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  })().catch((error: unknown) => {
-    channels = null; // try again next time
-    throw error;
-  });
-  return channels;
-}
 
 let categories: Promise<void> | null = null;
 
@@ -141,7 +102,11 @@ export async function syncPush(): Promise<void> {
 async function show(channelId: string, content: Notifications.NotificationContentInput) {
   try {
     await ensureChannels();
-    await Notifications.scheduleNotificationAsync({ content, trigger: { channelId } });
+    const color = notificationColour((await loadPrefs()).theme);
+    await Notifications.scheduleNotificationAsync({
+      content: { ...content, color },
+      trigger: { channelId },
+    });
   } catch {
     // Notifications are a convenience: the same information is on screen in the app.
   }
@@ -189,7 +154,8 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
     await Notifications.cancelScheduledNotificationAsync(RETURN_SOON);
     await Notifications.cancelScheduledNotificationAsync(RETURN_DUE);
     // Viewing as another role (developers): no reminders from a preview.
-    const enabled = (await loadPrefs()).returnReminders && !(await loadViewAs());
+    const prefs = await loadPrefs();
+    const enabled = prefs.returnReminders && !(await loadViewAs());
     const plan = enabled ? returnReminders(expectedReturnAt, Date.now()) : [];
     if (plan.length === 0) return;
     await ensureChannels();
@@ -201,6 +167,7 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
           title: r.title,
           body: r.body,
           data: { url: "/today" } satisfies NotificationData,
+          color: notificationColour(prefs.theme),
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -211,6 +178,36 @@ export async function syncReturnReminders(expectedReturnAt: string | null): Prom
     }
   } catch {
     // Same as above: reminders help, they are not the record.
+  }
+}
+
+/**
+ * Takes board notifications for posts that are no longer up out of the notification shade
+ * (ended, or taken down by the office). `active`: the board as just loaded; `asked`: when it
+ * was asked for (Date.now() just before the request), so a push that landed while the answer
+ * was on its way stays. Never throws.
+ */
+export async function dismissStaleBoardNotifications(
+  active: BoardPost[],
+  asked: number,
+): Promise<void> {
+  try {
+    if (await loadViewAs()) return; // a preview's board isn't this phone's
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    const shown = presented.map(({ request, date }) => {
+      const url = (request.content.data as { url?: unknown } | null)?.url;
+      return {
+        identifier: request.identifier,
+        title: request.content.title,
+        url: typeof url === "string" ? url : null,
+        date,
+      };
+    });
+    for (const identifier of staleBoardNotifications(shown, active, asked)) {
+      await Notifications.dismissNotificationAsync(identifier);
+    }
+  } catch {
+    // Tidying the shade is a convenience; the board itself is the record.
   }
 }
 
@@ -233,7 +230,14 @@ export function useNotificationRoutes(enabled: boolean): void {
       );
       if (target.to === "update") openAnnouncedUpdate();
       else if (target.to === "whats-new") router.navigate(WHATS_NEW);
-      else router.navigate(target.route);
+      else if (target.route === BOARD_ROUTE) {
+        // Which post: the board then says so when it's no longer up.
+        const { identifier, content } = response.notification.request;
+        router.navigate({
+          pathname: BOARD_ROUTE,
+          params: boardTapParams(identifier, content.title),
+        });
+      } else router.navigate(target.route);
     };
     open(Notifications.getLastNotificationResponse());
     const subscription = Notifications.addNotificationResponseReceivedListener(open);

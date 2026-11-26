@@ -45,21 +45,82 @@ const LABEL_SCALE = 1.3;
 const GLYPH = 30;
 const QR = 14;
 const LINE = 3;
-/** The line's sweep (eased at both ends, never linear): down the brackets, back up, a rest. */
-const SWEEP = { duration: 950, easing: Easing.inOut(Easing.sin), useNativeDriver: true } as const;
-const FADE_IN = {
-  toValue: 1,
-  duration: 160,
-  easing: Easing.out(Easing.quad),
-  useNativeDriver: true,
+/** The two fading bands of the line's trail, above it: [height, opacity], nearest first. */
+const TRAIL = [
+  [4, 0.32],
+  [5, 0.12],
+] as const;
+/**
+ * Scan's loop, as a real scanner reads: the line fades in at the top and passes down once
+ * (eased at both ends), fades out at the bottom while the QR code pops (a spring with a slight
+ * overshoot: "read"), jumps back to the top unseen, then everything rests. Entrances ease out,
+ * exits ease in, nothing is linear (owner's animation brief).
+ */
+export const SCAN_MOTION = {
+  fadeIn: 160,
+  fadeInEasing: Easing.out(Easing.cubic),
+  pass: 1100,
+  passEasing: Easing.inOut(Easing.cubic),
+  fadeOut: 180,
+  fadeOutEasing: Easing.in(Easing.cubic),
+  popIn: 120,
+  rest: 2400,
 } as const;
-const FADE_OUT = {
-  toValue: 0,
-  duration: 200,
-  easing: Easing.in(Easing.quad),
-  useNativeDriver: true,
-} as const;
-const SWEEP_REST = 1400;
+/** How much the QR code grows at the pop's peak. */
+const POP_SCALE = 1.08;
+
+/** The loop itself. `native` is false only in tests, where jest has no native driver. */
+export function scanLoop(
+  v: { beam: Animated.Value; shown: Animated.Value; pop: Animated.Value },
+  native = true,
+): Animated.CompositeAnimation {
+  const m = SCAN_MOTION;
+  return Animated.loop(
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(v.shown, {
+          toValue: 1,
+          duration: m.fadeIn,
+          easing: m.fadeInEasing,
+          useNativeDriver: native,
+        }),
+        Animated.timing(v.beam, {
+          toValue: 1,
+          duration: m.pass,
+          easing: m.passEasing,
+          useNativeDriver: native,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(v.shown, {
+          toValue: 0,
+          duration: m.fadeOut,
+          easing: m.fadeOutEasing,
+          useNativeDriver: native,
+        }),
+        Animated.sequence([
+          Animated.timing(v.pop, {
+            toValue: 1,
+            duration: m.popIn,
+            easing: m.fadeInEasing,
+            useNativeDriver: native,
+          }),
+          Animated.spring(v.pop, {
+            toValue: 0,
+            speed: 14,
+            bounciness: 6,
+            restDisplacementThreshold: 0.005,
+            restSpeedThreshold: 0.005,
+            useNativeDriver: native,
+          }),
+        ]),
+      ]),
+      // Back to the top while hidden, so the line never travels up in view.
+      Animated.timing(v.beam, { toValue: 0, duration: 0, useNativeDriver: native }),
+      Animated.delay(m.rest),
+    ]),
+  );
+}
 
 /**
  * Floating glass dock: the four destinations in one smoked-glass pill, two each side, and Scan
@@ -230,30 +291,22 @@ export function Dock({ state, navigation }: DockProps): ReactNode {
 
 /**
  * Scan: an accent circle in a page-coloured ring, so it reads apart from what scrolls behind.
- * Its glyph is a QR code in the scanner's corner brackets, and a scan line sweeps down through
- * it and back up, then rests, so the button reads as "scan" before anyone taps it. Pressing it
- * squeezes slightly (Press). With Android animations off the line never shows.
+ * Its glyph is a QR code in the scanner's corner brackets. A scan line with a fading trail
+ * passes down through it once, the code pops as if read, then it rests (SCAN_MOTION), so the
+ * button reads as "scan" before anyone taps it. Pressing it squeezes slightly (Press). With
+ * Android animations off the line never shows and the code stays still.
  */
 function ScanButton(): ReactNode {
   const c = useColors();
-  const [sweep] = useState(() => new Animated.Value(0)); // 0 top of the brackets, 1 bottom
+  const [beam] = useState(() => new Animated.Value(0)); // 0 top of the brackets, 1 bottom
   const [shown] = useState(() => new Animated.Value(0));
+  const [pop] = useState(() => new Animated.Value(0)); // 0 still, 1 the pop's peak
   useLoop(
-    () =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.parallel([
-            Animated.timing(shown, FADE_IN),
-            Animated.timing(sweep, { ...SWEEP, toValue: 1 }),
-          ]),
-          Animated.timing(sweep, { ...SWEEP, toValue: 0 }),
-          Animated.timing(shown, FADE_OUT),
-          Animated.delay(SWEEP_REST),
-        ]),
-      ),
+    () => scanLoop({ beam, shown, pop }),
     () => {
-      sweep.setValue(0);
+      beam.setValue(0);
       shown.setValue(0);
+      pop.setValue(0);
     },
   );
   return (
@@ -273,7 +326,7 @@ function ScanButton(): ReactNode {
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: c.page,
-          boxShadow: "0 10px 24px rgba(232, 80, 26, 0.38)",
+          boxShadow: c.scanShadow,
         }}
       >
         <View
@@ -283,7 +336,7 @@ function ScanButton(): ReactNode {
             borderRadius: dock.scan / 2,
             alignItems: "center",
             justifyContent: "center",
-            // Scan's own deeper orange in both themes, so its light glyph passes 3:1 (theme.ts).
+            // Scan's own colour per theme; its glyph, light or dark, passes 3:1 (theme.ts).
             backgroundColor: c.scan,
           }}
         >
@@ -291,7 +344,15 @@ function ScanButton(): ReactNode {
             style={{ width: GLYPH, height: GLYPH, alignItems: "center", justifyContent: "center" }}
           >
             <Ionicons name="scan" size={GLYPH} color={c.onScan} style={{ position: "absolute" }} />
-            <Ionicons name="qr-code" size={QR} color={c.onScan} />
+            <Animated.View
+              style={{
+                transform: [
+                  { scale: pop.interpolate({ inputRange: [0, 1], outputRange: [1, POP_SCALE] }) },
+                ],
+              }}
+            >
+              <Ionicons name="qr-code" size={QR} color={c.onScan} />
+            </Animated.View>
             <Animated.View
               pointerEvents="none"
               accessibilityElementsHidden
@@ -307,14 +368,30 @@ function ScanButton(): ReactNode {
                 opacity: shown,
                 transform: [
                   {
-                    translateY: sweep.interpolate({
+                    translateY: beam.interpolate({
                       inputRange: [0, 1],
                       outputRange: [3, GLYPH - LINE - 3],
                     }),
                   },
                 ],
               }}
-            />
+            >
+              {/* The trail: the line only ever moves down, so it fades out behind, above it. */}
+              {TRAIL.map(([height, opacity], i) => (
+                <View
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    left: 1,
+                    right: 1,
+                    bottom: LINE + TRAIL.slice(0, i).reduce((sum, [h]) => sum + h, 0),
+                    height,
+                    opacity,
+                    backgroundColor: c.onScan,
+                  }}
+                />
+              ))}
+            </Animated.View>
           </View>
         </View>
       </Press>

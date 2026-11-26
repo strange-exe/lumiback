@@ -36,6 +36,7 @@ jest.mock("@/lib/prefs", () => ({
     followRequests: true,
     returnReminders: true,
     shareStatus: true,
+    theme: "gate",
   })),
 }));
 

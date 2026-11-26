@@ -1,4 +1,21 @@
-import { sentence, viaLabel } from "./words";
+import { loadFailedText, sentence, viaLabel } from "./words";
+
+test("loadFailedText puts a full stop between the error and what comes next", () => {
+  // Seen on the emulator 2026-11-25: "Not found Your trip..." ran two sentences together.
+  expect(loadFailedText("Not found", "Your trip shows here.")).toBe(
+    "Not found. Your trip shows here.",
+  );
+  expect(loadFailedText("You're offline.", "Your trip shows here.")).toBe(
+    "You're offline. Your trip shows here.",
+  );
+  // The error's own ending is kept, not swapped for a full stop.
+  expect(loadFailedText("Too many tries, wait a minute!", "Then try again.")).toBe(
+    "Too many tries, wait a minute! Then try again.",
+  );
+  expect(loadFailedText("  Server error  ", "Try again.")).toBe("Server error. Try again.");
+  expect(loadFailedText(null, "Try again.")).toBe("Something went wrong. Try again.");
+  expect(loadFailedText("   ", "Try again.")).toBe("Something went wrong. Try again.");
+});
 
 test("sentence ends with exactly one full stop", () => {
   expect(sentence("Shopping at Pacific Mall")).toBe("Shopping at Pacific Mall.");

@@ -24,7 +24,8 @@ import { haptic } from "@/ui/haptics";
 import { T } from "@/ui/kit";
 import { useReducedMotion } from "@/ui/motion";
 import { dragOffset, shouldDismiss } from "@/ui/sheet-motion";
-import { layout, radius, space, useColors } from "@/ui/theme";
+import { sheetSurface } from "@/ui/sheet-surface";
+import { layout, radius, space, useColors, useIsDark } from "@/ui/theme";
 
 // Entrances ease out (the iOS sheet curve), exits ease in and are quicker; a sheet let go
 // mid-drag springs home, clamped so it never lifts off the bottom edge.
@@ -54,6 +55,7 @@ export function Sheet({
   children: ReactNode;
 }): ReactNode {
   const c = useColors();
+  const dark = useIsDark();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const { height: screen } = useWindowDimensions();
@@ -164,11 +166,7 @@ export function Sheet({
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: "flex-end" }}>
           <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: "rgba(10, 18, 16, 0.45)" },
-              scrimStyle,
-            ]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }, scrimStyle]}
           >
             <Pressable
               onPress={dismiss}
@@ -183,7 +181,8 @@ export function Sheet({
             onLayout={(e) => height.set(e.nativeEvent.layout.height)}
             style={[
               {
-                backgroundColor: c.page,
+                // Its own fill, and in dark mode a hairline top edge (sheet-surface.ts).
+                ...sheetSurface(c, dark),
                 borderTopLeftRadius: radius.sheet + 4,
                 borderTopRightRadius: radius.sheet + 4,
                 borderCurve: "continuous",

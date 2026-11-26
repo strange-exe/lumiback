@@ -5,14 +5,22 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 
 import { layout, ROWS } from "@/lib/glyphs";
 import { IN, spokenMinutes, timeLate, timeLeft, type LedReading } from "@/lib/led";
-import { LedFigure } from "@/ui/led";
+import { setPrefs } from "@/lib/prefs";
+import { LedBoard, LedFigure } from "@/ui/led";
+import { palettes } from "@/ui/theme";
 
-// The light theme's board (white): the LED colours are the AA text colours.
-const LED = "#b33a0c";
-const LED_DANGER = "#b42318";
-const LED_GOOD = "#17703f";
-// The dark theme's lit board.
-const DARK_LED = "#ff6a2b";
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+}));
+
+// The default theme (Gate glass), light: the LED colours are AA text colours on its board.
+const LIGHT = palettes["gate/light"];
+const LED = LIGHT.led;
+const LED_DANGER = LIGHT.ledDanger;
+const LED_GOOD = LIGHT.ledGood;
+// Its dark, lit board.
+const DARK_LED = palettes["gate/dark"].led;
 
 /** Stands in for a started animation, so the test can see what was asked to run. */
 function stub(): Animated.CompositeAnimation {
@@ -126,7 +134,7 @@ describe("LedFigure", () => {
     expect(litColor((await render(IN)).root)).toBe(LED_GOOD);
   });
 
-  it("glows in the dark theme's orange on the dark board", async () => {
+  it("glows in the dark theme's LED colour on the dark board", async () => {
     const scheme = jest.spyOn(RN, "useColorScheme").mockReturnValue("dark");
     try {
       const { root } = await render(timeLeft(30));
@@ -148,8 +156,8 @@ describe("LedFigure", () => {
     expect(panel.props.accessibilityElementsHidden).toBe(true);
     const unlit = dotsIn(byId(root, "led-unlit"));
     expect(unlit).toHaveLength(19 * ROWS);
-    // Unlit: the led colour at 13% alpha, never a readable colour.
-    expect(new Set(unlit.map((s) => s.backgroundColor))).toEqual(new Set([`${LED}21`]));
+    // Unlit: the theme's ghost tint, never a readable colour.
+    expect(new Set(unlit.map((s) => s.backgroundColor))).toEqual(new Set([LIGHT.ledGhost]));
     const lit = dotsIn(byId(root, "led-lit"));
     const expected = layout("1:12").chars.reduce((n, ch) => n + ch.dots.length, 0);
     expect(lit).toHaveLength(expected);
@@ -185,5 +193,40 @@ describe("LedFigure", () => {
   it("doesn't blink a figure without a colon", async () => {
     await render(timeLate(18), false);
     expect(Animated.loop).not.toHaveBeenCalled();
+  });
+
+  it("keeps its ghost cells the same tint whatever the state", async () => {
+    const { root } = await render(timeLate(18));
+    expect(new Set(dotsIn(byId(root, "led-unlit")).map((s) => s.backgroundColor))).toEqual(
+      new Set([LIGHT.ledGhost]),
+    );
+  });
+});
+
+describe("LedBoard's breathing glow", () => {
+  /** The glow is the board's only Image. */
+  async function glowsIn(theme: "gate" | "led" | "dusk"): Promise<boolean> {
+    await act(async () => setPrefs({ theme }));
+    const scheme = jest.spyOn(RN, "useColorScheme").mockReturnValue("dark");
+    try {
+      jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
+      await act(async () => {
+        tree = create(
+          createElement(LedBoard, { label: "Time left", reading: timeLeft(30), glow: true }),
+        );
+      });
+      return tree!.root.findAllByType(Animated.Image).length > 0;
+    } finally {
+      act(() => tree?.unmount());
+      tree = undefined;
+      scheme.mockReturnValue("light");
+      await act(async () => setPrefs({ theme: "gate" }));
+    }
+  }
+
+  it("is decoration only LED night has; Gate glass and Dusk boards don't glow", async () => {
+    expect(await glowsIn("led")).toBe(true);
+    expect(await glowsIn("gate")).toBe(false);
+    expect(await glowsIn("dusk")).toBe(false);
   });
 });

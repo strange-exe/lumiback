@@ -24,7 +24,7 @@ const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_CSS_SRI = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
 const CAMPUS = [30.2687, 77.9947]; // Graphic Era, Dehradun: until the first fix
 
-function page(c: Colors, dark: boolean): string {
+export function mapPage(c: Colors, dark: boolean): string {
   const tiles = dark
     ? "invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.85) contrast(0.9)"
     : "saturate(0.45) sepia(0.12) brightness(1.03)";
@@ -35,16 +35,16 @@ function page(c: Colors, dark: boolean): string {
   html,body,#map{margin:0;height:100%;background:${c.surface}}
   .tiles{filter:${tiles}}
   .leaflet-control-attribution{background:${c.surface}e0!important;color:${c.muted};font:11px sans-serif}
-  .leaflet-control-attribution a{color:${c.accentText}}
-  .dot{border-radius:50%;background:${c.accent};border:3px solid ${c.surface};
-    box-shadow:0 0 0 6px ${c.accent}4d,0 2px 6px rgba(0,0,0,.3);animation:halo 2.4s ease-out infinite}
+  .leaflet-control-attribution a{color:${c.link}}
+  .dot{border-radius:50%;background:${c.outText};border:3px solid ${c.surface};
+    box-shadow:0 0 0 6px ${c.outText}4d,0 2px 6px rgba(0,0,0,.3);animation:halo 2.4s ease-out infinite}
   .dot.paused{background:${c.muted};box-shadow:0 2px 6px rgba(0,0,0,.3);animation:none}
   .dot.fake{background:${c.danger};box-shadow:0 2px 6px rgba(0,0,0,.3);animation:none;
     border-radius:4px;transform-origin:center}
   .dot.fake::after{content:'';position:absolute;inset:-3px;border-radius:4px;transform:rotate(45deg);
     background:${c.danger};border:3px solid ${c.surface}}
-  @keyframes halo{0%{box-shadow:0 0 0 0 ${c.accent}80,0 2px 6px rgba(0,0,0,.3)}
-    100%{box-shadow:0 0 0 18px ${c.accent}00,0 2px 6px rgba(0,0,0,.3)}}
+  @keyframes halo{0%{box-shadow:0 0 0 0 ${c.outText}80,0 2px 6px rgba(0,0,0,.3)}
+    100%{box-shadow:0 0 0 18px ${c.outText}00,0 2px 6px rgba(0,0,0,.3)}}
   @media (prefers-reduced-motion:reduce){.dot{animation:none}}
 </style></head><body><div id="map"></div>
 <script src="${LEAFLET_JS}" integrity="${LEAFLET_JS_SRI}" crossorigin=""></script>
@@ -52,8 +52,8 @@ function page(c: Colors, dark: boolean): string {
   var map = L.map('map', {zoomControl:false, attributionControl:true}).setView(${JSON.stringify(CAMPUS)}, 14);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, className:'tiles',
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
-  // The faked position is a diamond with a dashed ring, not only a different colour: orange and
-  // red are close, so shape tells them apart.
+  // The faked position is a diamond with a dashed ring, not only a different colour: the out
+  // colour (orange in LED night) and red can be close, so shape tells them apart.
   function spot(cls, color, dash) {
     return {
       marker: L.marker([0, 0], {icon: L.divIcon({className: cls, iconSize: [22, 22]}), keyboard: false}),
@@ -66,7 +66,7 @@ function page(c: Colors, dark: boolean): string {
     var ll = [p.lat, p.lng];
     s.marker.setLatLng(ll).addTo(map); s.circle.setLatLng(ll).setRadius(p.accuracy_m).addTo(map);
   }
-  var real = spot('dot', '${c.accent}'), fake = spot('dot fake', '${c.danger}', '4 4'), framed = '';
+  var real = spot('dot', '${c.outText}'), fake = spot('dot fake', '${c.danger}', '4 4'), framed = '';
   // p: the real position; f: a position faked by a mock-location app (shown in red).
   window.place = function (p, paused, f) {
     put(real, p); put(fake, f);
@@ -108,7 +108,7 @@ export function LiveMap({
   const web = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const html = useMemo(() => page(c, dark), [c, dark]);
+  const html = useMemo(() => mapPage(c, dark), [c, dark]);
 
   useEffect(() => {
     if (!ready || (!point && !fake)) return;

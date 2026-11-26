@@ -3,11 +3,13 @@ import * as SecureStore from "expo-secure-store";
 import * as TaskManager from "expo-task-manager";
 
 import { api, ApiError } from "@/lib/api";
+import { loadPrefs } from "@/lib/prefs";
 import type { ShareSession } from "@/lib/types";
 import { loadViewAs, READ_ONLY } from "@/lib/view-as";
 import { notifyFollowRequest, notifySendProblem, notifyShareEnded } from "@/notify/notify";
 import { hasPushToken } from "@/notify/push";
 import { newRequests } from "@/notify/plan";
+import { notificationColour } from "@/ui/theme";
 
 /**
  * Live location while sharing. Runs as an Android foreground service (a visible "Sharing your
@@ -248,7 +250,8 @@ export async function startSending(sessionId: string, endsAt: string): Promise<S
     foregroundService: {
       notificationTitle: "Sharing your live location",
       notificationBody: "Open Lumiback to see who can view it or to stop.",
-      notificationColor: "#e8501a",
+      // The chosen theme's Scan colour, like the app's other notifications (notify.ts).
+      notificationColor: notificationColour((await loadPrefs()).theme),
       killServiceOnDestroy: true,
     },
   });

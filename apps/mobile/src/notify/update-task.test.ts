@@ -39,6 +39,7 @@ jest.mock("@/lib/prefs", () => ({
     followRequests: true,
     returnReminders: true,
     shareStatus: true,
+    hostelBoard: true,
   })),
 }));
 
@@ -128,6 +129,12 @@ it("tells the server this app draws the update notice itself", async () => {
   await registerPush();
   expect(api).toHaveBeenCalledWith("/devices/push-token", {
     method: "POST",
-    body: { token: "ExponentPushToken[test]", platform: "android", muted: [], draws_updates: true },
+    body: {
+      token: "ExponentPushToken[test]",
+      platform: "android",
+      muted: [],
+      draws_updates: true,
+      board: true,
+    },
   });
 });

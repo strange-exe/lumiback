@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { forwardRef, useState, type ReactNode } from "react";
+import { forwardRef, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -18,9 +18,19 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { loadFailedText } from "@/lib/words";
 import { DotBackground } from "@/ui/backdrop";
 import { useReducedMotion } from "@/ui/motion";
-import { fonts, layout, radius, space, type, useColors, useDockClearance } from "@/ui/theme";
+import {
+  fonts,
+  layout,
+  radius,
+  space,
+  type,
+  useColors,
+  useDockClearance,
+  type Colors,
+} from "@/ui/theme";
 
 /**
  * Scale-down on press: a physical "push" that springs back with a slight overshoot (native
@@ -76,22 +86,33 @@ export function Press({
   );
 }
 
+/** The visible part of a Screen: how far it's scrolled and how tall the visible area is. */
+export interface Viewport {
+  scrollY: number;
+  viewport: number;
+}
+
 /** A scrolling page with the app's background (dot grid) and safe-area padding. */
 export function Screen({
   children,
   edges = ["top", "bottom"],
   refreshControl,
   scan = false,
+  onViewport,
 }: {
   children: ReactNode;
   edges?: ("top" | "bottom")[];
   refreshControl?: React.ComponentProps<typeof ScrollView>["refreshControl"];
   /** Status screens: the scan band passes over the dot grid. */
   scan?: boolean;
+  /** What part of the page is in view (scroll offset and visible height), as it changes:
+   * for content that counts as read once it's on screen (the hostel board card). */
+  onViewport?: (view: Viewport) => void;
 }): ReactNode {
   const c = useColors();
   const clearance = useDockClearance();
   const insets = useSafeAreaInsets();
+  const view = useRef<Viewport>({ scrollY: 0, viewport: 0 });
   // With a "bottom" edge the safe area already adds the inset; don't count it twice.
   const bottom = edges.includes("bottom") ? clearance - insets.bottom : clearance;
   return (
@@ -113,6 +134,23 @@ export function Screen({
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           refreshControl={refreshControl}
+          onLayout={
+            onViewport
+              ? (e) => {
+                  view.current.viewport = e.nativeEvent.layout.height;
+                  onViewport({ ...view.current });
+                }
+              : undefined
+          }
+          onScroll={
+            onViewport
+              ? (e) => {
+                  view.current.scrollY = e.nativeEvent.contentOffset.y;
+                  onViewport({ ...view.current });
+                }
+              : undefined
+          }
+          scrollEventThrottle={onViewport ? 100 : undefined}
         >
           {children}
         </ScrollView>
@@ -249,6 +287,7 @@ export function Button({
   style,
   accessibilityLabel,
   icon,
+  iconSize = 18,
 }: {
   label: string;
   onPress: () => void;
@@ -257,14 +296,17 @@ export function Button({
   busyLabel?: string;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
-  icon?: ReactNode;
+  /** An icon before the label, drawn in the label's colour (so the two never drift apart). */
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
+  iconSize?: number;
 }): ReactNode {
   const c = useColors();
   const look: Record<Variant, { bg: string; fg: string; border?: string }> = {
     primary: { bg: c.accent, fg: c.onAccent },
-    secondary: { bg: c.surface, fg: c.accentText, border: c.line },
+    // Secondary and quiet words are links: ink in Gate glass and Dusk, orange in LED night.
+    secondary: { bg: c.surface, fg: c.link, border: c.line },
     danger: { bg: c.danger, fg: c.surface },
-    quiet: { bg: "transparent", fg: c.accentText },
+    quiet: { bg: "transparent", fg: c.link },
     onHero: { bg: c.onHero, fg: c.hero },
     onHeroOutline: { bg: "transparent", fg: c.onHero, border: c.heroLine },
     // On a status board, which is light or dark with the theme.
@@ -296,7 +338,11 @@ export function Button({
         style,
       ]}
     >
-      {busy ? <ActivityIndicator color={fg} size="small" /> : icon}
+      {busy ? (
+        <ActivityIndicator color={fg} size="small" />
+      ) : icon ? (
+        <Ionicons name={icon} size={iconSize} color={fg} />
+      ) : null}
       <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: fg }} numberOfLines={1}>
         {busy && busyLabel ? busyLabel : label}
       </Text>
@@ -313,8 +359,8 @@ type FieldProps = TextInputProps & {
 
 /**
  * Labelled input: the label is always visible (placeholders are examples, not labels).
- * The box shows focus (accent border), and the caret, selection and handles use the accent
- * instead of Android's default teal.
+ * The box shows focus (a focus-colour border), and the caret, selection and handles use the
+ * theme's focus colour instead of Android's default teal.
  */
 export const Field = forwardRef<TextInput, FieldProps>(function Field(
   { label, hint, style, trailing, onFocus, onBlur, ...input },
@@ -336,7 +382,7 @@ export const Field = forwardRef<TextInput, FieldProps>(function Field(
           // Keep the text from shifting when the border thickens on focus.
           paddingHorizontal: focused ? space(4) - 1 : space(4),
           backgroundColor: c.raised,
-          borderColor: focused ? c.accent : c.field,
+          borderColor: focused ? c.focus : c.field,
         }}
       >
         <TextInput
@@ -344,9 +390,9 @@ export const Field = forwardRef<TextInput, FieldProps>(function Field(
           accessibilityLabel={label}
           accessibilityHint={hint}
           placeholderTextColor={c.muted}
-          cursorColor={c.accent}
-          selectionHandleColor={c.accent}
-          selectionColor={`${c.accent}55`}
+          cursorColor={c.focus}
+          selectionHandleColor={c.focus}
+          selectionColor={`${c.focus}55`}
           underlineColorAndroid="transparent"
           onFocus={(e) => {
             setFocused(true);
@@ -452,9 +498,7 @@ export function LoadFailed({
     >
       <Ionicons name="cloud-offline-outline" size={28} color={c.muted} />
       <T tone="headline">{title}</T>
-      <T tone="muted">
-        {message ?? "Something went wrong."} {after}
-      </T>
+      <T tone="muted">{loadFailedText(message, after)}</T>
       <Button
         label="Try again"
         variant="secondary"
@@ -651,22 +695,29 @@ export function Segmented<V extends string>({
   );
 }
 
-/** Small rounded status label: "Verified at gate", "Self-reported", "Late". */
-export function StatusChip({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "good" | "danger" | "accent" | "muted";
-}): ReactNode {
-  const c = useColors();
+/**
+ * `out` is the "out" status, in its own colours (teal in Gate glass): no other chip uses them.
+ * `accent` marks something to notice that isn't a status colour ("Waiting", a staff role): ink
+ * on the hairline fill, a step stronger than `muted`. Gate glass's accentSoft is the out teal.
+ */
+export type ChipTone = "good" | "danger" | "accent" | "out" | "muted";
+
+/** A chip's fill and word colours: [fill, words]. */
+export function chipColours(c: Colors, tone: ChipTone): readonly [string, string] {
   const map = {
     good: [c.goodSoft, c.good],
     danger: [c.dangerSoft, c.danger],
-    accent: [c.accentSoft, c.accentText],
+    accent: [c.line, c.ink],
+    out: [c.outSoft, c.outText],
     muted: [c.line, c.muted],
   } as const;
-  const [bg, fg] = map[tone];
+  return map[tone];
+}
+
+/** Small rounded status label: "Verified at gate", "Self-reported", "Late". */
+export function StatusChip({ label, tone }: { label: string; tone: ChipTone }): ReactNode {
+  const c = useColors();
+  const [bg, fg] = chipColours(c, tone);
   return (
     <View
       style={{
@@ -689,10 +740,13 @@ export function Section({
   title,
   children,
   footer,
+  radiogroup = false,
 }: {
   title?: string;
   children: ReactNode;
   footer?: string;
+  /** The rows are one choice of several (radio rows): screen readers get them as a named group. */
+  radiogroup?: boolean;
 }): ReactNode {
   const c = useColors();
   const rows = (Array.isArray(children) ? children : [children]).filter(Boolean);
@@ -702,6 +756,8 @@ export function Section({
         <Text style={[type.eyebrow, { color: c.muted, paddingHorizontal: space(1) }]}>{title}</Text>
       ) : null}
       <View
+        accessibilityRole={radiogroup ? "radiogroup" : undefined}
+        accessibilityLabel={radiogroup ? title : undefined}
         style={{
           backgroundColor: c.surface,
           borderRadius: radius.card,
@@ -735,6 +791,8 @@ export function Row({
   onPress,
   danger = false,
   accessibilityLabel,
+  accessibilityRole = "button",
+  selected,
 }: {
   title: string;
   detail?: string;
@@ -743,6 +801,9 @@ export function Row({
   onPress?: () => void;
   danger?: boolean;
   accessibilityLabel?: string;
+  /** "radio" for one choice of several (Appearance); then `selected` says whether it's this one. */
+  accessibilityRole?: "button" | "radio";
+  selected?: boolean;
 }): ReactNode {
   const c = useColors();
   const body = (
@@ -770,7 +831,8 @@ export function Row({
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
+      accessibilityRole={accessibilityRole}
+      accessibilityState={accessibilityRole === "radio" ? { checked: !!selected } : undefined}
       accessibilityLabel={accessibilityLabel ?? title}
       android_ripple={{ color: c.line }}
     >

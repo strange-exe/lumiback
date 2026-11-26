@@ -35,6 +35,8 @@ jest.mock("@/lib/prefs", () => ({
     followRequests: true,
     returnReminders: true,
     shareStatus: true,
+    hostelBoard: true,
+    theme: "gate",
   })),
 }));
 

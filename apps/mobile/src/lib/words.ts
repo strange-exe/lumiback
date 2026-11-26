@@ -6,6 +6,15 @@ export function sentence(text: string): string {
 }
 
 /**
+ * A failed load's line: the error, then what appears once it loads. API errors often have no
+ * ending ("Not found"), so one full stop is added when the error has none; its own . ! or ? stays.
+ */
+export function loadFailedText(message: string | null, after: string): string {
+  const said = message?.trim() || "Something went wrong";
+  return `${/[.!?]$/.test(said) ? said : `${said}.`} ${after}`;
+}
+
+/**
  * How a trip was recorded. Only a trip scanned at the gate both ways is fully verified; a gate
  * tap-out with a self-reported return says just that. A return the hostel office recorded, or
  * one nobody recorded (closed when they tapped out again on a later day), says so whatever the

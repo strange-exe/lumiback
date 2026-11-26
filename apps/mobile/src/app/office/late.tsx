@@ -117,7 +117,7 @@ function LateRow({ outing: o, onFix }: { outing: OfficeOuting; onFix: () => void
           accessibilityLabel={row.back ? `Correct ${o.name}'s outing` : `Record ${o.name}'s return`}
           style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
         >
-          <T tone="label" style={{ color: c.accentText }}>
+          <T tone="label" style={{ color: c.link }}>
             {row.back ? "Correct" : "Record return"}
           </T>
         </Press>
@@ -132,7 +132,7 @@ function LateRow({ outing: o, onFix }: { outing: OfficeOuting; onFix: () => void
             accessibilityLabel={`${o.name}'s history`}
             style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
           >
-            <T tone="label" style={{ color: c.accentText }}>
+            <T tone="label" style={{ color: c.link }}>
               History
             </T>
           </Press>

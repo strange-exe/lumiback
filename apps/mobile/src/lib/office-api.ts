@@ -8,6 +8,10 @@ import type {
   AccountEdit,
   AccountFilter,
   AdminUser,
+  BoardDraft,
+  BoardPostBody,
+  BoardReach,
+  BoardSent,
   CallOutcome,
   Correction,
   CorrectionBody,
@@ -33,6 +37,7 @@ import type {
   Role,
   RuleSet,
   ScanResult,
+  StaffBoardList,
   StudentRecord,
 } from "@/lib/types";
 
@@ -69,6 +74,20 @@ export const office = {
   /** A one-line notice (or "come back now") to the students out now in this office's hostels. */
   notice: (message: string, recall: boolean) =>
     api<{ sent: number }>("/admin/notices", { method: "POST", body: { message, recall } }),
+  /** The hostel board's posts in this office's scope, newest first (at most 50). */
+  board: () => api<StaffBoardList>("/admin/board"),
+  /** How many students and phones a post would reach. `target`: from targetQuery(). */
+  boardReach: (target: string) => api<BoardReach>(`/admin/board/reach?${target}`),
+  /** "Use the outing rules": a timings post from the rules, or a holiday's ("YYYY-MM-DD"). */
+  boardDraft: (target: string, holiday?: string | null) =>
+    api<BoardDraft>(
+      `/admin/board/draft?${target}${holiday ? `&holiday=${encodeURIComponent(holiday)}` : ""}`,
+    ),
+  /** Wardens (their hostels), head wardens and admins; never developers (403). */
+  postToBoard: (body: BoardPostBody) => api<BoardSent>("/admin/board", { method: "POST", body }),
+  /** Take a post down (idempotent; no push). */
+  withdrawBoardPost: (id: number) =>
+    api<void>(`/admin/board/${encodeURIComponent(String(id))}/withdraw`, { method: "POST" }),
   /** `q`: a student's name or roll number (2+ letters), within the office's own hostels. */
   outings: (q?: string | null) => api<OfficeOuting[]>(`/admin/outings${outingsQuery({ q })}`),
   /** Outings that ended today (IST), latest first: to correct a return time or a mistaken tap. */

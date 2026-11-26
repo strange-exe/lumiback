@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 
 import { correctionStatus, isCancelled } from "@/lib/corrections";
 import { formatMinutes, formatTime } from "@/lib/time";
@@ -8,6 +8,23 @@ import type { Outing } from "@/lib/types";
 import { viaLabel } from "@/lib/words";
 import { Press, StatusChip, T } from "@/ui/kit";
 import { radius, space, useColors } from "@/ui/theme";
+
+/** The time column's width at the default font size: "12:52 PM" in the label face. */
+export const TIME_WIDTH = 76;
+/** From this font setting up, three columns no longer fit a phone's width: the row stacks. */
+const STACK_AT = 1.3;
+
+/**
+ * How a trip row lays out at the phone's font setting. The time column grows with the text so a
+ * time is never cut short; from STACK_AT up the row stacks (times, then the trip, then its status)
+ * so the middle column is never squeezed to a few letters a line.
+ */
+export function outingRowLayout(fontScale: number): { stacked: boolean; timeWidth: number } {
+  return {
+    stacked: fontScale >= STACK_AT,
+    timeWidth: Math.ceil(TIME_WIDTH * Math.max(1, fontScale)),
+  };
+}
 
 /**
  * One trip in a grouped list (History, and Recent trips on Today): where, when, how long,
@@ -27,6 +44,7 @@ export function OutingRow({
   onFix?: () => void;
 }): ReactNode {
   const c = useColors();
+  const { stacked, timeWidth } = outingRowLayout(useWindowDimensions().fontScale);
   const late = outing.late_minutes > 0;
   const cancelled = isCancelled(outing);
   const unrecorded = outing.in_via === "unrecorded";
@@ -35,7 +53,7 @@ export function OutingRow({
     : outing.status === "overdue"
       ? { label: "Late", tone: "danger" as const }
       : outing.status === "out"
-        ? { label: "Out now", tone: "accent" as const }
+        ? { label: "Out now", tone: "out" as const }
         : unrecorded
           ? { label: "Not recorded", tone: "muted" as const }
           : late
@@ -72,10 +90,21 @@ export function OutingRow({
         ]
           .filter(Boolean)
           .join(", ")}
-        style={{ flexDirection: "row", alignItems: "center", gap: space(3) }}
+        style={
+          stacked
+            ? { gap: space(2) }
+            : { flexDirection: "row", alignItems: "center", gap: space(3) }
+        }
       >
-        {/* A departures-board strip: when on the left, what happened in the middle, status right. */}
-        <View style={{ width: 76, gap: space(0.5) }}>
+        {/* A departures-board strip: when on the left, what happened in the middle, status right.
+            Stacked (large text), the two times share one line above the trip. */}
+        <View
+          style={
+            stacked
+              ? { flexDirection: "row", flexWrap: "wrap", columnGap: space(3) }
+              : { width: timeWidth, gap: space(0.5) }
+          }
+        >
           <T
             tone="label"
             numberOfLines={1}
@@ -91,7 +120,8 @@ export function OutingRow({
                 : ""}
           </T>
         </View>
-        <View style={{ flex: 1, gap: space(1) }}>
+        {/* flex: 1 only across a row: in the stacked column a zero basis would collapse it. */}
+        <View style={stacked ? { gap: space(1) } : { flex: 1, gap: space(1) }}>
           <T tone="label" numberOfLines={1} style={{ fontSize: 16, lineHeight: 22 }}>
             {outing.destination ?? "Outing"}
           </T>
@@ -122,7 +152,7 @@ export function OutingRow({
           accessibilityLabel={`Something wrong with ${outing.destination ?? "this outing"}? Ask the hostel office to fix it`}
           style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
         >
-          <T tone="label" style={{ color: c.accentText }}>
+          <T tone="label" style={{ color: c.link }}>
             Something wrong?
           </T>
         </Press>

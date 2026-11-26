@@ -1,15 +1,22 @@
 import { createElement } from "react";
-import { AccessibilityInfo, Animated } from "react-native";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { AccessibilityInfo, Animated, Image, StyleSheet, type ImageStyle } from "react-native";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
+import { setPrefs } from "@/lib/prefs";
 import { DotBackground, fieldDots, PITCH } from "@/ui/backdrop";
+import { palettes } from "@/ui/theme";
+
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+}));
 
 let tree: ReactTestRenderer | undefined;
 
-async function render(reduced: boolean): Promise<ReactTestRenderer> {
+async function render(reduced: boolean, scan = false): Promise<ReactTestRenderer> {
   jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(reduced);
   await act(async () => {
-    tree = create(createElement(DotBackground));
+    tree = create(createElement(DotBackground, { scan }));
   });
   await act(async () => {
     await Promise.resolve();
@@ -81,5 +88,38 @@ describe("DotBackground", () => {
     const { root } = await render(true);
     expect(root.findAll((n) => n.props.testID === "led-field")).toHaveLength(0);
     expect(Animated.loop).not.toHaveBeenCalled();
+  });
+
+  it("tints the grid's dots with the theme's dot colour", async () => {
+    for (const theme of ["gate", "led", "dusk"] as const) {
+      await act(async () => setPrefs({ theme }));
+      const { root } = await render(true);
+      const [grid] = root.findAllByType(Image);
+      expect(StyleSheet.flatten(grid!.props.style as ImageStyle).tintColor).toBe(
+        palettes[`${theme}/light`].dot,
+      );
+      act(() => tree?.unmount());
+    }
+    await act(async () => setPrefs({ theme: "gate" }));
+  });
+});
+
+describe("the scan band over status screens", () => {
+  const bands = (root: ReactTestInstance): ReactTestInstance[] =>
+    root.findAll((n) => n.props.testID === "scan-band", { deep: false });
+
+  afterEach(async () => {
+    await act(async () => setPrefs({ theme: "gate" }));
+  });
+
+  it("is LED night's decoration: Gate glass and Dusk keep a still grid", async () => {
+    await act(async () => setPrefs({ theme: "led" }));
+    expect(bands((await render(false, true)).root)).toHaveLength(1);
+    act(() => tree?.unmount());
+    for (const theme of ["gate", "dusk"] as const) {
+      await act(async () => setPrefs({ theme }));
+      expect(bands((await render(false, true)).root)).toHaveLength(0);
+      act(() => tree?.unmount());
+    }
   });
 });

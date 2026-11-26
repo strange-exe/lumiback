@@ -27,7 +27,7 @@ import { fonts, radius, space, useColors } from "@/ui/theme";
 
 const STATUS = {
   in: { label: "In the hostel", tone: "muted" },
-  out: { label: "Out now", tone: "accent" },
+  out: { label: "Out now", tone: "out" },
   overdue: { label: "Out and late", tone: "danger" },
 } as const;
 
@@ -259,7 +259,7 @@ function OutingCard({ outing: o }: { outing: RecordOuting }): ReactNode {
         {o.status === "overdue" ? (
           <StatusChip label={`${formatMinutes(o.late_minutes)} late`} tone="danger" />
         ) : o.status === "out" ? (
-          <StatusChip label="Out" tone="accent" />
+          <StatusChip label="Out" tone="out" />
         ) : backLate ? (
           <StatusChip label={`Back ${formatMinutes(o.late_minutes)} late`} tone="danger" />
         ) : (

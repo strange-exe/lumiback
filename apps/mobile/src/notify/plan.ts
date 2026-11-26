@@ -106,6 +106,7 @@ export type NotificationRoute =
   | "/live"
   | "/live?view=follow"
   | "/today"
+  | "/today/board"
   | "/history"
   | "/office/requests"
   | "/office/escalations"
@@ -116,6 +117,7 @@ const ROUTES: readonly string[] = [
   "/live",
   "/live?view=follow",
   "/today",
+  "/today/board",
   "/history",
   "/office/requests",
   "/office/escalations",
@@ -245,18 +247,27 @@ export function tapTarget(data: unknown, action: string): TapTarget {
   return { to: "route", route: notificationRoute(data) };
 }
 
+/** Where a board post's push opens (backend send_board_post's url). */
+export const BOARD_ROUTE = "/today/board" satisfies NotificationRoute;
+
+/** The hostel board's posts (backend push.BOARD_CHANNEL). Server push only. */
+export const BOARD_CHANNEL = "hostel-board";
+
 /** Server push channels (match the Android channels and backend PushMessage.channel). */
-export type PushChannel = "follow-requests" | "return-reminders" | "share-status";
+export type PushChannel =
+  "follow-requests" | "return-reminders" | "share-status" | typeof BOARD_CHANNEL;
 
 /** Channels the student switched off, sent with the push token so the server skips them. */
 export function mutedChannels(prefs: {
   followRequests: boolean;
   returnReminders: boolean;
   shareStatus: boolean;
+  hostelBoard: boolean;
 }): PushChannel[] {
   const muted: PushChannel[] = [];
   if (!prefs.followRequests) muted.push("follow-requests");
   if (!prefs.returnReminders) muted.push("return-reminders");
   if (!prefs.shareStatus) muted.push("share-status");
+  if (!prefs.hostelBoard) muted.push(BOARD_CHANNEL);
   return muted;
 }

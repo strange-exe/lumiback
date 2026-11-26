@@ -1,9 +1,15 @@
 /** A student's own outing calls that more than one screen makes. */
 import { api } from "@/lib/api";
 import type { RunningLateBody } from "@/lib/running-late";
-import type { Correction, CorrectionBody, HelpFix, HelpSent, Outing } from "@/lib/types";
+import type { BoardList, Correction, CorrectionBody, HelpFix, HelpSent, Outing } from "@/lib/types";
 
 export const student = {
+  /** The hostel board: active posts for the student's hostel and every hostel, newest first
+   * (at most 30). Anyone but a student, a developer viewing as one included, gets none. */
+  board: () => api<BoardList>("/board"),
+  /** Mark posts read (1 to 30 ids; 204). Ids the student can't see are ignored. Refused while
+   * viewing as another role, so callers skip it then. */
+  boardSeen: (ids: number[]) => api<void>("/board/seen", { method: "POST", body: { ids } }),
   /** "Ask the office to call me" while out, for a hostel with no office number (202; 429
    * after 3 in an hour; 404 when not out). */
   callMe: () => api<void>("/outings/current/call-me", { method: "POST" }),

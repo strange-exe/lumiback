@@ -1,8 +1,11 @@
+import type { DayRule } from "@/lib/types";
 import {
   accountLabel,
   campusToday,
   canEditRules,
+  canPostToBoard,
   clock,
+  DAY_LABEL,
   dayLine,
   everyHostel,
   formatPhone,
@@ -140,6 +143,80 @@ describe("dayLine", () => {
   it("reads midnight and noon right", () => {
     expect(clock("00:05")).toBe("12:05 AM");
     expect(clock("12:00")).toBe("12:00 PM");
+  });
+});
+
+// The hostel board's rules drafts are written by the server (backend/app/services/rules.py
+// day_line) in these exact words. The same 7 cases are SHARED_DAY_LINES in
+// backend/tests/test_rules.py: change both together.
+describe("dayLine: the fixture shared with the backend's board drafts", () => {
+  const DASH = String.fromCodePoint(0x2013);
+  const DOT = ` ${String.fromCodePoint(0xb7)} `;
+  const rule = (
+    day_type: DayRule["day_type"],
+    opens_at: string,
+    return_by: string,
+    max_minutes: number | null,
+    needs_form: boolean,
+    no_form_from: string | null,
+  ): DayRule => ({ day_type, opens_at, return_by, max_minutes, needs_form, no_form_from });
+
+  const CASES: [DayRule, string][] = [
+    [
+      rule("sunday", "10:00", "20:00", 180, true, "18:00"),
+      `10:00 AM${DASH}8:00 PM${DOT}needs approval${DOT}up to 3 h${DOT}no form needed from 6:00 PM`,
+    ],
+    [
+      rule("sunday", "10:00", "20:00", null, false, null),
+      `10:00 AM${DASH}8:00 PM${DOT}no form needed`,
+    ],
+    [
+      rule("sunday", "10:00", "20:00", 90, true, null),
+      `10:00 AM${DASH}8:00 PM${DOT}needs approval${DOT}up to 1.5 h`,
+    ],
+    // The maximum shows only on form days.
+    [
+      rule("weekday", "18:00", "20:00", 120, false, null),
+      `6:00 PM${DASH}8:00 PM${DOT}no form needed`,
+    ],
+    // Math.round: 7.5 tenths rounds up.
+    [
+      rule("holiday", "09:30", "21:00", 45, true, null),
+      `9:30 AM${DASH}9:00 PM${DOT}needs approval${DOT}up to 0.8 h`,
+    ],
+    [
+      rule("saturday", "00:05", "12:00", 100, true, "11:00"),
+      `12:05 AM${DASH}12:00 PM${DOT}needs approval${DOT}up to 1.7 h${DOT}no form needed from 11:00 AM`,
+    ],
+    [
+      rule("weekday", "00:00", "23:59", 720, true, null),
+      `12:00 AM${DASH}11:59 PM${DOT}needs approval${DOT}up to 12 h`,
+    ],
+  ];
+
+  it.each(CASES)("case %#", (day, line) => {
+    expect(dayLine(day)).toBe(line);
+  });
+
+  it("names the days as the backend does", () => {
+    expect(DAY_LABEL).toEqual({
+      weekday: "Weekdays",
+      saturday: "Saturday",
+      sunday: "Sunday",
+      holiday: "Holidays",
+    });
+  });
+});
+
+describe("canPostToBoard (the hostel board)", () => {
+  it("is wardens, head wardens and admins; never a developer or a student", () => {
+    expect(canPostToBoard("warden")).toBe(true);
+    expect(canPostToBoard("head_warden")).toBe(true);
+    expect(canPostToBoard("admin")).toBe(true);
+    // Developers have every admin power except this one (owner's list).
+    expect(canPostToBoard("developer")).toBe(false);
+    expect(canPostToBoard("student")).toBe(false);
+    expect(canPostToBoard(undefined)).toBe(false);
   });
 });
 

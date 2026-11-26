@@ -6,7 +6,9 @@ import {
   stopSending,
 } from "@/location/task";
 import { ApiError } from "@/lib/api";
+import { setPrefs } from "@/lib/prefs";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
+import { palettes } from "@/ui/theme";
 
 // jest.mock calls are hoisted above the import; the factories read these only when called.
 const mockHasStarted = jest.fn();
@@ -15,7 +17,7 @@ const mockStore = new Map<string, string>();
 const mockServicesOn = jest.fn();
 const mockEnable = jest.fn();
 const mockAsk = jest.fn();
-const mockStart = jest.fn(async () => undefined);
+const mockStart = jest.fn(async (_task?: string, _options?: object) => undefined);
 
 jest.mock("expo-location", () => ({
   Accuracy: { High: 4 },
@@ -24,7 +26,7 @@ jest.mock("expo-location", () => ({
   hasServicesEnabledAsync: () => mockServicesOn(),
   enableNetworkProviderAsync: () => mockEnable(),
   requestForegroundPermissionsAsync: () => mockAsk(),
-  startLocationUpdatesAsync: () => mockStart(),
+  startLocationUpdatesAsync: (task: string, options: object) => mockStart(task, options),
 }));
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -130,6 +132,22 @@ describe("starting to send with the phone's location switched off", () => {
     }
     // Back in their own view, it starts as usual.
     expect(await startSending("s1", later())).toBe("started");
+  });
+
+  it("colours the sharing notification with the chosen theme's Scan colour", async () => {
+    mockServicesOn.mockResolvedValue(true);
+    const colour = (): unknown =>
+      (mockStart.mock.calls.at(-1)?.[1] as { foregroundService?: { notificationColor?: string } })
+        ?.foregroundService?.notificationColor;
+    try {
+      for (const theme of ["dusk", "led", "gate"] as const) {
+        await setPrefs({ theme });
+        expect(await startSending("s1", later())).toBe("started");
+        expect(colour()).toBe(palettes[`${theme}/light`].scan);
+      }
+    } finally {
+      await setPrefs({ theme: "gate" });
+    }
   });
 });
 

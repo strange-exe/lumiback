@@ -1,4 +1,3 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { useState, type ReactNode } from "react";
 import { AccessibilityInfo, View } from "react-native";
 
@@ -18,7 +17,7 @@ import type { Outing } from "@/lib/types";
 import { haptic } from "@/ui/haptics";
 import { Button, Chips, Field, FormError, T } from "@/ui/kit";
 import { Sheet } from "@/ui/sheet";
-import { space, useColors } from "@/ui/theme";
+import { space } from "@/ui/theme";
 
 /**
  * "Running late?" while out: shown only when the server offers a choice (once per outing, until
@@ -32,7 +31,6 @@ export function RunningLate({
   outing: Outing;
   onDone: () => Promise<void>;
 }): ReactNode {
-  const c = useColors();
   const [open, setOpen] = useState(false);
   const choices = lateChoices(outing.running_late_choices);
   if (choices.length === 0) return null;
@@ -42,7 +40,7 @@ export function RunningLate({
         label="Running late?"
         variant="secondary"
         accessibilityLabel="Running late? Move your due-back time, once per outing"
-        icon={<Ionicons name="time-outline" size={18} color={c.accentText} />}
+        icon="time-outline"
         onPress={() => {
           haptic.tap();
           setOpen(true);

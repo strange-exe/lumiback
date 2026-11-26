@@ -185,7 +185,8 @@ export default function Devices(): ReactNode {
               busy={busy === "others"}
               busyLabel="Signing out…"
               onPress={() => (busy ? undefined : signOutOthers(others))}
-              icon={<Ionicons name="log-out-outline" size={20} color={c.accentText} />}
+              icon="log-out-outline"
+              iconSize={20}
             />
           ) : null}
         </>

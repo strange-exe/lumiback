@@ -87,7 +87,8 @@ describe("OfficeHome", () => {
     const failed = labels(
       render({ ...base, overview: undefined, loading: false, error: "You're offline." }),
     );
-    expect(failed.some((l) => typeof l === "string" && / out$| late$/.test(l))).toBe(false);
+    // Counts only ("4 students out", "1 late"): "Message students who are out" is a row.
+    expect(failed.some((l) => typeof l === "string" && /^\d+ .*(out|late)$/.test(l))).toBe(false);
   });
 
   it("shows the real counts once the overview loaded", () => {
@@ -156,9 +157,52 @@ describe("OfficeHome", () => {
     expect(admin).toContain("Hostel contacts");
   });
 
-  it("offers a notice to the students who are out", () => {
+  it("offers a message to the students who are out, named by its audience", () => {
     const shown = words(render({ ...base, overview: OVERVIEW, loading: false, error: null }));
-    expect(shown).toContain("Send a notice");
+    expect(shown).toContain("Message students who are out");
+    expect(shown).toContain(
+      "Urgent: a notification now (or email). For things every student should see, post to the hostel board.",
+    );
+    expect(shown).not.toContain("Send a notice");
+  });
+
+  it("offers the hostel board in a section that shows even when the counts didn't load", () => {
+    const { router } = jest.requireMock<{ router: { push: jest.Mock } }>("expo-router");
+    for (const overview of [OVERVIEW, undefined]) {
+      router.push.mockClear();
+      const tree = render({
+        ...base,
+        overview,
+        loading: false,
+        error: overview ? null : "You're offline.",
+        boardActive: 3,
+      });
+      const shown = words(tree);
+      expect(shown).toContain("Post to the hostel board");
+      expect(shown).toContain("3 active posts");
+      expect(shown).toContain("Message students who are out");
+      const [row] = tree.root.findAll(
+        (n) =>
+          typeof n.type !== "string" &&
+          n.props.accessibilityLabel === "Post to the hostel board" &&
+          typeof n.props.onPress === "function",
+      );
+      act(() => (row!.props.onPress as () => void)());
+      expect(router.push.mock.calls).toEqual([["/office/board"]]);
+    }
+  });
+
+  it("says what the board is for while its count is unknown", () => {
+    const shown = words(render({ ...base, overview: OVERVIEW, loading: false, error: null }));
+    expect(shown).toContain("Timings, mess, laundry: every student in your hostels sees it");
+  });
+
+  it("never offers the board to a developer (the owner's list of who posts)", () => {
+    const shown = words(
+      render({ ...base, role: "developer", overview: OVERVIEW, loading: false, error: null }),
+    );
+    expect(shown).not.toContain("Post to the hostel board");
+    expect(shown).toContain("Message students who are out");
   });
 
   it("keeps the last real counts and says a refresh failed", () => {

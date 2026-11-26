@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { loadPrefs } from "@/lib/prefs";
 import { sessionGeneration } from "@/lib/session";
 import { loadViewAs } from "@/lib/view-as";
+import { ensureChannels } from "@/notify/channels";
 import { mutedChannels } from "@/notify/plan";
 
 /**
@@ -40,9 +41,15 @@ async function register(): Promise<void> {
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
   const muted = mutedChannels(await loadPrefs()); // the switches in Profile -> Notifications
+  // Board posts name the "hostel-board" channel: without it Android would draw them in a
+  // fallback channel the student can't mute, so the server pushes them only when it exists.
+  const board = await ensureChannels().then(
+    () => true,
+    () => false,
+  );
   // This app draws the update announcement itself (update-task.ts), so the server sends it
   // data-only here and the notice keeps its buttons with the app closed.
-  const body = { token, platform: "android", muted, draws_updates: true };
+  const body = { token, platform: "android", muted, draws_updates: true, board };
   const session = sessionGeneration();
   await api("/devices/push-token", { method: "POST", body });
   // Signed out (or someone else signed in) while this was on its way: not this phone's token now.

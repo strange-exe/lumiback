@@ -10,10 +10,10 @@ import { CURRENT } from "@/updates/changelog";
 import { haptic } from "@/ui/haptics";
 import { Button } from "@/ui/kit";
 import { useReducedMotion } from "@/ui/motion";
-import { fonts, radius, space, type, useColors } from "@/ui/theme";
+import { fonts, radius, space, type, useColors, useGlow } from "@/ui/theme";
 
 import { planTour, stepText, type TourPlan } from "./steps";
-import { measureTarget, placeCard, useReplays, type Rect } from "./store";
+import { measureTarget, placeCard, ringLook, useReplays, type Rect } from "./store";
 
 const KEY = "tour-seen";
 /** Room around a highlighted control, and between it and the tip card. */
@@ -129,6 +129,7 @@ function TourOverlay({
   onSkip: () => void;
 }): ReactNode {
   const c = useColors();
+  const glow = useGlow();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const step = plan.steps[index]!;
@@ -240,8 +241,7 @@ function TourOverlay({
                 height: hole.height,
                 borderRadius: holeRadius,
                 borderWidth: 2,
-                borderColor: c.led,
-                boxShadow: `0 0 18px ${c.led}99`,
+                ...ringLook(c, glow),
                 opacity: enter,
                 transform: [
                   { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [1.12, 1] }) },

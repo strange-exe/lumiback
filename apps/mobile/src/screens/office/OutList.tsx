@@ -94,7 +94,7 @@ function OutRow({
         </T>
         <StatusChip
           label={isLate ? `${formatMinutes(o.late_minutes)} late` : "Out"}
-          tone={isLate ? "danger" : "accent"}
+          tone={isLate ? "danger" : "out"}
         />
       </View>
       <T tone="caption" numberOfLines={1}>
@@ -125,7 +125,7 @@ function OutRow({
           accessibilityLabel={`Record ${o.name}'s return`}
           style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
         >
-          <T tone="label" style={{ color: c.accentText }}>
+          <T tone="label" style={{ color: c.link }}>
             Record return
           </T>
         </Press>
@@ -140,7 +140,7 @@ function OutRow({
             accessibilityLabel={`${o.name}'s history`}
             style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-start" }}
           >
-            <T tone="label" style={{ color: c.accentText }}>
+            <T tone="label" style={{ color: c.link }}>
               History
             </T>
           </Press>
