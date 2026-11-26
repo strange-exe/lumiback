@@ -263,7 +263,7 @@ function RegisterSearch({
               ...(state !== "all" ? { state } : {}),
               ...(hostel ? { hostel } : {}),
             })}
-            className="flex min-h-12 items-center px-1 text-sm font-bold text-accent-text underline-offset-4 hover:underline"
+            className="flex min-h-12 items-center px-1 text-sm font-bold text-link underline-offset-4 hover:underline"
           >
             Clear search
           </a>
@@ -323,7 +323,7 @@ function OutingsTable({ outings, nowIso }: { outings: AdminOuting[]; nowIso: str
                     {formatMinutes(o.late_minutes)} late
                   </span>
                 ) : (
-                  <span className="inline-flex rounded-full bg-accent-soft px-2.5 py-1 text-accent">
+                  <span className="inline-flex rounded-full bg-out-soft px-2.5 py-1 text-out">
                     Out
                   </span>
                 )}

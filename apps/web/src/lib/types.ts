@@ -773,3 +773,72 @@ export interface ErrorGroup {
 export interface ErrorGroupList {
   items: ErrorGroup[];
 }
+
+// ---------- the hostel board (backend/app/api/board.py) ----------
+
+export type BoardCategory = "timings" | "mess" | "laundry" | "maintenance" | "general";
+
+/** A post as a student reads it (GET /board). Times are IST (+05:30). */
+export interface BoardPost {
+  id: number;
+  category: BoardCategory;
+  title: string;
+  /** Plain text with LF line breaks: render as a text node with white-space: pre-line. */
+  body: string;
+  /** "Hostel office, <hostel>", "Hostel office" (several hostels) or "Campus office" (all). */
+  from_label: string;
+  created_at: string;
+  expires_at: string;
+  seen: boolean;
+}
+
+export interface BoardHostel {
+  id: string;
+  name: string;
+}
+
+export type BoardStatus = "active" | "ended" | "withdrawn";
+
+/** A post as the hostel office lists it (GET /admin/board). */
+export interface StaffBoardPost {
+  id: number;
+  category: BoardCategory;
+  title: string;
+  body: string;
+  from_label: string;
+  created_at: string;
+  expires_at: string;
+  status: BoardStatus;
+  all_hostels: boolean;
+  /** Sorted by name; [] for all hostels, or once every target hostel was deleted. */
+  hostels: BoardHostel[];
+  /** "You", or the author's role then ("Warden", "Head warden", "Admin"). */
+  author: string;
+  /** Students it was for when sent. */
+  students: number;
+  /** Of those still in its audience, how many opened it; null under 5 students. */
+  seen: number | null;
+  can_withdraw: boolean;
+}
+
+/** GET /admin/board/reach: who a post would be for now. */
+export interface BoardReach {
+  students: number;
+  devices: number;
+}
+
+/** GET /admin/board/draft: a timings post written from the outing rules. */
+export interface BoardDraft {
+  title: string;
+  body: string;
+  category: "timings";
+  /** Over what a post may hold: the sender trims it first. */
+  too_long: boolean;
+}
+
+/** POST /admin/board: the new post's id and who it reached. */
+export interface BoardSent {
+  id: number;
+  students: number;
+  devices: number;
+}

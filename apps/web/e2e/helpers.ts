@@ -16,6 +16,8 @@ export const DEVELOPER = { email: "e2e-dev@geu.ac.in", password: E2E_PASSWORD };
 /** The seeded "North Gate" kiosk's device token (see e2e_server.py). */
 export const KIOSK_TOKEN = "e2e-kiosk-token-north-gate-0000000000";
 export const API = "http://127.0.0.1:8100";
+/** How long the first share of a run may take to go live (the dev server compiles its routes then). */
+export const FIRST_SHARE_TIMEOUT = 20_000;
 
 export async function signIn(page: Page, who = STUDENT): Promise<void> {
   await page.goto("/sign-in");
@@ -94,8 +96,37 @@ export async function stopSharing(page: Page): Promise<void> {
 export async function startSharing(page: Page): Promise<void> {
   await stopSharing(page);
   await page.getByRole("button", { name: "Start sharing" }).click();
-  await expect(page.getByRole("heading", { name: "You're sharing your location" })).toBeVisible();
-  await expect(page.getByText(/^Live · updated/)).toBeVisible();
+  // The first share of a run is the first request to the share server action and to the three
+  // /api/share routes (location, access-log, session), which the dev server compiles on demand:
+  // 3-4 s each on a cold start (the 2026-11-26 full run timed out at 5 s with the location PUT
+  // still pending). Every later share is quick, so only the first wait needs the room.
+  await expect(page.getByRole("heading", { name: "You're sharing your location" })).toBeVisible({
+    timeout: FIRST_SHARE_TIMEOUT,
+  });
+  await expect(page.getByText(/^Live · updated/)).toBeVisible({ timeout: FIRST_SHARE_TIMEOUT });
+}
+
+/**
+ * Wait until React has hydrated every form control on the page. "networkidle" is not that signal:
+ * a long page (the people list) hydrates in time slices after the network goes quiet, and a
+ * screenshot's caret hiding sets an inline style on each input, which React then reports as a
+ * hydration mismatch. React tags each host node it has hydrated with a `__reactProps$` key,
+ * except the hidden `$ACTION_*` inputs it adds to server-action forms, which stay untagged.
+ */
+export async function waitForHydration(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const controls = document.querySelectorAll(
+        'input:not([name^="$ACTION"]), select, textarea, button, form',
+      );
+      return (
+        controls.length > 0 &&
+        [...controls].every((el) => Object.keys(el).some((key) => key.startsWith("__reactProps$")))
+      );
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
 }
 
 /** WCAG 2.2 A/AA problems on the page as it is now (open dialogs and bars included). */

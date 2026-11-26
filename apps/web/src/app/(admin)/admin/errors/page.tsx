@@ -78,7 +78,7 @@ function ErrorRow({ group }: { group: ErrorGroup }): ReactNode {
       </p>
       {group.stack ? (
         <details>
-          <summary className="flex min-h-11 cursor-pointer items-center self-start text-sm font-bold text-accent-text">
+          <summary className="flex min-h-11 cursor-pointer items-center self-start text-sm font-bold text-link">
             Stack
           </summary>
           {/* Scrolls inside itself; focusable so a keyboard can scroll it too. */}

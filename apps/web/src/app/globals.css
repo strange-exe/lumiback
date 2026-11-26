@@ -1,57 +1,201 @@
 @import "tailwindcss";
 
-/* "LED night" (owner's pick, 2026-11-07; spec in .claude/design.md). The same token names as the
-   mobile app (apps/mobile/src/ui/theme.ts). Neutral page with a dot grid, one orange accent that
-   fills buttons and badges (always with ink text), and a dark LED board for the figures that matter.
-   Orange as text or links uses --accent-text, which passes AA where --accent does not. */
-:root {
+/* Colour themes (owner's pick, 2026-11-25/26; .claude/design.md "Re-theme 2026-11-25"): Gate glass
+   by default, LED night and Dusk when chosen on Account (src/lib/theme.ts; the root layout sets
+   <html data-theme> from a cookie, no script). The values are the app's (apps/mobile/src/ui/
+   theme.ts), checked by script; src/lib/theme-css.test.ts re-checks contrast. Each theme and mode
+   is one complete block, so a nested [data-theme] (the picker's swatches) shows that theme too.
+   Roles: --accent fills primary buttons only (with --on-accent); --link colours links and
+   secondary or quiet buttons (text-accent resolves to it); --out-text / --out-soft mean "out" and
+   nothing else; --focus is the focus ring, caret, selection and focused input border; --board is
+   the LED board (light by day), --hero a dark panel; --accent-glow, --clay-shadow and --tint are
+   for illustrations and shadows only. Decorative glows show only in LED night (see below). */
+:root,
+[data-theme="gate"] {
+  --page: #f3f0e8;
+  --surface: #fbfaf6;
+  --raised: #ffffff;
+  --ink: #141c22;
+  --muted: #525a5e;
+  --line: #e0dbd0;
+  --field: #7d786d;
+  --accent: #15252c;
+  --on-accent: #f7f4ec;
+  --accent-text: #08626b;
+  --accent-soft: #c8f1f3;
+  --link: #141c22;
+  --focus: #08626b;
+  --out-text: #08626b;
+  --out-soft: #c8f1f3;
+  --good: #20581b;
+  --good-soft: #e4f4cc;
+  --warn: #7a5005;
+  --warn-soft: #ffe2b2;
+  --danger: #ba2b28;
+  --danger-soft: #ffdcdb;
+  --dot: #d8d2c5;
+  --scrim: rgba(10, 18, 20, 0.72);
+  --shadow: 0 1px 2px rgba(20, 28, 34, 0.06), 0 8px 24px rgba(20, 28, 34, 0.08);
+  --board: #e2ece9;
+  --on-board: #121c20;
+  --board-muted: #4b5a5b;
+  --board-line: #c4d3d0;
+  --led: #056068;
+  --led-good: #1d5618;
+  --led-danger: #b32322;
+  --led-ghost: #121c2014;
+  --hero: #0b1619;
+  --on-hero: #edf3f1;
+  --hero-muted: #94a5a4;
+  --hero-line: #21302f;
+  --hero-accent: #5fe0cf;
+  --hero-danger: #ff7d72;
+  --accent-glow: #5fe0cf;
+  --clay-shadow: #d8d2c5;
+  --tint: 20, 28, 34;
+  color-scheme: light;
+}
+
+[data-theme="led"] {
   --page: #f1f1f2;
   --surface: #ffffff;
   --raised: #ffffff;
   --ink: #111113;
   --muted: #56565d;
   --line: #dcdce0;
-  --field: #7d7d86; /* input borders: 3:1 on page and surface */
-  --accent: #e8501a; /* fills only */
+  --field: #7d7d86;
+  --accent: #e8501a;
   --on-accent: #111113;
   --accent-text: #b33a0c;
   --accent-soft: #fde6db;
-  --accent-glow: #ffb08a; /* decorative only (illustration highlights) */
+  --link: #b33a0c;
+  --focus: #b33a0c;
+  --out-text: #b33a0c;
+  --out-soft: #fde6db;
   --good: #17703f;
   --good-soft: #e0f1e6;
   --warn: #8a4b00;
   --warn-soft: #fdecd0;
   --danger: #b42318;
   --danger-soft: #fbe5e2;
-  --focus: var(--accent-text);
   --dot: #d2d2d7;
-  --scrim: rgb(13 14 16 / 0.62); /* the guided tour's dim layer */
-
-  /* The LED board: dark in both modes, so its figures read the same day and night. */
-  --board: #0d0e10;
-  --on-board: #f2f2f3;
-  --board-muted: #9a9aa3;
-  --board-line: #24252a;
-  --led: #ff6a2b;
-  --led-good: #5ed38c;
-  --led-danger: #ff5a4e;
-  --led-ghost: rgb(255 106 43 / 0.12);
-
-  /* Older names, kept so existing components follow the board. */
-  --hero: var(--board);
-  --on-hero: var(--on-board);
-  --hero-muted: var(--board-muted);
-  --hero-line: var(--board-line);
-  --hero-accent: var(--led);
-  --hero-danger: var(--led-danger);
-
+  --scrim: rgba(8, 9, 10, 0.72);
+  --shadow: 0 1px 2px rgba(17, 17, 19, 0.05), 0 8px 24px rgba(17, 17, 19, 0.08);
+  --board: #ffffff;
+  --on-board: #111113;
+  --board-muted: #56565d;
+  --board-line: #dcdce0;
+  --led: #b33a0c;
+  --led-good: #17703f;
+  --led-danger: #b42318;
+  --led-ghost: #1111130f;
+  --hero: #0d0e10;
+  --on-hero: #f2f2f3;
+  --hero-muted: #9a9aa3;
+  --hero-line: #24252a;
+  --hero-accent: #ff6a2b;
+  --hero-danger: #ff5a4e;
+  --accent-glow: #ffb08a;
   --clay-shadow: #c6c6cc;
-  --tint: 17, 17, 19; /* rgb of ink, for shadows */
+  --tint: 17, 17, 19;
   color-scheme: light;
 }
 
+[data-theme="dusk"] {
+  --page: #f4f1ea;
+  --surface: #fcfbf8;
+  --raised: #ffffff;
+  --ink: #1b1b25;
+  --muted: #57566a;
+  --line: #e2ddd2;
+  --field: #827c74;
+  --accent: #94539a;
+  --on-accent: #fbf9f4;
+  --accent-text: #1b1b25;
+  --accent-soft: #f9d9f5;
+  --link: #1b1b25;
+  --focus: #7d3d83;
+  --out-text: #333881;
+  --out-soft: #dee1ee;
+  --good: #0f6353;
+  --good-soft: #d0f3e4;
+  --warn: #945913;
+  --warn-soft: #feebcc;
+  --danger: #870f0e;
+  --danger-soft: #fdd4d4;
+  --dot: #dbd5c9;
+  --scrim: rgba(14, 15, 22, 0.72);
+  --shadow: 0 1px 2px rgba(27, 27, 37, 0.05), 0 8px 24px rgba(27, 27, 37, 0.07);
+  --board: #ebe6db;
+  --on-board: #1b1b25;
+  --board-muted: #545262;
+  --board-line: #d4cdbf;
+  --led: #333881;
+  --led-good: #0f6353;
+  --led-danger: #870f0e;
+  --led-ghost: #1b1b2514;
+  --hero: #14151e;
+  --on-hero: #efeef5;
+  --hero-muted: #a6a5b8;
+  --hero-line: #2a2b39;
+  --hero-accent: #ca94d6;
+  --hero-danger: #ff8378;
+  --accent-glow: #ca94d6;
+  --clay-shadow: #dbd5c9;
+  --tint: 27, 27, 37;
+  color-scheme: light;
+}
+
+/* Dark: the same three blocks, in the same order (a later block of equal specificity wins, so
+   [data-theme="led"] still beats :root here). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root,
+  [data-theme="gate"] {
+    --page: #090e10;
+    --surface: #10171a;
+    --raised: #172024;
+    --ink: #ebf0ee;
+    --muted: #97a4a4;
+    --line: #233033;
+    --field: #687878;
+    --accent: #e3ebe7;
+    --on-accent: #0d1518;
+    --accent-text: #6fd8cd;
+    --accent-soft: #05323a;
+    --link: #ebf0ee;
+    --focus: #6fd8cd;
+    --out-text: #6fd8cd;
+    --out-soft: #05323a;
+    --good: #8bd47b;
+    --good-soft: #1e3013;
+    --warn: #f9d46b;
+    --warn-soft: #3d2a08;
+    --danger: #f47b74;
+    --danger-soft: #3e1e1e;
+    --dot: #19242a;
+    --scrim: rgba(0, 6, 8, 0.78);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --board: #051417;
+    --on-board: #e6f1ee;
+    --board-muted: #8ea6a4;
+    --board-line: #1a3034;
+    --led: #4fe3cf;
+    --led-good: #98e17f;
+    --led-danger: #f75e54;
+    --led-ghost: #4fe3cf1a;
+    --hero: #08171a;
+    --on-hero: #e6f1ee;
+    --hero-muted: #8ea6a4;
+    --hero-line: #1a3034;
+    --hero-accent: #4fe3cf;
+    --hero-danger: #f75e54;
+    --accent-glow: #4fe3cf;
+    --clay-shadow: #090e10;
+    --tint: 0, 0, 0;
+    color-scheme: dark;
+  }
+
+  [data-theme="led"] {
     --page: #08090a;
     --surface: #141518;
     --raised: #1b1c20;
@@ -63,7 +207,10 @@
     --on-accent: #111113;
     --accent-text: #ff7f45;
     --accent-soft: #2a140b;
-    --accent-glow: #ff9a6b;
+    --link: #ff7f45;
+    --focus: #ff7f45;
+    --out-text: #ff7f45;
+    --out-soft: #2a140b;
     --good: #5ed38c;
     --good-soft: #11281b;
     --warn: #ffc061;
@@ -71,9 +218,69 @@
     --danger: #ff8a80;
     --danger-soft: #2e1614;
     --dot: #1d1e22;
-    --scrim: rgb(0 0 0 / 0.72);
+    --scrim: rgba(0, 0, 0, 0.78);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
     --board: #121316;
+    --on-board: #f2f2f3;
+    --board-muted: #9a9aa3;
+    --board-line: #24252a;
+    --led: #ff6a2b;
+    --led-good: #5ed38c;
+    --led-danger: #ff5a4e;
+    --led-ghost: #ff6a2b1f;
+    --hero: #121316;
+    --on-hero: #f2f2f3;
+    --hero-muted: #9a9aa3;
+    --hero-line: #24252a;
+    --hero-accent: #ff6a2b;
+    --hero-danger: #ff5a4e;
+    --accent-glow: #ff9a6b;
     --clay-shadow: #050506;
+    --tint: 0, 0, 0;
+    color-scheme: dark;
+  }
+
+  [data-theme="dusk"] {
+    --page: #0e0f16;
+    --surface: #171822;
+    --raised: #1f202c;
+    --ink: #efeef5;
+    --muted: #a6a5b8;
+    --line: #2a2b39;
+    --field: #727189;
+    --accent: #b478c2;
+    --on-accent: #16161f;
+    --accent-text: #efeef5;
+    --accent-soft: #341c35;
+    --link: #efeef5;
+    --focus: #d09add;
+    --out-text: #a9b5ff;
+    --out-soft: #252a4e;
+    --good: #59dbce;
+    --good-soft: #073829;
+    --warn: #f29f49;
+    --warn-soft: #492603;
+    --danger: #ed695e;
+    --danger-soft: #4a191d;
+    --dot: #1d1e29;
+    --scrim: rgba(5, 5, 10, 0.78);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --board: #11121b;
+    --on-board: #efeef5;
+    --board-muted: #a6a5b8;
+    --board-line: #2a2b39;
+    --led: #a9b5ff;
+    --led-good: #59dbce;
+    --led-danger: #ed695e;
+    --led-ghost: #efeef512;
+    --hero: #11121b;
+    --on-hero: #efeef5;
+    --hero-muted: #a6a5b8;
+    --hero-line: #2a2b39;
+    --hero-accent: #ca94d6;
+    --hero-danger: #ff8378;
+    --accent-glow: #ca94d6;
+    --clay-shadow: #0e0f16;
     --tint: 0, 0, 0;
     color-scheme: dark;
   }
@@ -112,10 +319,15 @@
   --color-hero-line: var(--hero-line);
   --color-hero-accent: var(--hero-accent);
   --color-hero-danger: var(--hero-danger);
+  --color-link: var(--link);
+  --color-focus: var(--focus);
+  --color-out: var(--out-text);
+  --color-out-soft: var(--out-soft);
 
-  /* Text in the accent colour (text-accent, marker:, file:, hover:) resolves to --accent-text:
-     Tailwind's text-* utilities read --text-color-* before --color-*. Fills keep --accent. */
-  --text-color-accent: var(--accent-text);
+  /* Text in the accent colour (text-accent, marker:, file:, hover:) is the link role: links and
+     secondary or quiet buttons. Tailwind's text-* utilities read --text-color-* before
+     --color-*. Fills keep --accent. */
+  --text-color-accent: var(--link);
 
   --font-display: var(--font-ui), system-ui, sans-serif;
   --font-body: var(--font-ui), system-ui, sans-serif;
@@ -151,6 +363,16 @@ body {
   color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+}
+
+/* The focus role: the caret and selected text follow the theme too. */
+input,
+textarea {
+  caret-color: var(--focus);
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--focus) 24%, transparent);
 }
 
 /* Display type: semibold and slightly tight, so headings read crisp rather than loud. */
@@ -193,7 +415,20 @@ h1[tabindex="-1"]:focus {
   border-radius: var(--radius-board);
   box-shadow:
     inset 0 0 0 1px var(--board-line),
-    0 24px 48px -28px rgb(255 106 43 / 0.45);
+    var(--shadow);
+}
+
+/* Decorative glows are LED night's alone (owner's pick, 2026-11-25): the other themes keep their
+   boards calm. Everything functional (the colon's blink, the light-up, the ticker) stays. */
+[data-theme="led"] .led-board {
+  box-shadow:
+    inset 0 0 0 1px var(--board-line),
+    0 24px 48px -28px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* The landing page's primary button: a plain drop shadow (page.tsx), and its glow in LED night. */
+[data-theme="led"] .hero-primary {
+  box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 /* A figure: a dot-matrix panel (5x7 round dots per character, every dot present), drawn as two
@@ -229,18 +464,23 @@ h1[tabindex="-1"]:focus {
   overflow: visible;
 }
 
-/* Unlit dots: the state's colour, very dim, the way an off LED still shows on a real board. */
+/* Unlit dots: the theme's ghost colour, very dim, the way an off LED still shows on a real board. */
 .led-unlit {
-  fill: color-mix(in srgb, var(--led-tone) 13%, transparent);
+  fill: var(--led-ghost);
 }
 
-/* Lit dots: a soft glow, and they light up in steps when the figure first appears. The first
-   step is already readable (3:1 on the board): a stalled or skipped animation never leaves the
-   figure dark. */
+/* Lit dots light up in steps when the figure first appears. The first step is already readable
+   (3:1 on the board): a stalled or skipped animation never leaves the figure dark. */
 .led-lit {
   fill: var(--led-tone);
-  filter: drop-shadow(0 0 0.045em color-mix(in srgb, var(--led-tone) 70%, transparent));
   animation: led-on 600ms steps(4, end) both;
+}
+
+/* At night (a dark board) the lit dots glow softly, the only glow Gate glass and Dusk keep. */
+@media (prefers-color-scheme: dark) {
+  .led-lit {
+    filter: drop-shadow(0 0 0.045em color-mix(in srgb, var(--led-tone) 70%, transparent));
+  }
 }
 
 /* The colon blinks once a second; its unlit dots stay. */
@@ -309,7 +549,8 @@ h1[tabindex="-1"]:focus {
   }
 }
 
-/* Behind a status board: a breathing orange glow and a scan band that passes over the dots. */
+/* Behind a status board, in LED night only: a breathing orange glow and a scan band that passes
+   over the dots. Other themes draw neither (no ::before or ::after content). */
 .led-stage {
   position: relative;
   isolation: isolate;
@@ -324,22 +565,31 @@ h1[tabindex="-1"]:focus {
   mask-image: radial-gradient(farthest-side, #000 55%, transparent);
 }
 
-.led-stage-fx::before {
+[data-theme="led"] .led-stage-fx::before {
   content: "";
   position: absolute;
   inset: 8% 4%;
-  background: radial-gradient(closest-side, rgb(255 106 43 / 0.25), transparent);
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--accent) 25%, transparent),
+    transparent
+  );
   animation: led-breathe 5s ease-in-out infinite alternate;
 }
 
-.led-stage-fx::after {
+[data-theme="led"] .led-stage-fx::after {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
   top: -30%;
   height: 30%;
-  background: linear-gradient(180deg, transparent, rgb(255 106 43 / 0.1), transparent);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    transparent
+  );
   animation: led-scan 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
@@ -432,13 +682,17 @@ h1[tabindex="-1"]:focus {
 .tour-hole {
   position: fixed;
   pointer-events: none;
-  border: 2px solid var(--led);
-  box-shadow:
-    0 0 0 200vmax var(--scrim),
-    0 0 18px rgb(255 106 43 / 0.55);
+  border: 2px solid var(--focus);
+  box-shadow: 0 0 0 200vmax var(--scrim);
   transition-property: left, top, width, height, border-radius;
   transition-duration: 460ms;
   transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-theme="led"] .tour-hole {
+  box-shadow:
+    0 0 0 200vmax var(--scrim),
+    0 0 18px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 /* No control to point at: the whole page dims. */
@@ -562,7 +816,7 @@ h1[tabindex="-1"]:focus {
 
 .live-map.leaflet-container .leaflet-control-attribution a,
 .live-map.leaflet-container .leaflet-bar a {
-  color: var(--accent-text);
+  color: var(--link);
 }
 
 .live-map.leaflet-container .leaflet-bar a {
@@ -573,13 +827,15 @@ h1[tabindex="-1"]:focus {
   line-height: 36px;
 }
 
-/* The person: an accent dot with a soft halo. Greys out when the share is paused. */
+/* The person: a dot in the theme's signal colour (--led: Gate glass's teal, LED night's orange,
+   Dusk's blue; never --accent, which is ink in Gate glass) with a soft halo. Greys out when the
+   share is paused. */
 .live-dot {
   border-radius: 9999px;
-  background: var(--accent);
+  background: var(--led);
   border: 3px solid var(--surface);
   box-shadow:
-    0 0 0 6px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 0 6px color-mix(in srgb, var(--led) 30%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.3);
   animation: live-halo 2.4s ease-out infinite;
 }
@@ -591,9 +847,9 @@ h1[tabindex="-1"]:focus {
 }
 
 .live-accuracy {
-  fill: var(--accent);
+  fill: var(--led);
   fill-opacity: 0.12;
-  stroke: var(--accent);
+  stroke: var(--led);
   stroke-opacity: 0.45;
   stroke-width: 1.5;
 }
@@ -615,12 +871,12 @@ h1[tabindex="-1"]:focus {
 @keyframes live-halo {
   0% {
     box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--led) 45%, transparent),
       0 2px 6px rgba(0, 0, 0, 0.3);
   }
   100% {
     box-shadow:
-      0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent),
+      0 0 0 14px color-mix(in srgb, var(--led) 0%, transparent),
       0 2px 6px rgba(0, 0, 0, 0.3);
   }
 }

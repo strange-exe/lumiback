@@ -150,7 +150,7 @@ export function EscalationCard({
               defaultValue={state.fields?.note}
               maxLength={200}
               placeholder="Called her mother: the bus was late"
-              className="min-h-12 rounded-control border border-line bg-page px-4 font-normal text-ink focus:border-accent focus:outline-none"
+              className="min-h-12 rounded-control border border-line bg-page px-4 font-normal text-ink focus:border-focus focus:outline-none"
             />
           </label>
           <div className="flex flex-wrap items-center gap-3">
@@ -231,7 +231,7 @@ function LogCall({ escalationId }: { escalationId: string }): ReactNode {
   const [state, action] = useActionState(logEscalationCall, EMPTY);
   const id = useId();
   const input =
-    "min-h-12 rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none";
+    "min-h-12 rounded-control border border-line bg-page px-3 text-ink focus:border-focus focus:outline-none";
   return (
     <form
       action={action}
@@ -239,8 +239,8 @@ function LogCall({ escalationId }: { escalationId: string }): ReactNode {
       className="flex flex-col gap-3 rounded-control border border-line p-4"
     >
       <input type="hidden" name="escalation_id" value={escalationId} />
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <label htmlFor={`${id}-outcome`} className="text-sm font-bold text-ink">
             How the call went
           </label>

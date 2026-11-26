@@ -7,19 +7,22 @@ import { DeleteAccountForm } from "@/features/account/DeleteAccountForm";
 import { DownloadMyData } from "@/features/account/DownloadMyData";
 import { OutingDetails } from "@/features/account/OutingDetails";
 import { SignedInDevices, SignedInDevicesLoading } from "@/features/account/SignedInDevices";
+import { ThemePicker } from "@/features/account/ThemePicker";
 import { outingsApi } from "@/features/outings/api";
 import { formatDate } from "@/features/outings/time";
 import { TourReplayButton } from "@/features/tour/TourReplayButton";
 import { requireUser } from "@/lib/session";
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "@/lib/support";
+import { currentTheme } from "@/lib/theme-server";
 
 export const metadata: Metadata = { title: "Account" };
 
 export default async function AccountPage(): Promise<ReactNode> {
   const { user, token, viewingAs } = await requireUser();
-  const [profile, hostels] = await Promise.all([
+  const [profile, hostels, theme] = await Promise.all([
     outingsApi.profile(token),
     outingsApi.hostels(token),
+    currentTheme(),
   ]);
   const rows: [string, string][] = [
     ["Name", user.name],
@@ -49,6 +52,7 @@ export default async function AccountPage(): Promise<ReactNode> {
         Change password
         <CaretRight size={18} weight="bold" aria-hidden="true" className="text-muted" />
       </Link>
+      <ThemePicker current={theme} />
       {/* Streams in, so a slow or failed list never holds up the rest of the page. */}
       <Suspense fallback={<SignedInDevicesLoading />}>
         <SignedInDevices token={token} />

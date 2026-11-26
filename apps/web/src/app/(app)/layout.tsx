@@ -22,11 +22,12 @@ export default async function AppLayout({ children }: { children: ReactNode }): 
     <>
       {viewingAs ? <ViewAsBanner role={viewingAs} /> : null}
       <div className="mx-auto flex min-h-dvh max-w-xl flex-col px-5">
-        <header className="flex items-center justify-between gap-3 py-4">
+        {/* Wraps: a staff account's fourth link (its office) doesn't fit beside the name at 320 px. */}
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-4">
           <Link href="/home" className="font-display text-xl text-accent">
             Lumiback
           </Link>
-          <nav aria-label="Main" className="flex items-center text-sm">
+          <nav aria-label="Main" className="flex flex-wrap items-center text-sm">
             {[
               ...NAV,
               ...(user.role !== "student"

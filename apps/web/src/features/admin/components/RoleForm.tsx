@@ -66,7 +66,7 @@ export function RoleForm({
           {ROLES.map((r) => (
             <label
               key={r.value}
-              className={`flex min-h-11 cursor-pointer items-center justify-center rounded-control px-2 text-center text-sm font-bold transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent ${
+              className={`flex min-h-11 cursor-pointer items-center justify-center rounded-control px-2 text-center text-sm font-bold transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
                 role === r.value ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
               }`}
             >

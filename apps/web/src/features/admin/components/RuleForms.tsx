@@ -21,7 +21,7 @@ import { DayRuleRow } from "./DayRuleRow";
 const EMPTY: FormState = { error: null };
 
 const input =
-  "min-h-11 w-full rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none";
+  "min-h-11 w-full rounded-control border border-line bg-page px-3 text-ink focus:border-focus focus:outline-none";
 
 function Notice({ state }: { state: FormState }): ReactNode {
   return (

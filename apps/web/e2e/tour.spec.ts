@@ -186,6 +186,57 @@ test.describe("hostel office", () => {
     await expect(page.getByRole("dialog", { name: "The register" })).toBeVisible();
   });
 
+  // On a phone the section tabs are one row that scrolls sideways. Each tab the tour points at
+  // is scrolled so it sits clear of the screen's edges and of the row's 16 px edge fade (at
+  // 320 px People used to stop flush with the right edge, its lit hole touching the screen's).
+  for (const width of [320, 390]) {
+    test(`at ${width} px every section tab the tour points at is clear of the edges`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin");
+      const tour = dialog(page);
+      await expect(tour).toBeVisible();
+      // Measured once the smooth scroll has stopped (the tab still for 250 ms), so a pass on
+      // the way to a bad resting place doesn't count.
+      const clearance = (id: string) =>
+        page.evaluate(async (target) => {
+          const el = document.querySelector<HTMLElement>(`[data-tour="${target}"]`)!;
+          let last = NaN;
+          for (let still = 0; still < 250;) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            const x = el.getBoundingClientRect().left;
+            still = x === last ? still + 50 : 0;
+            last = x;
+          }
+          const row = el.closest("ul")!.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
+          return Math.round(
+            Math.min(
+              r.left - Math.max(0, row.left),
+              Math.min(window.innerWidth, row.right) - r.right,
+            ),
+          );
+        }, id);
+      const checked: string[] = [];
+      for (;;) {
+        const step = await stepId(page);
+        const target = `nav-${step}`;
+        if (await page.locator(`nav [data-tour="${target}"]`).count()) {
+          await expect
+            .poll(() => clearance(target), { message: `${step} clears the edges` })
+            .toBeGreaterThanOrEqual(16);
+          checked.push(step);
+        }
+        const nextButton = tour.getByRole("button", { name: "Next" });
+        if (!(await nextButton.isVisible())) break;
+        await nextButton.click();
+        await expect(tour).not.toHaveAttribute("data-step", step);
+      }
+      expect(checked).toEqual(["requests", "corrections", "escalations", "people"]);
+    });
+  }
+
   test("staff don't get the student tour in the student pages", async ({ page }) => {
     await page.goto("/home");
     await expect(tourStatus(page)).toHaveAttribute("data-tour-status", "off");

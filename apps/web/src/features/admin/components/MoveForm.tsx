@@ -25,7 +25,7 @@ export function MoveForm({ person, hostels }: { person: AdminUser; hostels: Host
           id={`${id}-hostel`}
           name="hostel_id"
           defaultValue=""
-          className="min-h-11 min-w-0 flex-1 rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none"
+          className="min-h-11 min-w-0 flex-1 rounded-control border border-line bg-page px-3 text-ink focus:border-focus focus:outline-none"
         >
           <option value="">Move to…</option>
           {others.map((h) => (

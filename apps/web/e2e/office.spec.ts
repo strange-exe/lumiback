@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "./fixtures";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
-import { watchForErrors } from "./helpers";
+import { waitForHydration, watchForErrors } from "./helpers";
 
 /**
  * The hostel office's pages on a phone and a desktop, light and dark, with the busy sample
@@ -64,6 +64,7 @@ for (const { role, state, pages } of ROLES) {
             expect(overflow, "no sideways scrolling").toBe(false);
             // Let React hydrate first: hiding the caret for the screenshot edits inputs.
             await page.waitForLoadState("networkidle");
+            await waitForHydration(page);
             const tall = await page.evaluate(() => document.documentElement.scrollHeight > 12_000);
             await page.screenshot({
               path: `${SHOTS}/office-${role}-${name}-${vp.name}-${scheme}.png`,
@@ -104,5 +105,26 @@ test.describe("moving students between hostels", () => {
     await neha.getByRole("combobox", { name: "Hostel: Hostel 5" }).selectOption("Hostel 3");
     await neha.getByRole("button", { name: "Move" }).click();
     await expect(neha).toContainText("They're out or have an outing request for today.");
+  });
+});
+
+test.describe("escalations on a 320 px phone", () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 320, height: 640 } });
+
+  test("the call forms fit without sideways scrolling", async ({ page }) => {
+    await page.goto("/admin/escalations");
+    const forms = page.getByRole("form", { name: "Log a call" });
+    // Without this the test could pass on an empty page.
+    await expect(forms.first()).toBeVisible();
+    const widths = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }));
+    expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+    for (const form of await forms.all()) {
+      const box = await form.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+    }
   });
 });

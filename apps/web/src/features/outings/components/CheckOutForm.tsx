@@ -44,7 +44,7 @@ export function CheckOutForm({ profile }: { profile: Profile | null }): ReactNod
         autoComplete="off"
       />
       {profile?.emergency_email ? (
-        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-control border border-line bg-surface px-4 py-3 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent">
+        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-control border border-line bg-surface px-4 py-3 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
           <input
             type="checkbox"
             name="safe_return"

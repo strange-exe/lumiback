@@ -130,7 +130,7 @@ export default async function AuditPage({ searchParams }: PageProps): Promise<Re
           {filtered && (
             <a
               href={filterHref("audit", {})}
-              className="flex min-h-11 items-center px-2 text-sm font-bold text-accent-text underline-offset-4 hover:underline"
+              className="flex min-h-11 items-center px-2 text-sm font-bold text-link underline-offset-4 hover:underline"
             >
               Clear
             </a>
@@ -158,7 +158,7 @@ export default async function AuditPage({ searchParams }: PageProps): Promise<Re
       {older && (
         <Link
           href={older}
-          className="flex min-h-11 items-center self-center font-bold text-accent-text underline-offset-4 hover:underline"
+          className="flex min-h-11 items-center self-center font-bold text-link underline-offset-4 hover:underline"
         >
           Older changes
         </Link>

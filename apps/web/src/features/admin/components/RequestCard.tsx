@@ -94,7 +94,7 @@ export function RequestCard({
               name="note"
               maxLength={200}
               defaultValue={state.fields?.note}
-              className="min-h-12 rounded-control border border-line bg-page px-4 font-normal text-ink focus:border-accent focus:outline-none"
+              className="min-h-12 rounded-control border border-line bg-page px-4 font-normal text-ink focus:border-focus focus:outline-none"
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">

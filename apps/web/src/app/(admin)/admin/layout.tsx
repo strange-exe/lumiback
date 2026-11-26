@@ -26,20 +26,29 @@ export default async function AdminLayout({
   children: ReactNode;
 }): Promise<ReactNode> {
   const { user, viewingAs, developer } = await requireStaff();
-  const action = "min-h-11 rounded-control px-3 font-bold text-accent hover:bg-accent-soft";
+  // Tighter on a phone, where the three share the name's row from 320 px (owner, 2026-11-26).
+  const action =
+    "min-h-11 min-w-11 shrink-0 whitespace-nowrap rounded-control px-2 font-bold text-accent hover:bg-accent-soft sm:px-3";
   return (
     <>
       {viewingAs ? <ViewAsBanner role={viewingAs} /> : null}
       <div className="mx-auto flex min-h-dvh max-w-6xl flex-col px-4 sm:px-6">
         <header className="flex flex-col gap-3 border-b border-line py-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <Link href="/admin" className="flex items-center gap-2">
-              <span className="font-display text-xl text-ink">Lumiback</span>
-              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-bold text-accent">
+          {/* One row whenever it fits. Below sm nothing shrinks, so wider text (text spacing, a
+              bigger default font) wraps the actions under the name instead of off the screen;
+              from sm the signed-in name truncates instead, so the row never wraps there. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 sm:flex-nowrap sm:gap-x-3">
+            {/* On a phone the role goes under the name (no room beside it); a pill beside it from sm. */}
+            <Link
+              href="/admin"
+              className="flex shrink-0 flex-col sm:flex-row sm:items-center sm:gap-2"
+            >
+              <span className="font-display text-xl leading-7 text-ink">Lumiback</span>
+              <span className="text-xs leading-4 font-bold text-accent sm:rounded-full sm:bg-accent-soft sm:px-2 sm:py-0.5">
                 {ROLE_LABEL[user.role]}
               </span>
             </Link>
-            <div className="flex items-center gap-1 text-sm">
+            <div className="ml-auto flex min-w-0 items-center text-sm sm:gap-1">
               <span className="hidden max-w-48 truncate text-muted sm:inline">{user.name}</span>
               {viewingAs ? null : (
                 <TourReplayButton

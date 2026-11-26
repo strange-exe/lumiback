@@ -92,7 +92,7 @@ export function HelpCard({ help: h }: { help: HelpRequest }): ReactNode {
             defaultValue={state.fields?.note}
             maxLength={200}
             placeholder="Called him: phone battery was low, he's fine"
-            className="min-h-12 rounded-control border border-line bg-page px-4 text-ink focus:border-accent focus:outline-none"
+            className="min-h-12 rounded-control border border-line bg-page px-4 text-ink focus:border-focus focus:outline-none"
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">

@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "./fixtures";
 
 import { ADMIN_STATE, WARDEN_STATE } from "../playwright.config";
+import { THEME_COOKIE } from "../src/lib/theme";
 
 import {
   allowLocation,
@@ -343,7 +344,9 @@ for (const scheme of SCHEMES) {
   });
 }
 
-test("reduced motion: the LED board's colon, glow and scan stop", async ({ page }) => {
+test("reduced motion: the LED board's colon, glow and scan stop", async ({ page, context }) => {
+  // The glow and the scan band are LED night's alone (e2e/theme.spec.ts checks the others).
+  await context.addCookies([{ name: THEME_COOKIE, value: "led", url: "http://localhost:3000" }]);
   await checkOut(page, "Library");
   // The colon shows only an hour or more from the return time (it failed when the suite ran
   // within an hour of curfew). Move this page's clock three hours further from it, back while

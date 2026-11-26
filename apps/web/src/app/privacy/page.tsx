@@ -29,7 +29,8 @@ const PARTS: Part[] = [
       "Your location, only while you are sharing it. We keep just your latest position, never a trail.",
       "Who looked at your share and when, so you can see it. Guests who follow you give a name for you to recognise.",
       "When you tap out or in at a gate: which gate, the time, whether the scan was accepted, how far your phone was from the gate and how precise its GPS was. Never your coordinates.",
-      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, reminders before you're due back, when you're 30 minutes past your return time, news about someone you follow (back, late, running late, sharing timed out), and app update notices. If you don't use the app, request decisions and the late alert are emailed to your university address instead.",
+      "If you allow notifications in the app: a push token for your phone, used to tell you about follow requests, approvals, reminders before you're due back, when you're 30 minutes past your return time, news about someone you follow (back, late, running late, sharing timed out), new hostel board posts, and app update notices. If you don't use the app, request decisions and the late alert are emailed to your university address instead.",
+      "Hostel board: the posts the hostel office puts up for your hostel or for every hostel (timings, mess, laundry, maintenance), a record of which posts were shown to you, so new ones can be marked New, and a record of which posts were for you when they were sent. Neither record has a time or anything else in it.",
       "On your phone, while you're out: a copy of your current trip (destination, times and your hostel office's number) so the app can show it without a connection. The app drops it the next time it loads after you're back, and deletes it when you sign in or out.",
       "Error reports: when something breaks on the website or in the app, it sends us what went wrong so we can fix it: the error message, where in the code it happened, the page's path (never what follows a ? or #), the app version and whether it was the website, Android or iPhone. Before anything is stored, our server removes emails, phone numbers, roll numbers, your name, coordinates, tokens and other secrets from it. The same error is counted together, and only the latest report is kept with a link to your account, if you were signed in.",
     ],
@@ -46,6 +47,7 @@ const PARTS: Part[] = [
       "If you're 30 minutes late and don't answer the alert within 10 minutes, admins are told and see your phone number, your emergency contact and your hostel warden's number. If you are sharing your location at that moment, they also see your latest shared position, and that look is listed in your share's viewer history. Otherwise they see only your last gate scan: which gate, and when. Nothing new is collected for this.",
       "Help: if you press Help while out, your phone takes one location fix and the hostel office is told at once (your hostel's wardens and the head wardens), with that position. The people you share your location with, your emergency contact and your safe-return contact are told you asked for help, with your phone number and the hostel office's, but not where you are. The position is deleted after a day; the office keeps the time it was pressed and when they handled it, with the outing.",
       "Safe return: only if you tick “Let my emergency contact follow until I'm back” when you check out, we email that contact a link. It says you chose to send it, shows your location while you share it from the app or website, and stops working when you're back or stop sharing. They're also emailed if you're 30 minutes late, and when you're back. Their views are listed in your share's viewer history like anyone else's. Their email address is kept with that outing only until you're back.",
+      "Hostel board: the hostel office sees how many students a post was sent to and, once at least 5 of them have seen it and 5 haven't, roughly how many have, in steps of 5 (for example 10 to 14). The count is only over the students it was sent to, so it never changes because one student moved or joined. Never who saw it.",
       "Hostel office reports show counts per hostel (trips, late returns, escalations, requests), never a student's name.",
       "Error reports are seen only by the Lumiback developers, without saying who sent them. Once a day, a summary of new errors may be emailed to the team.",
       "We don't sell your data, show ads, or use analytics or tracking cookies.",
@@ -60,7 +62,8 @@ const PARTS: Part[] = [
       "Gate scans, outing requests, records of who viewed your share, and handled late follow-ups are deleted automatically after 180 days (admins can set this between 7 and 730 days). A late follow-up still open stays until the hostel office handles it.",
       "Join codes are deleted a day after they expire. You are signed out after 30 days without using the app.",
       "A phone's push token is deleted when you sign out on it, or after 90 days without the app being opened on it.",
-      "Records of changes staff make in the admin area (roles, gates, kiosk links, settings) are deleted after 365 days.",
+      "Hostel board posts, and the records of who they were for and who they were shown to, are deleted 180 days after the post ends or is taken down.",
+      "Records of changes staff make in the admin area (roles, gates, kiosk links, settings, and who put up or took down a hostel board post, without its text) are deleted after 365 days.",
       "Error reports are deleted 30 days after that error was last seen. Deleting your account removes its link to any of them.",
     ],
   },
@@ -79,16 +82,18 @@ const PARTS: Part[] = [
       <>
         Download a copy of your data from the <Link href="/account">Account</Link> page, or Profile
         in the app: a JSON file with your account, contacts, outings, requests, shares and who
-        viewed them, gate scans, phones and the error reports last sent while you were signed in. It
-        holds only your own records, plus the names of the people who viewed your shares.
+        viewed them, gate scans, phones, the hostel board posts shown to you (title and category)
+        and the error reports last sent while you were signed in. It holds only your own records,
+        plus the names of the people who viewed your shares.
       </>,
       <>
         Delete your account from the <Link href="/account">Account</Link> page. Your account,
-        contacts, shares, requests, gate scans and phones are erased immediately and can&apos;t be
-        recovered. The hostel keeps your outing records and any late follow-ups, with your name and
-        roll number, for the campus retention period (180 days by default), so the office can still
-        account for past trips; then they are deleted too. You can&apos;t delete your account while
-        you are out or a late follow-up is still open, and the last admin can&apos;t delete theirs.
+        contacts, shares, requests, gate scans, phones and the record of which board posts you saw
+        are erased immediately and can&apos;t be recovered. The hostel keeps your outing records and
+        any late follow-ups, with your name and roll number, for the campus retention period (180
+        days by default), so the office can still account for past trips; then they are deleted too.
+        You can&apos;t delete your account while you are out or a late follow-up is still open, and
+        the last admin can&apos;t delete theirs.
       </>,
     ],
   },
@@ -107,7 +112,7 @@ export default function PrivacyPage(): ReactNode {
           <h1 className="font-display text-title text-ink">Privacy</h1>
           <p className="mt-2 max-w-[60ch] leading-relaxed text-muted">
             Lumiback exists to share your location with people you choose, so this page says exactly
-            what is kept, who can see it, and for how long. Last updated 8 November 2026.
+            what is kept, who can see it, and for how long. Last updated 25 November 2026.
           </p>
         </div>
         {PARTS.map((part) => (

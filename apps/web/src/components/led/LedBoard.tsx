@@ -41,8 +41,9 @@ export function BoardFact({ term, value }: { term: string; value: ReactNode }): 
 }
 
 /**
- * Wraps the status board on Today-style screens: a soft orange glow breathes behind it and a
- * scan band passes over the page's dot grid. Both stop under reduced motion.
+ * Wraps the status board on Today-style screens. In LED night only, a soft orange glow breathes
+ * behind it and a scan band passes over the page's dot grid (globals.css); the other themes draw
+ * neither. Both stop under reduced motion.
  */
 export function LedStage({
   children,

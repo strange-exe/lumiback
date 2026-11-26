@@ -230,7 +230,14 @@ function TourDialog({
   // Each step: bring its control into view, then keep the hole on it while the page moves.
   useEffect(() => {
     const target = findTarget(step.target);
-    target?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+    // Centred sideways too: on a phone the office's section tabs scroll inside their row, and
+    // "nearest" left a tab flush with the screen's edge, under the row's edge fade. The page
+    // itself never scrolls sideways, so elsewhere this only centres it up and down.
+    target?.scrollIntoView({
+      block: "center",
+      inline: "center",
+      behavior: reducedMotion() ? "auto" : "smooth",
+    });
     let frame = 0;
     const measure = (): void => {
       cancelAnimationFrame(frame);

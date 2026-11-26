@@ -12,7 +12,7 @@ export const DAY_LABEL: Record<DayType, string> = {
 };
 
 const input =
-  "min-h-11 w-full rounded-control border border-line bg-page px-3 text-ink focus:border-accent focus:outline-none";
+  "min-h-11 w-full rounded-control border border-line bg-page px-3 text-ink focus:border-focus focus:outline-none";
 
 /** "18:00" -> "6:00 PM" (no clock involved, so server and browser agree). */
 function clock(hhmm: string): string {
@@ -104,7 +104,7 @@ export function DayRuleRow({ setId, rule }: { setId: string; rule: DayRule }): R
             className={input}
           />
         </label>
-        <label className="col-span-2 flex min-h-11 cursor-pointer items-center gap-3 self-end rounded-control border border-line bg-page px-3 text-sm font-bold text-ink has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent sm:col-span-1">
+        <label className="col-span-2 flex min-h-11 cursor-pointer items-center gap-3 self-end rounded-control border border-line bg-page px-3 text-sm font-bold text-ink has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus sm:col-span-1">
           <input
             type="checkbox"
             name={`${day}.needs_form`}

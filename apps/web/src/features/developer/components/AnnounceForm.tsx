@@ -33,13 +33,13 @@ export type SentRow = AnnouncementRecord & { when: string };
 const DIALOG =
   "m-auto max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-sheet border border-line bg-surface p-5 text-left text-ink backdrop:bg-[rgba(var(--tint),0.55)] sm:p-6";
 const INPUT =
-  "min-h-12 rounded-control border border-field bg-page px-4 text-base text-ink focus:border-accent focus:outline-none";
+  "min-h-12 rounded-control border border-field bg-page px-4 text-base text-ink focus:border-focus focus:outline-none";
 /** One choice of several (radio), the same chip as Running late's. */
 const CHOICE =
-  "relative flex min-h-11 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-4 text-sm font-bold text-ink has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent";
+  "relative flex min-h-11 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-4 text-sm font-bold text-ink has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
 /** Any number of choices (checkbox), the same chip as the role form's. */
 const TICK =
-  "relative flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-line px-3 text-sm text-ink has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent";
+  "relative flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-line px-3 text-sm text-ink has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
 
 const ROLE_LABEL: Record<AudienceRole, string> = {
   student: "Students",
@@ -323,7 +323,7 @@ export function AnnounceForm({
               <button
                 type="button"
                 onClick={() => dialog.current?.close()}
-                className="min-h-12 rounded-control px-5 font-bold text-accent-text ring-1 ring-line hover:bg-accent-soft"
+                className="min-h-12 rounded-control px-5 font-bold text-link ring-1 ring-line hover:bg-accent-soft"
               >
                 Cancel
               </button>

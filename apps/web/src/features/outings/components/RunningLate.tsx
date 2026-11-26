@@ -21,7 +21,7 @@ const DIALOG =
 const QUIET =
   "min-h-12 rounded-control px-5 font-bold text-accent ring-1 ring-line hover:bg-accent-soft";
 const CHOICE =
-  "flex min-h-12 min-w-20 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-4 font-bold text-ink tabular-nums has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent";
+  "flex min-h-12 min-w-20 cursor-pointer items-center justify-center rounded-control border border-line bg-surface px-4 font-bold text-ink tabular-nums has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus";
 
 type Step = { kind: "choose" } | { kind: "confirm"; minutes: LateMinutes; reason: string | null };
 
@@ -133,7 +133,7 @@ export function RunningLate({
                 autoComplete="off"
                 placeholder="Bus is running late"
                 aria-describedby={`${id}-reason-hint`}
-                className="min-h-12 rounded-control border border-line bg-page px-4 text-base text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none"
+                className="min-h-12 rounded-control border border-line bg-page px-4 text-base text-ink placeholder:text-muted/70 focus:border-focus focus:outline-none"
               />
               <p id={`${id}-reason-hint`} className="text-sm text-muted">
                 Only the hostel office sees it. People you share your location with see just the new

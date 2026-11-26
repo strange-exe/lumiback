@@ -1,8 +1,22 @@
 import { readFileSync } from "node:fs";
 
-import { expect, istDate, test, type APIRequestContext, type Browser, type Page } from "./fixtures";
+import {
+  expect,
+  istDate,
+  test,
+  type APIRequestContext,
+  type Browser,
+  type Locator,
+  type Page,
+} from "./fixtures";
 
-import { ADMIN_STATE, HEAD_WARDEN_STATE, STUDENT_STATE, WARDEN_STATE } from "../playwright.config";
+import {
+  ADMIN_STATE,
+  DEVELOPER_STATE,
+  HEAD_WARDEN_STATE,
+  STUDENT_STATE,
+  WARDEN_STATE,
+} from "../playwright.config";
 import { API, CAMPUS, KIOSK_TOKEN, watchForErrors } from "./helpers";
 
 /** An access token from a session the setup project saved. */
@@ -26,6 +40,60 @@ async function openKiosk(browser: Browser, token: string): Promise<{ page: Page;
   await page.goto(`/kiosk#k=${token}`);
   const { qr } = (await (await first).json()) as { qr: string };
   return { page, qr };
+}
+
+/** The office header's actions, by role and accessible name. */
+const HEADER_ACTIONS = [
+  ["button", "Take the tour again"],
+  ["link", "My app"],
+  ["button", "Sign out"],
+] as const;
+
+/** The office header's name link and every action sit on one row (vertical centres within a
+ * few px), each a 44 px tall target that ends on the screen, and the page never scrolls sideways. */
+async function expectOneTitleRow(page: Page, width: number): Promise<void> {
+  const header = page.getByRole("banner");
+  const name = (await header.getByRole("link", { name: /^Lumiback/ }).boundingBox())!;
+  const middle = name.y + name.height / 2;
+  for (const [role, label] of HEADER_ACTIONS) {
+    const box = (await header.getByRole(role, { name: label, exact: true }).boundingBox())!;
+    const where = `${label} at ${width} px: ${JSON.stringify(box)}, name ${JSON.stringify(name)}`;
+    expect(Math.abs(box.y + box.height / 2 - middle), `${where} (same row)`).toBeLessThanOrEqual(4);
+    expect(box.height, `${where} (44 px tall)`).toBeGreaterThanOrEqual(44);
+    expect(box.width, `${where} (24 px wide)`).toBeGreaterThanOrEqual(24);
+    expect(box.x + box.width, `${where} (on screen)`).toBeLessThanOrEqual(width);
+  }
+  expect(name.x, "the name starts on the screen").toBeGreaterThanOrEqual(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    width,
+  );
+}
+
+/** WCAG 1.4.12 text spacing (the letter and word spacing a reader's stylesheet may force). */
+const TEXT_SPACING =
+  "* { letter-spacing: 0.12em !important; word-spacing: 0.16em !important; line-height: 1.5 !important; }";
+
+/** With wider text the title row may wrap, but every action stays a whole 44 px target on the
+ * screen and the page never scrolls sideways (WCAG 1.4.10 and 1.4.12). */
+async function expectHeaderFitsWithTextSpacing(page: Page, width: number): Promise<void> {
+  await page.setViewportSize({ width, height: 800 });
+  await page.goto("/admin");
+  await page.addStyleTag({ content: TEXT_SPACING });
+  const header = page.getByRole("banner");
+  const name = (await header.getByRole("link", { name: /^Lumiback/ }).boundingBox())!;
+  expect(name.x, "the name starts on the screen").toBeGreaterThanOrEqual(0);
+  expect(name.x + name.width, "the name ends on the screen").toBeLessThanOrEqual(width);
+  for (const [role, label] of HEADER_ACTIONS) {
+    const box = (await header.getByRole(role, { name: label, exact: true }).boundingBox())!;
+    const where = `${label} at ${width} px with text spacing: ${JSON.stringify(box)}`;
+    expect(box.x, `${where} (starts on screen)`).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, `${where} (ends on screen)`).toBeLessThanOrEqual(width);
+    expect(box.height, `${where} (44 px tall)`).toBeGreaterThanOrEqual(44);
+  }
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+    "the page doesn't scroll sideways",
+  ).toBeLessThanOrEqual(width);
 }
 
 async function makeSureStudentIsIn(request: APIRequestContext, token: string): Promise<void> {
@@ -512,6 +580,178 @@ test.describe("as an admin", () => {
     await page.getByRole("link", { name: "Back to today" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Outing requests");
   });
+
+  // Owner, 2026-11-26: on a phone the sections are one row that scrolls sideways inside itself
+  // (three wrapped rows took ~170 px above every page), with the current one scrolled into view.
+  for (const width of [320, 390]) {
+    test(`office nav is one sideways row at ${width} px, current section in view`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin/settings");
+      const nav = page.getByRole("navigation", { name: "Hostel office" });
+      const list = nav.getByRole("list");
+      await expect(list).toHaveAttribute("data-scrolled", "true");
+      const box = (await list.boundingBox())!;
+      const current = (await nav.locator('[aria-current="page"]').boundingBox())!;
+      expect(box.height).toBeLessThan(60);
+      // The list scrolls itself; the page never does.
+      expect(await list.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        ),
+      ).toBe(false);
+      // Settings is near the end of an admin's list, so it only shows if the row scrolled to it.
+      expect(current.x).toBeGreaterThanOrEqual(box.x - 1);
+      expect(current.x + current.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    });
+  }
+
+  test("office nav wraps on a wide screen, every section in view", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/admin");
+    const list = page.getByRole("navigation", { name: "Hostel office" }).getByRole("list");
+    expect(await list.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+  });
+
+  // Staff get a fourth link (their office) in the app header; at 320 px it must not push the
+  // page sideways (it used to end at x=387).
+  test("the app header fits a 320 px screen with the office link", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await page.goto("/account");
+    const main = page.getByRole("navigation", { name: "Main" });
+    await expect(main.getByRole("link")).toHaveCount(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      320,
+    );
+    const box = (await main.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(320);
+  });
+
+  // The row scrolls inside itself, so a tab the keyboard reaches must be scrolled fully into
+  // view (the browser leaves a half-visible one where it is) and its focus ring, which the
+  // scroller would clip, must have room all round.
+  test("office nav at 390 px: tabbing to a section shows it whole, with its focus ring", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto("/admin");
+    const nav = page.getByRole("navigation", { name: "Hostel office" });
+    await expect(nav.getByRole("list")).toHaveAttribute("data-scrolled", "true");
+    const links = await nav.getByRole("link").count();
+    expect(links).toBeGreaterThan(8);
+    // The tab key reaches the nav after the header's own links.
+    for (let i = 0; i < 12 && !(await nav.locator("a:focus").count()); i++) {
+      await page.keyboard.press("Tab");
+    }
+    const RING = 6; // outline width + offset (globals.css :focus-visible)
+    for (let i = 0; i < links; i++) {
+      const box = await page.evaluate(() => {
+        const a = document.activeElement as HTMLElement;
+        const list = a.closest("ul")!;
+        const ul = list.getBoundingClientRect();
+        const r = a.getBoundingClientRect();
+        // An edge that fades (hides more tabs) must not dim the link's ring either.
+        const fade = (name: string) => parseFloat(list.style.getPropertyValue(name)) || 0;
+        return {
+          label: a.textContent,
+          left: r.left - ul.left - fade("--fade-start"),
+          right: ul.right - r.right - fade("--fade-end"),
+          top: r.top - ul.top,
+          bottom: ul.bottom - r.bottom,
+          inViewport: r.left >= 0 && r.right <= window.innerWidth,
+        };
+      });
+      const where = `${i}: ${box.label}`;
+      expect(box.inViewport, `${where} is in the viewport`).toBe(true);
+      for (const side of ["left", "right", "top", "bottom"] as const) {
+        expect(box[side], `${where} has room for the focus ring (${side})`).toBeGreaterThanOrEqual(
+          RING - 0.01,
+        );
+      }
+      if (i < links - 1) await page.keyboard.press("Tab");
+    }
+  });
+
+  // Firefox makes a scrolling box a tab stop of its own, even with links inside; the row's
+  // edge mask hid its focus ring, so Tab seemed to vanish for a press (cross-engine check,
+  // 2026-11-26). Tab goes from the header's last action straight to the first section.
+  test("office nav at 390 px: Tab goes from Sign out straight to the first section", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto("/admin");
+    const nav = page.getByRole("navigation", { name: "Hostel office" });
+    await expect(nav.getByRole("list")).toHaveAttribute("data-scrolled", "true");
+    await page.getByRole("button", { name: "Sign out" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(nav.getByRole("link", { name: "Register" })).toBeFocused();
+  });
+
+  // At 390 px the first view ends with a whole tab and only a few pixels of the next, which
+  // doesn't read as "more this way" (screenshot review, 2026-11-26). Each edge that hides tabs
+  // fades out instead, so the cut is always visible; the fade goes once the row is scrolled
+  // to that end, and the wide layout, which wraps, never has one.
+  test("office nav fades the edge that hides more sections, on a phone only", async ({ page }) => {
+    const fade = (list: Locator) =>
+      list.evaluate((el) => ({
+        start: el.style.getPropertyValue("--fade-start"),
+        end: el.style.getPropertyValue("--fade-end"),
+        mask: getComputedStyle(el).maskImage,
+      }));
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto("/admin");
+    const list = page.getByRole("navigation", { name: "Hostel office" }).getByRole("list");
+    await expect(list).toHaveAttribute("data-scrolled", "true");
+    // Register is current: nothing hidden before it, tabs hidden after.
+    expect(await fade(list)).toMatchObject({ start: "0px", end: "16px" });
+    expect((await fade(list)).mask).toContain("linear-gradient");
+
+    await list.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    await expect.poll(() => fade(list).then((f) => [f.start, f.end])).toEqual(["16px", "0px"]);
+
+    await list.evaluate((el) => el.scrollTo({ left: 200 }));
+    await expect.poll(() => fade(list).then((f) => [f.start, f.end])).toEqual(["16px", "16px"]);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect.poll(() => fade(list).then((f) => f.mask)).toBe("none");
+  });
+
+  // Owner, 2026-11-26: on a phone Tour, My app and Sign out wrapped under the name, a whole
+  // extra row above every page. They share the name's row at every width from 320 px.
+  for (const width of [320, 360, 390]) {
+    test(`office header: the name and every action share one row at ${width} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin");
+      await expectOneTitleRow(page, width);
+      // The signed-in name only shows from sm up (it has no room on a phone).
+      await expect(page.getByRole("banner").getByText("Asha Rawat")).toBeHidden();
+    });
+  }
+
+  test("office header at 1440 px: one row, with the signed-in name", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/admin");
+    await expectOneTitleRow(page, 1440);
+    const name = page.getByRole("banner").getByText("Asha Rawat");
+    await expect(name).toBeVisible();
+    const signOut = (await page.getByRole("button", { name: "Sign out" }).boundingBox())!;
+    const box = (await name.boundingBox())!;
+    expect(Math.abs(box.y + box.height / 2 - (signOut.y + signOut.height / 2))).toBeLessThan(4);
+  });
+
+  // The one-row header has little slack at 320 px: wider text (text spacing, text-only zoom, a
+  // bigger default font) must wrap the actions under the name, never push Sign out off screen.
+  for (const width of [320, 360]) {
+    test(`office header at ${width} px with text spacing: wraps, never overflows`, async ({
+      page,
+    }) => {
+      await expectHeaderFitsWithTextSpacing(page, width);
+    });
+  }
 });
 
 test.describe("as a warden", () => {
@@ -550,6 +790,12 @@ test.describe("as a warden", () => {
       page.getByRole("form", { name: "Hostel 3" }).getByLabel("Warden's phone"),
     ).toHaveValue("+919876500033");
   });
+
+  test("office header: the name and every action share one row at 320 px", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto("/admin");
+    await expectOneTitleRow(page, 320);
+  });
 });
 
 test.describe("as a head warden", () => {
@@ -574,5 +820,86 @@ test.describe("as a head warden", () => {
     for (const path of ["/admin/gates", "/admin/people/import", "/admin/settings"]) {
       expect((await page.goto(path))?.status(), path).toBe(404);
     }
+  });
+
+  // "Head warden" is the longest role label the header's name carries; 640 px is where the
+  // role moves into a pill beside the name and the signed-in name appears too.
+  for (const width of [320, 640]) {
+    test(`office header: the name and every action share one row at ${width} px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin");
+      await expectOneTitleRow(page, width);
+    });
+
+    test(`office header at ${width} px with text spacing: the longest role still fits`, async ({
+      page,
+    }) => {
+      await expectHeaderFitsWithTextSpacing(page, width);
+    });
+  }
+});
+
+test.describe("as a developer", () => {
+  test.use({ storageState: DEVELOPER_STATE });
+
+  // A developer as themselves also has View as, at the end of the section tabs. On a phone it
+  // used to wrap onto a row of its own; it stays on the tabs' row, outside their scroller, so
+  // its menu (which drops below it) isn't clipped by the row's scrolling or its edge fade.
+  for (const width of [320, 390]) {
+    test(`office header at ${width} px: View as adds no row, and its menu opens whole`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/admin");
+      await expectOneTitleRow(page, width);
+      const nav = page.getByRole("navigation", { name: "Hostel office" });
+      const list = nav.getByRole("list");
+      await expect(list).toHaveAttribute("data-scrolled", "true");
+      const button = nav.getByRole("button", { name: "View as" });
+      const row = (await list.boundingBox())!;
+      const own = (await button.boundingBox())!;
+      const middle = own.y + own.height / 2;
+      expect(middle, "View as sits on the tabs' row").toBeGreaterThan(row.y);
+      expect(middle, "View as sits on the tabs' row").toBeLessThan(row.y + row.height);
+      expect(own.x + own.width).toBeLessThanOrEqual(width);
+      expect(own.height).toBeGreaterThanOrEqual(44);
+      // The tabs still scroll inside their own row, and the page doesn't.
+      expect(await list.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+
+      await button.click();
+      const menu = page.getByRole("menu", { name: "View as" });
+      await expect(menu).toHaveAttribute("data-state", "open");
+      await expect(menu.getByRole("menuitemradio", { name: "Developer" })).toBeFocused();
+      // Measured at rest, after its opening animation (which may hold its last frame).
+      await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+      const box = (await menu.boundingBox())!;
+      expect(box.x, "menu starts on the screen").toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, "menu ends on the screen").toBeLessThanOrEqual(width);
+      // Nothing clips or covers it: the centre of every item is that item.
+      const hits = await menu.getByRole("menuitemradio").evaluateAll((items) =>
+        items.map((item) => {
+          const r = item.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { label: item.textContent, hit: item.contains(hit) };
+        }),
+      );
+      expect(hits.length).toBe(5);
+      for (const h of hits) expect(h.hit, `${h.label} is visible, not clipped`).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(button).toBeFocused();
+    });
+  }
+
+  test("office header at 1440 px: one row, every tab and View as in view", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/admin");
+    await expectOneTitleRow(page, 1440);
+    const nav = page.getByRole("navigation", { name: "Hostel office" });
+    expect(await nav.getByRole("list").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
+      false,
+    );
+    await expect(nav.getByRole("button", { name: "View as" })).toBeInViewport({ ratio: 1 });
   });
 });

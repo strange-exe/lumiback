@@ -1,5 +1,33 @@
 [
   {
+    "version": "1.24.0",
+    "date": "2026-11-26",
+    "kind": "feature",
+    "title": "Colour themes",
+    "summary": "Lumiback has a calmer new look, Gate glass, and you can pick LED night or Dusk instead, in the app or on the website.",
+    "points": [
+      "Gate glass is the new look for everyone: calm paper, dark ink, and teal only when you're out.",
+      "Prefer the old look? LED night keeps the orange board that glows at night. Dusk is soft paper with orchid and indigo.",
+      "In the app, pick a theme in Profile, Appearance. On the website, it's Colour theme on your Account page. Each theme has a light and a dark version, and light or dark works as before.",
+      "Your choice stays on the phone or browser you picked it on. Anywhere else starts with Gate glass.",
+      "On a phone, the hostel office website's sections are one row you can swipe sideways, with Tour, My app and Sign out beside the name."
+    ]
+  },
+  {
+    "version": "1.23.0",
+    "date": "2026-11-25",
+    "kind": "feature",
+    "title": "The hostel board",
+    "summary": "Timings, mess and laundry news from your hostel office now shows on Today, with a notification you can turn off.",
+    "points": [
+      "Students: posts from your hostel office show in a Hostel board card on Today, newest first, with New on the ones you haven't read. See all opens every post.",
+      "A new notification setting, Hostel board, turns off notifications for new posts. The posts still show on Today.",
+      "For the hostel office: Post to the hostel board writes a post for your hostels, shows how many students and phones it reaches, and can fill in the outing rules for you. Your list shows each post's status and roughly how many of the students it was sent to have seen it, in steps of 5 (never who), and you can withdraw a post.",
+      "After adding a holiday, Tell students opens a post with the holiday's hours already written.",
+      "Send a notice is now called Message students who are out, to tell it apart from the board."
+    ]
+  },
+  {
     "version": "1.22.0",
     "date": "2026-11-16",
     "kind": "feature",

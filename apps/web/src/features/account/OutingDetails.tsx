@@ -74,7 +74,7 @@ export function OutingDetails({
             <select
               name="hostel_id"
               defaultValue={profile.hostel_id ?? ""}
-              className="min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink focus:border-accent focus:outline-none"
+              className="min-h-12 rounded-control border border-line bg-page px-3 font-normal text-ink focus:border-focus focus:outline-none"
             >
               <option value="">Choose your hostel</option>
               {/* Grouped by the rules they follow: "Boys' hostels", "Girls' hostels". */}

@@ -241,7 +241,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
           <Link
             href={first}
             prefetch={false}
-            className="font-bold text-accent-text underline-offset-4 hover:underline"
+            className="font-bold text-link underline-offset-4 hover:underline"
           >
             Back to the first page
           </Link>
@@ -327,7 +327,7 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
         <Link
           href={more}
           prefetch={false}
-          className="flex min-h-11 items-center self-center font-bold text-accent-text underline-offset-4 hover:underline"
+          className="flex min-h-11 items-center self-center font-bold text-link underline-offset-4 hover:underline"
         >
           More people
         </Link>

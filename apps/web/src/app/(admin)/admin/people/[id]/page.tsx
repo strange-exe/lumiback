@@ -66,7 +66,7 @@ function readTab(token: string, id: string, tab: RecordTab, before?: string): Pr
 
 const STATUS = {
   in: { label: "In the hostel", className: "bg-line text-ink" },
-  out: { label: "Out now", className: "bg-accent-soft text-ink" },
+  out: { label: "Out now", className: "bg-out-soft text-out" },
   overdue: { label: "Out and late", className: "bg-danger-soft text-danger" },
 } as const;
 
@@ -97,7 +97,7 @@ export default async function StudentRecordPage({
     <div className="flex max-w-3xl flex-col gap-8">
       <Link
         href="/admin/people"
-        className="flex min-h-11 items-center self-start text-sm font-bold text-accent-text underline-offset-4 hover:underline"
+        className="flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-4 hover:underline"
       >
         People
       </Link>
@@ -179,7 +179,7 @@ export default async function StudentRecordPage({
             Showing older entries.{" "}
             <Link
               href={recordHref(id, tab)}
-              className="font-bold text-accent-text underline-offset-4 hover:underline"
+              className="font-bold text-link underline-offset-4 hover:underline"
             >
               Back to the newest
             </Link>
@@ -204,7 +204,7 @@ export default async function StudentRecordPage({
           <Link
             href={older}
             prefetch={false}
-            className="flex min-h-11 items-center self-center font-bold text-accent-text underline-offset-4 hover:underline"
+            className="flex min-h-11 items-center self-center font-bold text-link underline-offset-4 hover:underline"
           >
             Older {RECORD_TAB_LABELS[tab].toLowerCase()}
           </Link>
@@ -253,7 +253,7 @@ function OutingCard({ outing: o }: { outing: RecordOuting }): ReactNode {
               Out, {formatMinutes(o.late_minutes)} late
             </span>
           ) : (
-            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-ink">Out</span>
+            <span className="rounded-full bg-out-soft px-2.5 py-0.5 text-out">Out</span>
           )}
           {backLate ? (
             <span className="rounded-full bg-warn-soft px-2.5 py-0.5 text-warn">

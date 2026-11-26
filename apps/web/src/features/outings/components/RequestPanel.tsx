@@ -142,7 +142,7 @@ function RequestForm({
           {lengths.map((l, i) => (
             <label
               key={l.label}
-              className="flex min-h-11 cursor-pointer items-center rounded-control border border-line bg-surface px-4 text-sm font-bold text-ink has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
+              className="flex min-h-11 cursor-pointer items-center rounded-control border border-line bg-surface px-4 text-sm font-bold text-ink has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-on-accent has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus"
             >
               <input
                 type="radio"

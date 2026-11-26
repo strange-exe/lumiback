@@ -11,7 +11,7 @@ function Outcome({ outing }: { outing: Outing }): ReactNode {
     const overdue = outing.status === "overdue";
     return (
       <span className={overdue ? "text-danger" : "text-ink"}>
-        <span aria-hidden="true" className={overdue ? undefined : "text-accent"}>
+        <span aria-hidden="true" className={overdue ? undefined : "text-out"}>
           ●{" "}
         </span>
         {overdue ? "Late" : "Out now"}

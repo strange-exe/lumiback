@@ -20,7 +20,7 @@ export function Field({ label, name, hint, id, className = "", ...input }: Field
         id={inputId}
         name={name}
         aria-describedby={hintId}
-        className={`min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none ${className}`}
+        className={`min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink placeholder:text-muted/70 focus:border-focus focus:outline-none ${className}`}
         {...input}
       />
       {hint && (

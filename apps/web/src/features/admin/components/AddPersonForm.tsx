@@ -12,7 +12,7 @@ import type { Hostel, Role } from "@/lib/types";
 const EMPTY: AddPersonState = { error: null };
 
 const SELECT =
-  "min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink focus:border-accent focus:outline-none";
+  "min-h-12 rounded-control border border-line bg-surface px-4 text-base text-ink focus:border-focus focus:outline-none";
 
 /** Hostel field wording by role: where a student lives, or what a warden looks after. */
 function hostelField(role: Role): { label: string; hint: string; required: boolean } | null {

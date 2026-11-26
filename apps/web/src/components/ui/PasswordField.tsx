@@ -19,7 +19,7 @@ export function PasswordField({ label, name, hint, id, ...input }: PasswordField
       <label htmlFor={inputId} className="text-sm font-bold text-ink">
         {label}
       </label>
-      <div className="flex min-h-12 items-center rounded-control border border-line bg-surface focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25">
+      <div className="flex min-h-12 items-center rounded-control border border-line bg-surface focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/25">
         <input
           id={inputId}
           name={name}

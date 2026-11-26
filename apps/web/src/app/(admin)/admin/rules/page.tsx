@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { adminApi } from "@/features/admin/api";
+import { announceHref } from "@/features/board/board";
 import {
   HolidayRow,
   HostelForm,
@@ -15,7 +17,7 @@ import { requireRulesEditor } from "@/lib/session";
 export const metadata: Metadata = { title: "Outing rules" };
 
 export default async function RulesPage(): Promise<ReactNode> {
-  const { token } = await requireRulesEditor();
+  const { token, user } = await requireRulesEditor();
   const today = istToday();
   const year = Number(today.slice(0, 4));
   const [sets, hostels, thisYear, nextYear] = await Promise.all([
@@ -45,9 +47,32 @@ export default async function RulesPage(): Promise<ReactNode> {
             below.
           </p>
         ) : null}
-        {sets.map((set) => (
-          <RuleSetForm key={set.id} ruleSet={set} />
-        ))}
+        {sets.map((set) => {
+          const following = hostels.filter((h) => h.rule_set_id === set.id).length;
+          const announce = announceHref(set.id, following, set.is_default, user.role);
+          return (
+            <div key={set.id} className="flex flex-col gap-2">
+              <RuleSetForm ruleSet={set} />
+              {announce ? (
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                  <Link
+                    href={announce}
+                    className="inline-flex min-h-11 items-center rounded-control px-3.5 font-bold text-accent ring-1 ring-line hover:bg-accent-soft"
+                  >
+                    Announce this change<span className="sr-only">: {set.name}</span>
+                  </Link>
+                  <span>
+                    {following === 0
+                      ? "Post these timings to the hostel board for all hostels."
+                      : following === 1
+                        ? "Post these timings to the hostel board for the hostel that follows them."
+                        : `Post these timings to the hostel board for the ${following} hostels that follow them.`}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
         <NewRuleSetForm sets={sets} />
       </section>
 

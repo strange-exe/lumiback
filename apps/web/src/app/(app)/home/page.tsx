@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import { LedBoard, LedStage } from "@/components/led/LedBoard";
 import { LedFigure } from "@/components/led/LedFigure";
+import { studentBoardApi } from "@/features/board/api";
+import { HomeBoard } from "@/features/board/components/HomeBoard";
 import { outingsApi } from "@/features/outings/api";
 import { CheckOutForm } from "@/features/outings/components/CheckOutForm";
 import { OutView } from "@/features/outings/components/OutView";
@@ -53,16 +55,22 @@ interface PageProps {
 }
 
 export default async function HomePage({ searchParams }: PageProps): Promise<ReactNode> {
-  const { user, token } = await requireUser();
+  const { user, token, viewingAs } = await requireUser();
+  // Read alongside the rest; the board is below the main task, so a failure only hides it.
+  const boardPosts = studentBoardApi.feed(token).catch(() => null);
+  const board = <HomeBoard posts={boardPosts} viewing={viewingAs !== null} />;
   const outing = await outingsApi.current(token);
 
   if (outing) {
     return (
-      <OutView
-        outing={outing}
-        serverNow={new Date().toISOString()}
-        safeReturn={await safeReturnState(token, outing, (await searchParams).safe_return)}
-      />
+      <div className="flex flex-col gap-10">
+        <OutView
+          outing={outing}
+          serverNow={new Date().toISOString()}
+          safeReturn={await safeReturnState(token, outing, (await searchParams).safe_return)}
+        />
+        {board}
+      </div>
     );
   }
 
@@ -124,28 +132,31 @@ export default async function HomePage({ searchParams }: PageProps): Promise<Rea
   }
 
   return (
-    <section aria-labelledby="checkout-heading" className="flex flex-col gap-6">
-      <div>
-        <p className="font-display text-lg text-muted">Hi {user.name.split(" ")[0]},</p>
-        <h1 id="checkout-heading" className="font-display text-title text-ink">
-          Heading out?
-        </h1>
-      </div>
-      <LedStage tour="status">
-        <LedBoard>
-          <p className="text-sm text-board-muted">Your status</p>
-          <LedFigure
-            text="IN"
-            state="in"
-            label="In: you're not checked out"
-            className="py-1 text-[clamp(4.25rem,22vw,6.5rem)]"
-          />
-          <p className="border-t border-board-line pt-3 text-sm text-board-muted">
-            Check out before you leave, and tap in when you&apos;re back.
-          </p>
-        </LedBoard>
-      </LedStage>
-      {body}
-    </section>
+    <div className="flex flex-col gap-10">
+      <section aria-labelledby="checkout-heading" className="flex flex-col gap-6">
+        <div>
+          <p className="font-display text-lg text-muted">Hi {user.name.split(" ")[0]},</p>
+          <h1 id="checkout-heading" className="font-display text-title text-ink">
+            Heading out?
+          </h1>
+        </div>
+        <LedStage tour="status">
+          <LedBoard>
+            <p className="text-sm text-board-muted">Your status</p>
+            <LedFigure
+              text="IN"
+              state="in"
+              label="In: you're not checked out"
+              className="py-1 text-[clamp(4.25rem,22vw,6.5rem)]"
+            />
+            <p className="border-t border-board-line pt-3 text-sm text-board-muted">
+              Check out before you leave, and tap in when you&apos;re back.
+            </p>
+          </LedBoard>
+        </LedStage>
+        {body}
+      </section>
+      {board}
+    </div>
   );
 }

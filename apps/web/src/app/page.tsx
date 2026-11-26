@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 const PRIMARY =
-  "press inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent shadow-[0_10px_24px_-12px_color-mix(in_srgb,var(--accent)_70%,transparent)] hover:brightness-105";
+  "press inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-accent px-6 font-bold text-on-accent shadow-[0_2px_0_rgba(0,0,0,0.12)] hero-primary hover:brightness-105";
 const SECONDARY =
   "press inline-flex min-h-12 items-center justify-center rounded-control bg-surface px-6 font-bold text-accent ring-1 ring-line hover:ring-accent/40";
 

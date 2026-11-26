@@ -13,6 +13,10 @@ import "./globals.css";
 /**
  * Last resort: the root layout itself failed, so this replaces the whole document (its own html
  * and body, styles and font).
+ *
+ * Gate glass on purpose: the root layout that sets data-theme failed, and the theme cookie is
+ * httpOnly (set and read on the server only, no inline script), so this client page can't read
+ * it. Light or dark still follows the device. A readable mirror cookie isn't worth it for this.
  */
 export default function GlobalError({
   error,

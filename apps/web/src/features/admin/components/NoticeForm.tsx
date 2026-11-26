@@ -11,7 +11,8 @@ import type { FormState } from "@/lib/types";
 const EMPTY: FormState = { error: null };
 
 /**
- * A short notice to the students out now (a notification in the app, or an email), or a
+ * "Message students who are out": a short urgent message to the students out now (a
+ * notification in the app, or an email; POST /admin/notices, the hostel board is separate), or a
  * recall asking them to come back now. The hostel choice shows only to someone with more than
  * one hostel; the API keeps it to the sender's own.
  */
@@ -19,7 +20,7 @@ export function NoticeForm({ hostels }: { hostels: { id: string; name: string }[
   const [state, action] = useActionState(sendNotice, EMPTY);
   const id = useId();
   const input =
-    "min-h-12 rounded-control border border-line bg-page px-4 text-ink focus:border-accent focus:outline-none";
+    "min-h-12 rounded-control border border-line bg-page px-4 text-ink focus:border-focus focus:outline-none";
   return (
     <section
       aria-labelledby={`${id}-heading`}
@@ -27,11 +28,11 @@ export function NoticeForm({ hostels }: { hostels: { id: string; name: string }[
     >
       <div className="flex flex-col gap-1">
         <h2 id={`${id}-heading`} className="font-display text-xl text-ink">
-          Send a notice to students who are out
+          Message students who are out
         </h2>
         <p className="text-sm text-muted">
-          They get it as a notification in the app, or by email if they only use the website. It is
-          recorded in the audit log.
+          Urgent: a notification now (or email). For things every student should see, post to the
+          hostel board. It is recorded in the audit log.
         </p>
       </div>
       <form action={action} className="flex flex-col gap-4">
@@ -45,7 +46,7 @@ export function NoticeForm({ hostels }: { hostels: { id: string; name: string }[
             required
             maxLength={MAX_SHORT_TEXT}
             defaultValue={state.fields?.message}
-            placeholder="Heavy rain near Clock Tower. Take a cab back if you can."
+            placeholder="Heavy rain near Clock Tower. Take a cab back."
             aria-describedby={`${id}-message-hint`}
             className={input}
           />
@@ -84,7 +85,7 @@ export function NoticeForm({ hostels }: { hostels: { id: string; name: string }[
         </label>
         <FormError message={state.error} />
         <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton pendingLabel="Sending…">Send notice</SubmitButton>
+          <SubmitButton pendingLabel="Sending…">Send message</SubmitButton>
           <p aria-live="polite" className="text-sm font-bold text-ink empty:hidden">
             {state.notice ?? ""}
           </p>
