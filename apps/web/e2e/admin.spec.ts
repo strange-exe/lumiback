@@ -646,8 +646,8 @@ test.describe("as an admin", () => {
       await page.keyboard.press("Tab");
     }
     const RING = 6; // outline width + offset (globals.css :focus-visible)
-    for (let i = 0; i < links; i++) {
-      const box = await page.evaluate(() => {
+    const measure = () =>
+      page.evaluate(() => {
         const a = document.activeElement as HTMLElement;
         const list = a.closest("ul")!;
         const ul = list.getBoundingClientRect();
@@ -663,6 +663,17 @@ test.describe("as an admin", () => {
           inViewport: r.left >= 0 && r.right <= window.innerWidth,
         };
       });
+    for (let i = 0; i < links; i++) {
+      // The row settles within a frame of the Tab (the browser's own focus scroll, then the
+      // nav's): wait for every side to have room, then check each with its own message.
+      await expect
+        .poll(async () => {
+          const b = await measure();
+          return b.inViewport && Math.min(b.left, b.right, b.top, b.bottom) >= RING - 0.01;
+        })
+        .toBe(true)
+        .catch(() => undefined);
+      const box = await measure();
       const where = `${i}: ${box.label}`;
       expect(box.inViewport, `${where} is in the viewport`).toBe(true);
       for (const side of ["left", "right", "top", "bottom"] as const) {

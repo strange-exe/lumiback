@@ -105,10 +105,19 @@ export function AdminNav({ role, viewAs = false }: { role: Role; viewAs?: boolea
     }
     // The row's side padding plus the fade, so neither covers the link or its ring.
     const room = 24;
-    const start = link.offsetLeft - room;
-    const end = link.offsetLeft + link.offsetWidth + room;
-    if (start < ul.scrollLeft) ul.scrollLeft = Math.max(0, start);
-    else if (end > ul.scrollLeft + ul.clientWidth) ul.scrollLeft = end - ul.clientWidth;
+    const reveal = (): void => {
+      const start = link.offsetLeft - room;
+      const end = link.offsetLeft + link.offsetWidth + room;
+      if (start < ul.scrollLeft) ul.scrollLeft = Math.max(0, start);
+      else if (end > ul.scrollLeft + ul.clientWidth) ul.scrollLeft = end - ul.clientWidth;
+      // At once, not on the scroll event a frame later: until then the old fade would still
+      // cover the end the row just moved to, dimming the ring (seen on CI, 2026-11-26).
+      setFades(ul);
+    };
+    reveal();
+    // Again after the browser's own focus scroll, which can land after this handler and leave
+    // the tab flush against the edge.
+    requestAnimationFrame(reveal);
   }
 
   // On a phone the row runs to the screen's edges; with View as, only to the left one: the
