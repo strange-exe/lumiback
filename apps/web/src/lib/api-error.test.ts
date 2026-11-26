@@ -6,6 +6,7 @@ import {
   errorFrom,
   reachBackend,
   readableDetail,
+  SERVER_BUSY,
   UNREACHABLE,
   VIEW_AS_READ_ONLY,
 } from "./api-error.ts";
@@ -32,7 +33,13 @@ test("a validation list shows its first message", () => {
 });
 
 test("an empty or odd body falls back by status", () => {
-  assert.equal(errorFrom(429, null).detail, "Too many attempts. Wait a moment and try again.");
+  // A 429 without the API's body came from the hosting edge, not from the person's attempts.
+  assert.equal(errorFrom(429, null).detail, SERVER_BUSY);
+  assert.equal(errorFrom(429, "<html>rate limited</html>").detail, SERVER_BUSY);
+  assert.equal(
+    errorFrom(429, { detail: "Too many attempts. Try again later." }).detail,
+    "Too many attempts. Try again later.",
+  );
   assert.equal(errorFrom(500, { detail: { code: 7 } }).detail, "Something went wrong. Try again.");
   assert.equal(errorFrom(500, { detail: { code: 7 } }).code, null);
 });

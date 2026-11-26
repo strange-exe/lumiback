@@ -53,9 +53,15 @@ export function detailOf(payload: unknown, status: number): string {
       if (typeof first.msg === "string") return first.msg.replace(/^Value error, /, "");
     }
   }
-  if (status === 429) return "Too many attempts. Wait a moment and try again.";
+  // Every 429 the API sends carries its own sentence (above). One without it was sent by the
+  // hosting in front of the API (Render limits inbound requests), so the person's own attempts
+  // weren't counted and mustn't be blamed (owner's report, 2026-11-26).
+  if (status === 429) return SERVER_BUSY;
   return "Something went wrong. Try again.";
 }
+
+/** What a screen shows when the hosting, not the API, turned a request away as too many. */
+export const SERVER_BUSY = "Lumiback's server is busy right now. Wait a minute and try again.";
 
 interface Options {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

@@ -42,10 +42,15 @@ export function errorFrom(status: number, payload: unknown): ApiError {
       return new ApiError(status, first.msg.replace(/^Value error, /, ""));
     }
   }
-  if (status === 429)
-    return new ApiError(status, "Too many attempts. Wait a moment and try again.");
+  // Every 429 the API sends carries its own sentence (above). One without it was sent by the
+  // hosting in front of the API (Render limits inbound requests), so the person's own attempts
+  // weren't counted and mustn't be blamed (owner's report, 2026-11-26).
+  if (status === 429) return new ApiError(status, SERVER_BUSY);
   return new ApiError(status, "Something went wrong. Try again.");
 }
+
+/** What a form shows when the hosting, not the API, turned a request away as too many. */
+export const SERVER_BUSY = "Lumiback's server is busy right now. Wait a minute and try again.";
 
 /** What a form shows when the API didn't answer at all (DNS, refused connection, reset). */
 export const UNREACHABLE = "Lumiback can't reach its server right now. Try again in a moment.";

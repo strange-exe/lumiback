@@ -1,4 +1,4 @@
-import { api, ApiError, detailOf, problemOf } from "@/lib/api";
+import { api, ApiError, detailOf, problemOf, SERVER_BUSY } from "@/lib/api";
 
 jest.mock("@/lib/config", () => ({ API_URL: "https://api.test" }));
 jest.mock("@/lib/session", () => ({
@@ -47,7 +47,12 @@ describe("error details", () => {
     expect(problemOf({ detail: { message: 1, code: "x" } })).toBeNull();
     expect(problemOf(null)).toBeNull();
     expect(detailOf({ detail: { code: "x" } }, 409)).toBe("Something went wrong. Try again.");
-    expect(detailOf({ detail: {} }, 429)).toBe("Too many attempts. Wait a moment and try again.");
+    // A 429 without the API's body came from the hosting edge, not from the person's attempts.
+    expect(detailOf({ detail: {} }, 429)).toBe(SERVER_BUSY);
+    expect(detailOf(null, 429)).toBe(SERVER_BUSY);
+    expect(detailOf({ detail: "Too many attempts. Try again later." }, 429)).toBe(
+      "Too many attempts. Try again later.",
+    );
   });
 });
 
