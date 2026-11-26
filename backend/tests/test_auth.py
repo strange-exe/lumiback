@@ -266,11 +266,30 @@ def test_login_is_rate_limited_per_ip_across_emails(client, clock):
 def test_right_passwords_do_not_use_up_the_ip_limit(client, clock):
     # One hostel network can be one IP: students signing in correctly never block the next one.
     register(client, "a@example.com")
-    for _ in range(25):
+    register(client, "b@example.com")
+    for _ in range(13):  # 26 right passwords from the IP, under each account's own cap
         assert login(client, "a@example.com")
+        assert login(client, "b@example.com")
     for i in range(20):
         assert _wrong(client, f"x{i}@example.com").status_code == 401  # all 20 still allowed
     assert _wrong(client, "y@example.com").status_code == 429
+
+
+def test_sign_ins_to_one_account_are_bounded_even_with_the_right_password(client, clock):
+    """Audit run-16: a right password takes its hits back, so one account's own password could
+    drive unlimited sign-ins (an Argon2 run of 64 MiB and a new refresh token each). Every try
+    on an account counts here, right or wrong, and none is taken back."""
+    register(client, "a@example.com")
+    for _ in range(20):
+        assert login(client, "a@example.com")
+    r = client.post("/auth/login", json={"email": "a@example.com", "password": PASSWORD})
+    assert r.status_code == 429
+    assert r.json()["detail"] == "Too many attempts. Try again later."
+    # The same for an address with no account: nothing tells the two apart.
+    for _ in range(20):
+        client.post("/auth/login", json={"email": "z@example.com", "password": PASSWORD})
+    clock.advance(15 * 60 + 1)  # the window passes: other accounts were never affected
+    assert login(client, "a@example.com")
 
 
 def test_tries_on_a_locked_email_do_not_use_up_the_ip_limit(client, clock):

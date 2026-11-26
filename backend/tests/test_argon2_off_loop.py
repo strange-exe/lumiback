@@ -76,3 +76,49 @@ def test_no_password_flow_runs_argon2_on_the_event_loop(client, db, hasher):
     kinds = {name for name, _ in hasher.calls}
     assert kinds == {"hash", "verify"}
     assert [c for c in hasher.calls if c[1]] == [], hasher.calls
+
+
+class Overlap:
+    """A slow stand-in hasher that records how many of its calls ran at the same time."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+        self.now = 0
+        self.most = 0
+
+    def _run(self) -> None:
+        import time
+
+        with self.lock:
+            self.now += 1
+            self.most = max(self.most, self.now)
+        time.sleep(0.05)
+        with self.lock:
+            self.now -= 1
+
+    def hash(self, password):
+        self._run()
+        return "h"
+
+    def verify(self, password_hash, password):
+        self._run()
+        return True
+
+
+def test_argon2_runs_at_most_a_few_at_once(monkeypatch):
+    """Audit run-16: each run takes 64 MiB, and a burst of sign-ins could start one per
+    thread-pool thread (up to 32) on a 512 MB instance. A cap keeps memory bounded; the rest
+    wait their turn."""
+    fake = Overlap()
+    monkeypatch.setattr(passwords, "_hasher", fake)
+
+    async def burst() -> None:
+        await asyncio.gather(
+            *(passwords.verify_password_async("x", "p") for _ in range(8)),
+            *(passwords.hash_password_async("p") for _ in range(4)),
+        )
+
+    asyncio.run(burst())
+    assert 1 <= fake.most <= passwords.MAX_AT_ONCE == 2

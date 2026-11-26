@@ -1,6 +1,8 @@
 """Password hashing (Argon2id) and strength rules."""
 
 import asyncio
+import threading
+from collections.abc import Callable
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -89,9 +91,26 @@ def needs_rehash(password_hash: str) -> bool:
 # a thread and never stalls the event loop (every other request on the worker) while it runs.
 
 
+#
+# Each run also takes 64 MiB, and the thread pool has up to 32 threads: a burst of sign-ins
+# could ask for 2 GB on a 512 MB instance. At most MAX_AT_ONCE run together per process; the
+# rest wait in their threads (waiting takes no memory). A thread lock, not an asyncio one, so
+# it holds whichever event loop the request came from (audit run-16).
+MAX_AT_ONCE = 2
+_running = threading.BoundedSemaphore(MAX_AT_ONCE)
+
+
+def _one_at_a_time[**P, R](work: Callable[P, R]) -> Callable[P, R]:
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        with _running:
+            return work(*args, **kwargs)
+
+    return run
+
+
 async def hash_password_async(password: str) -> str:
-    return await asyncio.to_thread(hash_password, password)
+    return await asyncio.to_thread(_one_at_a_time(hash_password), password)
 
 
 async def verify_password_async(password_hash: str | None, password: str) -> bool:
-    return await asyncio.to_thread(verify_password, password_hash, password)
+    return await asyncio.to_thread(_one_at_a_time(verify_password), password_hash, password)

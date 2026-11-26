@@ -60,6 +60,10 @@ REGISTER_PER_IP = Limit(max_hits=5, window_seconds=3600)
 # must never use this up.
 LOGIN_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=900)
 LOGIN_FAILURES_PER_EMAIL = Limit(max_hits=5, window_seconds=900)
+# Every try on one account, right or wrong, never taken back: without it one account's own
+# password could drive unlimited sign-ins, each an Argon2 run and a new refresh token (audit
+# run-16). Far above what a person needs; an address with no account is counted the same.
+LOGIN_TRIES_PER_EMAIL = Limit(max_hits=20, window_seconds=900)
 REFRESH_PER_IP = Limit(max_hits=30, window_seconds=60)
 VERIFY_FAILURES_PER_IP = Limit(max_hits=20, window_seconds=3600)
 RESEND_PER_EMAIL = Limit(max_hits=3, window_seconds=900)
@@ -360,10 +364,15 @@ async def login(
     except RateLimited as e:
         raise too_many(e) from None
     try:
-        await limiter.hit("login:email", email, LOGIN_FAILURES_PER_EMAIL)
+        email_hits = await limiter.hit_all([("login:email", email, LOGIN_FAILURES_PER_EMAIL)])
     except RateLimited as e:
         await limiter.undo(ip_hits)  # no password is checked while locked: not a guess
         raise login_locked(e) from None
+    try:  # after the lock, so a locked account keeps saying so (and offering a reset)
+        await limiter.hit("login:tries", email, LOGIN_TRIES_PER_EMAIL)
+    except RateLimited as e:
+        await limiter.undo([*ip_hits, *email_hits])  # no password is checked: not a guess
+        raise too_many(e) from None
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not await verify_password_async(user.password_hash if user else None, body.password):
