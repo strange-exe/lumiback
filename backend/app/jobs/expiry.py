@@ -21,6 +21,7 @@ from app.email import Mailer
 from app.models import (
     AccessLog,
     AdminAudit,
+    BoardPost,
     CampusSettings,
     Escalation,
     GateScan,
@@ -81,6 +82,9 @@ KEEP_ADMIN_AUDIT = timedelta(days=365)
 KEEP_UNSEEN_PUSH_TOKENS = timedelta(days=90)
 # A help request's location fix is for the night it was sent, not for the record.
 KEEP_HELP_FIX = timedelta(days=1)
+# A hostel board post, counted from when it ended or was withdrawn, whichever came first; its
+# hostels and seen rows go with it (the privacy page states it).
+KEEP_BOARD_POSTS = timedelta(days=180)
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,7 @@ class SweepResult:
     deleted_help: int = 0
     deleted_error_reports: int = 0
     error_digest_queued: bool = False
+    deleted_board_posts: int = 0
 
 
 class SweepHealth:
@@ -313,6 +318,12 @@ async def sweep(
                 HelpRequest.handled_at.is_not(None), HelpRequest.created_at < cutoff
             )
         )
+        # least() skips a NULL withdrawn_at: then it is when the post ended.
+        old_board = await session.execute(
+            delete(BoardPost).where(
+                func.least(BoardPost.expires_at, BoardPost.withdrawn_at) < now - KEEP_BOARD_POSTS
+            )
+        )
         old_alerts = await outbox.delete_old(session)
         old_errors, digest = await _error_upkeep(session, now, digest_to, web_url)
         await session.commit()
@@ -359,6 +370,7 @@ async def sweep(
         deleted_audit=audit.rowcount,
         deleted_push_tokens=stale_devices.rowcount,
         push_receipts=receipts,
+        deleted_board_posts=old_board.rowcount,
     )
 
 

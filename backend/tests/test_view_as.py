@@ -184,6 +184,7 @@ STUDENT_GETS = [
     "/sessions/mine",
     "/sessions/watching",
     "/contacts",
+    "/board",
 ]
 STAFF_GETS = [
     *ADMIN_GETS,
@@ -197,6 +198,7 @@ STAFF_GETS = [
     "/admin/escalations?state=all",
     "/admin/corrections",
     "/admin/my-hostels",
+    "/admin/board",
 ]
 
 
@@ -227,6 +229,8 @@ def test_student_screens_show_the_developers_own_empty_data(client, dev, riya):
     assert profile == client.get("/profile", headers=dev[1]).json()
     # This device is still the developer's own, current sign-in.
     assert [d["current"] for d in client.get("/auth/devices", headers=h).json()] == [True]
+    # Not a student: the empty board, whatever is posted.
+    assert client.get("/board", headers=h).json() == {"posts": []}
 
 
 def test_staff_screens_show_every_hostel(client, dev, riya):
@@ -259,6 +263,14 @@ WRITES = [
     ("admin", "PATCH", "/admin/users/{riya}", {"name": "Not Riya"}),
     ("head_warden", "PUT", "/admin/holidays/2030-12-25", {"day": "2030-12-25", "name": "Xmas"}),
     ("warden", "POST", "/admin/escalations/{random}/resolve", {}),
+    ("student", "POST", "/board/seen", {"ids": [1]}),
+    (
+        "head_warden",
+        "POST",
+        "/admin/board",
+        {"category": "mess", "title": "T", "body": "B", "all_hostels": True},
+    ),
+    ("admin", "POST", "/admin/board/1/withdraw", None),
 ]
 
 

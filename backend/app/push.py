@@ -462,6 +462,69 @@ async def count_everyone(
     return count or 0
 
 
+# ---------- the hostel board (api/board.py) ----------
+
+BOARD_CHANNEL = "hostel-board"  # created by the app (notify.ts); never urgent, can be muted
+
+
+def board_phones(hostel_ids: Collection[uuid.UUID] | None):  # noqa: ANN201 - a WHERE list
+    """The phones a board post is pushed to: students whose account is on, in `hostel_ids`
+    (None: every student, those without a hostel too), signed in on that phone (live_token),
+    whose app has the "Hostel board" channel (board) and who didn't mute it. One rule for the
+    reach preview, the stored count and the send. Join PushToken to User to use it."""
+    where = [
+        User.role == UserRole.STUDENT,
+        User.deactivated_at.is_(None),
+        PushToken.board.is_(True),
+        live_token(),
+        ~PushToken.muted.contains([BOARD_CHANNEL]),
+    ]
+    if hostel_ids is not None:
+        where.append(User.hostel_id.in_(list(hostel_ids)))
+    return where
+
+
+async def count_board_phones(
+    session: AsyncSession, hostel_ids: Collection[uuid.UUID] | None
+) -> int:
+    """How many phones send_board_post would push to now."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(PushToken)
+        .join(User, User.id == PushToken.user_id)
+        .where(*board_phones(hostel_ids))
+    )
+    return count or 0
+
+
+async def send_board_post(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    sender: PushSender,
+    message: PushMessage,
+    hostel_ids: Collection[uuid.UUID] | None,
+) -> PushOutcome:
+    """A board post to its students' phones (board_phones), in Expo's batches. Only the board
+    calls this (api/board.py), after the post is saved: the board is what students read, the
+    push is a nudge. Safe as a background task: failures are logged, not raised."""
+    try:
+        async with sessionmaker() as session:
+            tokens = list(
+                await session.scalars(
+                    select(PushToken.token)
+                    .join(User, User.id == PushToken.user_id)
+                    .where(*board_phones(hostel_ids))
+                )
+            )
+        if not tokens:
+            return PushOutcome()
+        result = await sender.send(tokens, message)  # no database connection held meanwhile
+        await _record(sessionmaker, result)
+        return PushOutcome(len(tokens), len(result.accepted), len(result.failed))
+    except Exception:
+        logger.exception("board push failed")
+        return PushOutcome()
+
+
 @dataclass(frozen=True)
 class ReceiptCheck:
     checked: int = 0  # tickets asked about

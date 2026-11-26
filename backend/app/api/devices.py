@@ -28,6 +28,7 @@ async def register(
         "family_id": family,
         # Updated every time: a phone back on older JS (an update rolled back) loses it.
         "draws_updates": body.draws_updates,
+        "board": body.board,  # the same: older JS has no "Hostel board" channel
     }
     # One statement: the app registers on start and again right after sign-in, so two requests
     # for the same new token can overlap. A read-then-insert would let both insert, and the

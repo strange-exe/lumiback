@@ -777,6 +777,10 @@ class PushToken(Base):
     # so it gets a data-only push and the notice keeps its buttons with the app closed. Older
     # apps have no task: they get the visible push. Set again at every registration.
     draws_updates: Mapped[bool] = mapped_column(server_default=text("false"))
+    # The app created the "Hostel board" notification channel, so board posts are pushed here.
+    # Older apps have no such channel (Android would drop the push or show it in a fallback
+    # channel the student can't mute). Set again at every registration.
+    board: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = created_at()
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -837,6 +841,87 @@ class Announcement(Base):
     roles: Mapped[list[str] | None] = mapped_column(ARRAY(String(16)))  # None: everyone
     devices: Mapped[int | None]  # phones it was going to when sent
     at: Mapped[datetime] = created_at()
+
+
+class BoardCategory(enum.StrEnum):
+    TIMINGS = "timings"
+    MESS = "mess"
+    LAUNDRY = "laundry"
+    MAINTENANCE = "maintenance"
+    GENERAL = "general"
+
+
+class BoardPost(Base):
+    """A post on the hostel board (api/board.py): what the hostel office tells every student
+    in some hostels, or in all of them (all_hostels; no board_post_hostels rows then). Shown
+    while active: not withdrawn and before expires_at. Deleted KEEP_BOARD_POSTS after it
+    ended (jobs/expiry.py)."""
+
+    __tablename__ = "board_posts"
+    __table_args__ = (CheckConstraint("expires_at > created_at", name="expires_after_create"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    # The author's role when they posted: the "From" label (never their name) is derived
+    # from it, and it outlives the account.
+    author_role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "author_role"))
+    category: Mapped[BoardCategory] = mapped_column(str_enum(BoardCategory, "board_category"))
+    title: Mapped[str] = mapped_column(String(60))
+    body: Mapped[str] = mapped_column(String(600))
+    all_hostels: Mapped[bool] = mapped_column(server_default=text("false"))
+    students: Mapped[int]  # the audience when it was sent (active, set-up students)
+    devices: Mapped[int]  # phones the push was for when it was sent
+    created_at: Mapped[datetime] = created_at()
+    expires_at: Mapped[datetime]
+    withdrawn_at: Mapped[datetime | None]
+    withdrawn_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class BoardPostHostel(Base):
+    """A hostel a board post is for. A deleted hostel takes its rows with it."""
+
+    __tablename__ = "board_post_hostels"
+
+    post_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), primary_key=True
+    )
+    hostel_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("hostels.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class BoardPostAudience(Base):
+    """A student a board post was for when it was sent. Seen counts are over this group only,
+    so a student who moves, is turned off or joins later never moves a post's count (owner,
+    2026-11-26: a count over the group as it is now let staff tell whether one student
+    opened a post). Goes with the post, or with the student's account."""
+
+    __tablename__ = "board_post_audience"
+
+    post_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class BoardPostSeen(Base):
+    """A student opened the board with this post on screen. Only ever shown as a count (and
+    in the student's own export); no time is kept, a count doesn't need one."""
+
+    __tablename__ = "board_post_seen"
+
+    post_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("board_posts.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
 
 
 class ErrorReport(Base):

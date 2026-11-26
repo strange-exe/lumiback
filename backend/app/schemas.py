@@ -1068,12 +1068,16 @@ class PushTokenIn(Input):
     platform: Literal["android", "ios"]
     # Channels switched off in the app's notification settings; pushes on them are skipped
     # (urgent safety alerts excepted). "share-status" also carries outing-request decisions.
-    muted: list[Literal["follow-requests", "return-reminders", "share-status"]] = Field(
-        default_factory=list, max_length=3
+    # "hostel-board": board posts (api/board.py).
+    muted: list[Literal["follow-requests", "return-reminders", "share-status", "hostel-board"]] = (
+        Field(default_factory=list, max_length=4)
     )
     # The app draws the update announcement itself (apps after 1.20.0), so it can be sent
     # data-only. Older apps don't send it: they get the visible push.
     draws_updates: bool = False
+    # The app created the "Hostel board" channel, so board posts can be pushed to it. Older
+    # apps don't send it: they get no board pushes (they read the board when they open it).
+    board: bool = False
 
 
 # ---------- admin: outing rules, hostels, holidays, weekend requests ----------
@@ -1567,3 +1571,160 @@ class ErrorGroup(BaseModel):
 
 class ErrorGroupList(BaseModel):
     items: list[ErrorGroup]
+
+
+# ---------- the hostel board (api/board.py) ----------
+
+BoardCategoryName = Literal["timings", "mess", "laundry", "maintenance", "general"]
+# A board post's id: inside BIGINT, so a bigger number is a 422, not a database error.
+BoardPostId = Annotated[int, Field(ge=1, le=2**63 - 1)]
+MAX_BOARD_HOSTELS = 50
+
+
+def _board_body_characters(value: object) -> object:
+    """A board post's body is plain text on every student's screen and lock screen: line
+    breaks are its only control character. CRLF and lone CR become LF first; every other
+    control or invisible formatting character is refused as in _no_control_characters (ZWNJ
+    and ZWJ stay allowed)."""
+    if not isinstance(value, str):
+        return value
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    _no_control_characters(value.replace("\n", ""))
+    return value
+
+
+def _board_body_lines(value: str) -> str:
+    """At most one blank line in a row and at most 20 lines, so a body can't be mostly empty."""
+    if "\n\n\n" in value:
+        raise ValueError("at most one blank line in a row")
+    if value.count("\n") + 1 > 20:
+        raise ValueError("at most 20 lines")
+    return value
+
+
+BoardTitle = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=60),
+    AfterValidator(_has_a_letter_or_digit),
+    BeforeValidator(_no_control_characters),  # last, so it runs first (see Name)
+]
+BoardBody = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=600),
+    AfterValidator(_board_body_lines),
+    BeforeValidator(_board_body_characters),
+]
+
+
+def _each_hostel_once(ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    if len(set(ids)) != len(ids):
+        raise ValueError("Each hostel once")
+    return ids
+
+
+class BoardTargets(Input):
+    """Who a post is for: some hostels, or every hostel (and students without one). Exactly
+    one of the two. Also the query of GET /admin/board/reach and /draft."""
+
+    hostel_ids: Annotated[
+        list[uuid.UUID], Field(max_length=MAX_BOARD_HOSTELS), AfterValidator(_each_hostel_once)
+    ] = []
+    all_hostels: bool = False
+
+    @model_validator(mode="after")
+    def _one_audience(self) -> "BoardTargets":
+        if self.all_hostels == bool(self.hostel_ids):
+            raise ValueError("Choose hostels, or all hostels")
+        return self
+
+
+class BoardPostIn(BoardTargets):
+    """A new board post. The server sets when it ends: `expires_in_days` from now, by default
+    30 days for timings and 7 for anything else. `replace_timings` (timings posts only): take
+    down the older active timings posts this one covers that the sender may withdraw."""
+
+    category: BoardCategoryName
+    title: BoardTitle
+    body: BoardBody
+    expires_in_days: Literal[1, 3, 7, 30, 60] | None = None
+    replace_timings: bool = False
+
+
+class BoardSentOut(BaseModel):
+    id: int
+    students: int  # active students it is for
+    devices: int  # phones it is being pushed to
+
+
+class BoardReachOut(BaseModel):
+    students: int
+    devices: int
+
+
+class BoardDraftOut(BaseModel):
+    title: str
+    body: str
+    category: Literal["timings"]
+    too_long: bool  # more than a post may hold: the sender trims it before sending
+
+
+class BoardSeenIn(Input):
+    ids: Annotated[list[BoardPostId], Field(min_length=1, max_length=30)]
+
+
+class BoardPostOut(BaseModel):
+    """A post as a student reads it. `from_label`: "Hostel office, <hostel>", "Hostel office"
+    (several hostels) or "Campus office" (all hostels); never the author's name."""
+
+    id: int
+    category: BoardCategoryName
+    title: str
+    body: str
+    from_label: str
+    created_at: datetime
+    expires_at: datetime
+    seen: bool
+
+    @field_serializer("created_at", "expires_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class BoardOut(BaseModel):
+    posts: list[BoardPostOut]
+
+
+class BoardHostel(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class StaffBoardPostOut(BaseModel):
+    """A post as the hostel office lists it. `author`: "You", or the author's role then
+    ("Warden", "Head warden", "Admin"). `students`: the audience when sent; `seen`: how many
+    of them opened it, rounded down to a step of 5 (5 means 5 to 9), and None while fewer than
+    5 did or fewer than 5 didn't (services/board.py seen_band: never a way to tell who).
+    `hostels`: [] for all hostels, or when every one of them was deleted."""
+
+    id: int
+    category: BoardCategoryName
+    title: str
+    body: str
+    from_label: str
+    created_at: datetime
+    expires_at: datetime
+    status: Literal["active", "ended", "withdrawn"]
+    all_hostels: bool
+    hostels: list[BoardHostel]
+    author: str
+    students: int
+    seen: int | None
+    can_withdraw: bool
+
+    @field_serializer("created_at", "expires_at")
+    def _in_ist(self, value: datetime) -> str:
+        return value.astimezone(IST).isoformat()
+
+
+class StaffBoardOut(BaseModel):
+    posts: list[StaffBoardPostOut]

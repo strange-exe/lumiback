@@ -444,3 +444,30 @@ def test_a_pending_correction_ask_is_withdrawn_with_the_account(client, db, offi
     status = db.execute(text("SELECT status FROM outing_corrections")).scalar_one()
     assert status == "cancelled"
     assert admin_rows(client, office, "/admin/corrections")["asks"] == []
+
+
+def test_the_hostel_board_keeps_posts_and_forgets_who_read_them(client, db, office):
+    """A reader's seen rows go with them; a post stays on the board without its author."""
+    _, riya = signup(client, "riya@example.com", "Riya")
+    _, head = signup(client, "head@example.com", "Head")
+    db.execute(text("UPDATE users SET role = 'head_warden' WHERE email = 'head@example.com'"))
+    db.commit()
+    r = client.post(
+        "/admin/board",
+        json={"category": "mess", "title": "Menu", "body": "Paneer", "all_hostels": True},
+        headers=head,
+    )
+    assert r.status_code == 201, r.text
+    post_id = r.json()["id"]
+    assert client.post("/board/seen", json={"ids": [post_id]}, headers=riya).status_code == 204
+    assert db.execute(text("SELECT count(*) FROM board_post_seen")).scalar_one() == 1
+
+    assert delete_account(client, riya).status_code == 204
+    assert db.execute(text("SELECT count(*) FROM board_post_seen")).scalar_one() == 0
+    assert delete_account(client, head).status_code == 204
+    author = db.execute(
+        text("SELECT author_id, author_role FROM board_posts WHERE id = :i"), {"i": post_id}
+    ).one()
+    assert tuple(author) == (None, "head_warden")
+    (listed,) = admin_rows(client, office, "/admin/board")["posts"]
+    assert (listed["id"], listed["author"]) == (post_id, "Head warden")

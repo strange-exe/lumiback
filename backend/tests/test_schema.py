@@ -133,6 +133,17 @@ BAD_WRITES = [
         f"VALUES (:a, {H16}, gen_random_uuid(), now())",
         "ck_refresh_tokens_token_hash_len",
     ),
+    # board_posts (the hostel board)
+    (
+        "INSERT INTO board_posts (author_role, category, title, body, students, devices, "
+        "expires_at) VALUES ('warden', 'parcels', 'T', 'B', 1, 0, now() + interval '1 day')",
+        "ck_board_posts_board_category",
+    ),
+    (
+        "INSERT INTO board_posts (author_role, category, title, body, students, devices, "
+        "expires_at) VALUES ('warden', 'mess', 'T', 'B', 1, 0, now())",
+        "ck_board_posts_expires_after_create",
+    ),
 ]
 
 

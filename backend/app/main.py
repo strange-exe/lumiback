@@ -23,6 +23,7 @@ from app.api import (
     admin,
     admin_rules,
     auth,
+    board,
     codes,
     contacts,
     devices,
@@ -212,6 +213,7 @@ def create_app(settings: Settings | None = None, *, start_jobs: bool = True) -> 
     app.include_router(gates.router)
     app.include_router(admin.router)
     app.include_router(admin_rules.router)
+    app.include_router(board.router)
     app.include_router(records.router)
     app.include_router(profile.router)
     app.include_router(devices.router)

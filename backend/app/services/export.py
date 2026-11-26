@@ -16,6 +16,9 @@ from sqlalchemy.orm import aliased
 
 from app.models import (
     AccessLog,
+    BoardPost,
+    BoardPostAudience,
+    BoardPostSeen,
     Contact,
     ErrorReport,
     Escalation,
@@ -298,6 +301,26 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
             .order_by(ErrorReport.last_seen_at)
         )
     ]
+    # Hostel board posts they opened: what and which kind only (the text was the office's).
+    board_seen = [
+        {"title": title, "category": category.value}
+        for title, category in await session.execute(
+            select(BoardPost.title, BoardPost.category)
+            .join(BoardPostSeen, BoardPostSeen.post_id == BoardPost.id)
+            .where(BoardPostSeen.user_id == user.id)
+            .order_by(BoardPost.created_at, BoardPost.id)
+        )
+    ]
+    # Hostel board posts that were for them when sent (the group seen counts are over).
+    board_for_you = [
+        {"title": title, "category": category.value}
+        for title, category in await session.execute(
+            select(BoardPost.title, BoardPost.category)
+            .join(BoardPostAudience, BoardPostAudience.post_id == BoardPost.id)
+            .where(BoardPostAudience.user_id == user.id)
+            .order_by(BoardPost.created_at, BoardPost.id)
+        )
+    ]
     devices = [
         {
             "platform": t.platform,
@@ -341,4 +364,6 @@ async def export_user(session: AsyncSession, user: User) -> dict[str, Any]:
         "gate_scans": scans,
         "push_devices": devices,
         "error_reports": error_reports,
+        "board_posts_seen": board_seen,
+        "board_posts_for_you": board_for_you,
     }
