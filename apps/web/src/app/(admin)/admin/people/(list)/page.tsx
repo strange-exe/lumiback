@@ -110,12 +110,16 @@ export default async function PeoplePage({ searchParams }: PageProps): Promise<R
   const q = (typeof params.q === "string" ? params.q : "").trim().slice(0, 100);
   const isAdmin = isAdminRole(user.role);
   // The address's hostel and filter, or on a bare visit the ones chosen last time.
-  const [{ values }, hostels, mine] = await Promise.all([
+  const [{ values }, mine] = await Promise.all([
     rememberedFilters().then((kept) => resolveFilters("people", params, kept)),
-    isAdmin ? adminApi.hostels(token) : Promise.resolve<Hostel[]>([]),
     // The hostels this person looks after: the hostel filter's choices.
     adminApi.myHostels(token),
   ]);
+  // Adding and moving people (admins only) offers every hostel. An admin or developer looks
+  // after every hostel, and the API answers /admin/my-hostels for them with the same unfiltered
+  // list as /admin/hostels (backend admin_rules.my_hostels), so one call serves both (owner,
+  // 2026-11-27: one API call fewer per admin visit).
+  const hostels: Hostel[] = isAdmin ? mine : [];
   const account = accountFilter(values.account);
   // A hostel that isn't (or is no longer) one of theirs is simply not applied.
   const hostel = mine.some((h) => h.id === values.hostel) ? values.hostel : undefined;

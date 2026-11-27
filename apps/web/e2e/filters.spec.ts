@@ -21,6 +21,40 @@ async function remembered(page: Page): Promise<string | undefined> {
 test.describe("as an admin", () => {
   test.use({ storageState: ADMIN_STATE });
 
+  // People asks the API once for an admin's hostels (/admin/my-hostels, unfiltered for an admin)
+  // and offers that list both in the hostel filter and when adding a person: it must be every
+  // hostel, as /admin/hostels lists them, in the same order.
+  test("adding a person offers every hostel, as the API lists them", async ({ page, request }) => {
+    const headers = { Authorization: `Bearer ${tokenFrom(ADMIN_STATE)}` };
+    // The plain seed has one hostel; a second makes "every hostel" mean more than one.
+    const ruleSets = (await (await request.get(`${API}/admin/rule-sets`, { headers })).json()) as {
+      id: string;
+    }[];
+    const other = `People Other ${String(Date.now()).slice(-6)}`;
+    const created = await request.post(`${API}/admin/hostels`, {
+      headers,
+      data: { name: other, rule_set_id: ruleSets[0]!.id },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const every = (await created.json()) as { id: string; name: string }[];
+    const otherId = every.find((h) => h.name === other)!.id;
+    try {
+      expect(every.length).toBeGreaterThan(1);
+      await page.goto("/admin/people");
+      await page.getByRole("button", { name: "Add a person" }).click();
+      const add = page.getByRole("dialog", { name: "Add a person" });
+      const offered = await add
+        .getByLabel("Hostel (optional)")
+        .locator("option")
+        .evaluateAll((options) =>
+          options.filter((o) => (o as HTMLOptionElement).value).map((o) => o.textContent?.trim()),
+        );
+      expect(offered).toEqual(every.map((h) => h.name));
+    } finally {
+      await request.delete(`${API}/admin/hostels/${otherId}`, { headers });
+    }
+  });
+
   test("the register, escalations and scans open on the last filter; All resets", async ({
     page,
   }) => {
