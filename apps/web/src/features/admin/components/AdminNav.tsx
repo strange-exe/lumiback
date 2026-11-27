@@ -145,8 +145,11 @@ export function AdminNav({ role, viewAs = false }: { role: Role; viewAs?: boolea
             section.href === "/admin" ? path === "/admin" : path.startsWith(section.href);
           return (
             <li key={section.href} className="shrink-0">
+              {/* No prefetch (owner, 2026-11-27): every tab in view was prefetched on each load
+                  and auto-refresh, each running the office's sign-in check against the API. */}
               <Link
                 href={section.href}
+                prefetch={false}
                 data-tour={section.tour}
                 aria-current={current ? "page" : undefined}
                 className={`flex min-h-11 items-center whitespace-nowrap rounded-control px-3 text-sm font-bold transition sm:px-3.5 ${
