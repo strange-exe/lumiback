@@ -1,13 +1,14 @@
 """The hostel board: what the hostel office tells every student in some hostels, or in all of
 them (timings, mess, laundry, maintenance). Spec: .claude/tasks/hostel-board-spec.md.
 
-- Posting: wardens (their own hostels only), head wardens and admins (any hostels, or all).
-  Never a developer, although developers pass every other office check (EVERY_HOSTEL).
+- Posting: wardens (their own hostels only); head wardens, admins and developers (any
+  hostels, or all). A developer has every power any role has (owner, 2026-11-27); while they
+  view the screens of a role, every write is refused (api/deps.py, view as).
 - Reading: a student sees the active posts for their current hostel, and every all-hostels
   post. Active: not withdrawn and not yet ended.
 - The office's list: every-hostel staff see every post; a warden sees all-hostels posts and
   posts for any of their hostels. Another office's post is a 404, as if it didn't exist.
-- Withdrawing: the author, or every-hostel staff (head wardens and admins).
+- Withdrawing: the author, or every-hostel staff (head wardens, admins and developers).
 - Seen: only ever a count, over the students the post was for when sent (kept per post in
   board_post_audience, so moving, turning off or adding a student never moves it), in steps
   of SEEN_FLOOR, and hidden while fewer than SEEN_FLOOR did or didn't open it (seen_band), so
@@ -58,7 +59,7 @@ from app.services import admin as audit_svc
 from app.services import rules
 from app.services.staff import Staff
 
-POSTERS = frozenset({UserRole.WARDEN, UserRole.HEAD_WARDEN, UserRole.ADMIN})
+POSTERS = frozenset({UserRole.WARDEN, UserRole.HEAD_WARDEN, UserRole.ADMIN, UserRole.DEVELOPER})
 STUDENT_LIMIT = 30  # GET /board
 STAFF_LIMIT = 50  # GET /admin/board
 SEEN_FLOOR = 5  # seen counts: steps of this many, shown with this many who did and didn't open it
@@ -284,7 +285,7 @@ async def _seen_counts(session: AsyncSession, post_ids: list[int]) -> dict[int, 
 
 
 def may_withdraw(staff: Staff, post: BoardPost) -> bool:
-    """The author, or every-hostel staff; never a developer."""
+    """The author, or every-hostel staff (head wardens, admins and developers)."""
     return can_post(staff.user) and (post.author_id == staff.user.id or staff.every_hostel)
 
 
@@ -434,7 +435,7 @@ async def create(
 
 async def withdraw(session: AsyncSession, staff: Staff, post_id: int) -> None:
     """Takes a post down (idempotent: an ended or withdrawn post stays as it is). Scope first,
-    then permission: another office's post is a 404 for everyone, even a developer."""
+    then permission: another office's post is a 404 for everyone."""
     post = await session.scalar(select(BoardPost).where(BoardPost.id == post_id, in_scope(staff)))
     if post is None:
         raise NotFound

@@ -25,7 +25,7 @@ const SECTIONS: readonly Section[] = [
   { href: "/admin/corrections", label: "Corrections", for: "staff", tour: "nav-corrections" },
   { href: "/admin/escalations", label: "Escalations", for: "staff", tour: "nav-escalations" },
   { href: "/admin/scans", label: "Scans", for: "staff" },
-  // Posts every student in a hostel sees; never a developer (they don't post to it).
+  // Posts every student in a hostel sees; the whole office posts to it, developers too.
   { href: "/admin/board", label: "Hostel board", for: POSTER_ROLES },
   { href: "/admin/hostel", label: "My hostel", for: ["warden"] },
   { href: "/admin/gates", label: "Gates", for: ["admin", "developer"] },

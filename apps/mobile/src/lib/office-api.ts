@@ -83,7 +83,7 @@ export const office = {
     api<BoardDraft>(
       `/admin/board/draft?${target}${holiday ? `&holiday=${encodeURIComponent(holiday)}` : ""}`,
     ),
-  /** Wardens (their hostels), head wardens and admins; never developers (403). */
+  /** Wardens (their hostels); head wardens, admins and developers (any, or all). */
   postToBoard: (body: BoardPostBody) => api<BoardSent>("/admin/board", { method: "POST", body }),
   /** Take a post down (idempotent; no push). */
   withdrawBoardPost: (id: number) =>

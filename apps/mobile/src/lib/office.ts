@@ -239,11 +239,11 @@ export function canEditRules(role: Role | undefined): boolean {
   return everyHostel(role);
 }
 
-/** Who may post to the hostel board: wardens (their own hostels), head wardens and admins.
- * Never a developer, although developers have every other admin power (owner's list; the
- * server refuses them too). Gates every way in to posting. */
+/** Who may post to the hostel board: wardens (their own hostels), and head wardens, admins and
+ * developers (any hostels, or all). A developer has everything any role has (owner,
+ * 2026-11-27). Gates every way in to posting. */
 export function canPostToBoard(role: Role | undefined): boolean {
-  return role === "warden" || role === "head_warden" || role === "admin";
+  return role === "warden" || everyHostel(role);
 }
 
 export const ROLE_LABEL: Record<Role, string> = {

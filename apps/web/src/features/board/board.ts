@@ -19,8 +19,9 @@ import { formatDay, formatTime } from "../outings/time.ts";
 
 // ---------- who ----------
 
-/** Who posts to the board. Never a developer (the API refuses them too), never a student. */
-export const POSTER_ROLES: readonly Role[] = ["warden", "head_warden", "admin"];
+/** Who posts to the board: the whole office, developers included (a developer has everything
+ * any role has; owner, 2026-11-27). Never a student. */
+export const POSTER_ROLES: readonly Role[] = ["warden", "head_warden", "admin", "developer"];
 
 export function canPostToBoard(role: Role): boolean {
   return POSTER_ROLES.includes(role);
@@ -28,7 +29,7 @@ export function canPostToBoard(role: Role): boolean {
 
 /** "All hostels" is for the staff who look after every hostel. */
 export function postsToAllHostels(role: Role): boolean {
-  return role === "head_warden" || role === "admin";
+  return role === "head_warden" || role === "admin" || role === "developer";
 }
 
 // ---------- categories and how long a post shows ----------

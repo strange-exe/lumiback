@@ -4,6 +4,7 @@
  * schemas.py BoardTitle/BoardBody) is the authority; the checks here only mirror it so the
  * form can say what's wrong before sending.
  */
+import { everyHostel } from "@/lib/office";
 import { formatStamp } from "@/lib/time";
 import type {
   BoardCategory,
@@ -223,13 +224,13 @@ export function draftFill(
 
 /**
  * "Tell students" after adding a holiday: the compose screen's params, or null for someone
- * who can't post to every hostel (holidays are campus-wide; developers never post).
+ * who can't post to every hostel (holidays are campus-wide).
  */
 export function holidayCompose(
   day: string,
   role: Role | undefined,
 ): { holiday: string; all: "1" } | null {
-  if (role !== "head_warden" && role !== "admin") return null;
+  if (!everyHostel(role)) return null;
   return { holiday: day, all: "1" };
 }
 
@@ -444,19 +445,20 @@ export function olderTimings(
 /**
  * How the form picks hostels: "none" (nobody to post for: a warden with no hostels, or
  * someone who can't post), "one" (a warden's only hostel, no picker), "several" (a warden's
- * hostels to tick), "every" (head wardens and admins: every hostel, or All hostels).
+ * hostels to tick), "every" (head wardens, admins and developers: every hostel, or All
+ * hostels).
  */
 export type HostelPicker = "none" | "one" | "several" | "every";
 
 export function hostelPicker(role: Role | undefined, hostels: number): HostelPicker {
-  if (role === "head_warden" || role === "admin") return "every";
+  if (everyHostel(role)) return "every";
   if (role !== "warden" || hostels === 0) return "none";
   return hostels === 1 ? "one" : "several";
 }
 
 /**
- * Where the form starts: a warden on every hostel they look after; head wardens and admins on
- * All hostels when the link asks for it (a holiday), else on nothing chosen yet.
+ * Where the form starts: a warden on every hostel they look after; head wardens, admins and
+ * developers on All hostels when the link asks for it (a holiday), else on nothing chosen yet.
  */
 export function startTarget(
   role: Role | undefined,
@@ -464,8 +466,7 @@ export function startTarget(
   wantsAll: boolean,
 ): BoardTarget {
   if (role === "warden") return { hostelIds: hostels.map((h) => h.id), allHostels: false };
-  const every = role === "head_warden" || role === "admin";
-  return { hostelIds: [], allHostels: every && wantsAll };
+  return { hostelIds: [], allHostels: everyHostel(role) && wantsAll };
 }
 
 export function toggleHostel(ids: readonly string[], id: string): string[] {

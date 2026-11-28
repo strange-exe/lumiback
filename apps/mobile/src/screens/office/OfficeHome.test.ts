@@ -197,12 +197,29 @@ describe("OfficeHome", () => {
     expect(shown).toContain("Timings, mess, laundry: every student in your hostels sees it");
   });
 
-  it("never offers the board to a developer (the owner's list of who posts)", () => {
-    const shown = words(
-      render({ ...base, role: "developer", overview: OVERVIEW, loading: false, error: null }),
-    );
-    expect(shown).not.toContain("Post to the hostel board");
+  it("offers the board to a developer, who has everything any role has (owner, 2026-11-27)", () => {
+    const { router } = jest.requireMock<{ router: { push: jest.Mock } }>("expo-router");
+    router.push.mockClear();
+    const tree = render({
+      ...base,
+      role: "developer",
+      overview: OVERVIEW,
+      loading: false,
+      error: null,
+      boardActive: 2,
+    });
+    const shown = words(tree);
+    expect(shown).toContain("Post to the hostel board");
+    expect(shown).toContain("2 active posts");
     expect(shown).toContain("Message students who are out");
+    const [row] = tree.root.findAll(
+      (n) =>
+        typeof n.type !== "string" &&
+        n.props.accessibilityLabel === "Post to the hostel board" &&
+        typeof n.props.onPress === "function",
+    );
+    act(() => (row!.props.onPress as () => void)());
+    expect(router.push.mock.calls).toEqual([["/office/board"]]);
   });
 
   it("keeps the last real counts and says a refresh failed", () => {

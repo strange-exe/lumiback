@@ -169,8 +169,8 @@ async def post_to_board(
 
 @router.post("/admin/board/{post_id}/withdraw", status_code=status.HTTP_204_NO_CONTENT)
 async def withdraw_post(post_id: PostId, staff: StaffUser, session: SessionDep) -> Response:
-    """Takes a post off the board (idempotent; no push). The author, a head warden or an admin;
-    another office's post is a 404."""
+    """Takes a post off the board (idempotent; no push). The author, a head warden, an admin or
+    a developer; another office's post is a 404."""
     try:
         await board.withdraw(session, staff, post_id)
     except board.NotFound:

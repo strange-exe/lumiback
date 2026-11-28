@@ -96,7 +96,7 @@ export function BoardForm({
 }: {
   /** The hostels this person may post to, sorted by name. */
   hostels: BoardHostel[];
-  /** Head wardens and admins: the hostel checkboxes and "All hostels". */
+  /** Head wardens, admins and developers: the hostel checkboxes and "All hostels". */
   allHostels: boolean;
   start: BoardTargetsBody;
   startReach: BoardReach | null;

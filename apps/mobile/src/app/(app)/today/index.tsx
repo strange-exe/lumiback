@@ -112,8 +112,8 @@ interface TodayData {
 
 const OFFLINE_RETRY_MS = 30_000;
 
-/** Students get their outing; wardens, head wardens and admins get the hostel office (no
- * tap-out, outing rules or sharing: those are for students). */
+/** Students get their outing; wardens, head wardens, admins and developers get the hostel
+ * office, hostel board included (no tap-out, outing rules or sharing: those are for students). */
 export default function Today(): ReactNode {
   const { user } = useAuth();
   return isStaff(user?.role) ? <StaffToday /> : <StudentToday />;

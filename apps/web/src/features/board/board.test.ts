@@ -77,24 +77,25 @@ function post(over: Partial<StaffBoardPost> = {}): StaffBoardPost {
 
 // ---------- who ----------
 
-test("wardens, head wardens and admins post; a developer and a student never do", () => {
+test("wardens, head wardens, admins and developers post; a student never does", () => {
+  // A developer has everything any role has, the board included (owner, 2026-11-27).
   const expected: Record<Role, boolean> = {
     student: false,
     warden: true,
     head_warden: true,
     admin: true,
-    developer: false,
+    developer: true,
   };
   for (const [role, can] of Object.entries(expected)) {
     assert.equal(canPostToBoard(role as Role), can, role);
   }
 });
 
-test("only head wardens and admins post to all hostels", () => {
+test("head wardens, admins and developers post to all hostels; wardens never do", () => {
   assert.equal(postsToAllHostels("head_warden"), true);
   assert.equal(postsToAllHostels("admin"), true);
+  assert.equal(postsToAllHostels("developer"), true);
   assert.equal(postsToAllHostels("warden"), false);
-  assert.equal(postsToAllHostels("developer"), false);
   assert.equal(postsToAllHostels("student"), false);
 });
 
@@ -640,8 +641,10 @@ test("Announce this change links a rule set to the board, for those who post", (
   assert.equal(announceHref(A, 0, true, "admin"), `/admin/board?draft=${A}`);
   assert.equal(announceHref(A, 0, true, "head_warden"), `/admin/board?draft=${A}`);
   assert.equal(announceHref(A, 0, true, "warden"), null);
+  // A developer posts as an admin does.
+  assert.equal(announceHref(A, 3, false, "developer"), `/admin/board?draft=${A}`);
+  assert.equal(announceHref(A, 0, true, "developer"), `/admin/board?draft=${A}`);
   // Never for those who don't post, and never with a malformed id in the link.
-  assert.equal(announceHref(A, 3, false, "developer"), null);
   assert.equal(announceHref(A, 3, false, "student"), null);
   assert.equal(announceHref("x&draft=1", 3, false, "admin"), null);
 });

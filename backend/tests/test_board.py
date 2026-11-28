@@ -1,8 +1,8 @@
 """The hostel board (spec 2026-11-24): the hostel office posts timings, mess, laundry and
 maintenance news for every student in its hostels to read.
 
-Who posts (wardens for their hostels; head wardens and admins for any or all; never a
-developer), what a post may hold, who reads it, the seen counts with their privacy floor, the
+Who posts (wardens for their hostels; head wardens, admins and developers for any or all),
+what a post may hold, who reads it, the seen counts with their privacy floor, the
 push to phones whose app has the "Hostel board" channel, and the rules draft."""
 
 import dataclasses
@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import text
 
+from app.api.deps import READ_ONLY
 from app.jobs.expiry import sweep
 from app.push import DAY, MemoryPushSender, PushMessage
 from app.security.rate_limit import Limit
@@ -28,7 +29,6 @@ MAX_ID = 2**63 - 1
 
 NO_HOSTELS = "You don't look after a hostel yet. Ask an admin to assign one."
 ALL_HOSTELS_ONLY = "Only head wardens and admins post to all hostels"
-NOT_A_POSTER = "Only the hostel office posts to the hostel board"
 WITHDRAW_REFUSED = "Only the person who posted it, a head warden or an admin can take it down"
 
 
@@ -220,20 +220,49 @@ def test_a_warden_without_hostels_is_told_why(client, db, campus):
     assert (r.status_code, r.json()["detail"]) == (403, NO_HOSTELS)
 
 
-def test_a_developer_never_posts_or_withdraws_and_reads_an_empty_board(
-    client, db, campus, head, anna
-):
+def test_a_developer_posts_and_withdraws_like_an_admin(client, db, campus, warden, head, anna):
+    """Owner, 2026-11-27: a developer has everything any role has, the board included."""
     _, dev = person(client, db, "dev@geu.ac.in", "developer")
-    r = post(client, dev, hostels=[campus["A"]])
-    assert (r.status_code, r.json()["detail"]) == (403, NOT_A_POSTER)
-    r = post(client, dev, all_hostels=True)
-    assert (r.status_code, r.json()["detail"]) == (403, NOT_A_POSTER)
+    mine = posted(client, dev, hostels=[campus["A"], campus["B"]])
+    everyone = posted(client, dev, all_hostels=True, title="Water off")
+    theirs = posted(client, warden[1], hostels=[campus["A"]], title="Laundry closed")
+    # Every post on the office's list, each one theirs to take down.
+    listed = {p["id"]: p for p in staff_board(client, dev)}
+    assert set(listed) == {mine["id"], everyone["id"], theirs["id"]}
+    assert all(p["can_withdraw"] for p in listed.values())
+    assert listed[mine["id"]]["author"] == "You"
+    # Others see the role, as for any staff post; students see the office, never a role.
+    by_head = {p["id"]: p["author"] for p in staff_board(client, head[1])}
+    assert by_head[everyone["id"]] == "Developer"
+    read = {p["id"]: p["from_label"] for p in board(client, anna[1])}
+    assert read[everyone["id"]] == "Campus office"
+    assert read[mine["id"]] == "Hostel office"
+    # The reach preview and the rules draft answer them too, for all hostels.
+    params = {"all_hostels": "true"}
+    assert client.get("/admin/board/reach", params=params, headers=dev).status_code == 200
+    assert client.get("/admin/board/draft", params=params, headers=dev).status_code == 200
+    # They take down a warden's post, as head wardens and admins do.
+    r = client.post(f"/admin/board/{theirs['id']}/withdraw", headers=dev)
+    assert r.status_code == 204
+    assert theirs["id"] not in {p["id"] for p in board(client, anna[1])}
+    assert board(client, dev) == []  # not a student: their own board is the office's list
+
+
+def test_a_developer_viewing_as_a_role_still_posts_nothing(client, db, campus, head):
+    """View as stays read-only: the same post a developer may send as themselves is refused
+    while they view the screens of any role, and nothing is written."""
+    _, dev = person(client, db, "dev@geu.ac.in", "developer")
     sent = posted(client, head[1], all_hostels=True)
-    r = client.post(f"/admin/board/{sent['id']}/withdraw", headers=dev)
-    assert (r.status_code, r.json()["detail"]) == (403, NOT_A_POSTER)
-    assert board(client, dev) == []  # not a student: the empty board state
-    assert [p["id"] for p in staff_board(client, dev)] == [sent["id"]]
-    assert [p["can_withdraw"] for p in staff_board(client, dev)] == [False]
+    for role in ("admin", "head_warden", "warden", "student"):
+        viewing = {**dev, "X-View-As-Role": role}
+        r = post(client, viewing, all_hostels=True)
+        assert (r.status_code, r.json()["detail"]) == (403, READ_ONLY), role
+        r = client.post(f"/admin/board/{sent['id']}/withdraw", headers=viewing)
+        assert (r.status_code, r.json()["detail"]) == (403, READ_ONLY), role
+    count = db.execute(text("SELECT count(*) FROM board_posts")).scalar_one()
+    assert count == 1
+    statuses = [p["status"] for p in staff_board(client, dev)]
+    assert statuses == ["active"]
 
 
 def test_students_get_none_of_the_office_endpoints(client, campus, anna):

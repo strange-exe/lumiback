@@ -279,10 +279,14 @@ describe("holidayCompose: 'Tell students' after adding a holiday", () => {
       all: "1",
     });
     expect(holidayCompose("2026-12-25", "admin")).toEqual({ holiday: "2026-12-25", all: "1" });
+    expect(holidayCompose("2026-12-25", "developer")).toEqual({
+      holiday: "2026-12-25",
+      all: "1",
+    });
   });
 
-  it("never for a developer, a warden (holidays are every hostel's) or a student", () => {
-    for (const role of ["developer", "warden", "student", undefined] as const) {
+  it("never for a warden (holidays are every hostel's) or a student", () => {
+    for (const role of ["warden", "student", undefined] as const) {
       expect(holidayCompose("2026-12-25", role)).toBeNull();
     }
   });
@@ -513,8 +517,9 @@ describe("compose: the office's form", () => {
     expect(hostelPicker("warden", 3)).toBe("several");
     expect(hostelPicker("head_warden", 0)).toBe("every");
     expect(hostelPicker("admin", 5)).toBe("every");
+    expect(hostelPicker("developer", 0)).toBe("every");
     // Never a way to post for anyone else.
-    for (const role of ["developer", "student", undefined] as const) {
+    for (const role of ["student", undefined] as const) {
       expect(hostelPicker(role, 3)).toBe("none");
     }
   });
@@ -535,7 +540,8 @@ describe("compose: the office's form", () => {
       allHostels: false,
     });
     expect(startTarget("admin", hostels, true)).toEqual({ hostelIds: [], allHostels: true });
-    expect(startTarget("developer", hostels, true)).toEqual({ hostelIds: [], allHostels: false });
+    expect(startTarget("developer", hostels, true)).toEqual({ hostelIds: [], allHostels: true });
+    expect(startTarget("student", hostels, true)).toEqual({ hostelIds: [], allHostels: false });
   });
 
   it("ticks and unticks a hostel, keeping the order", () => {

@@ -41,11 +41,10 @@ function hasTargets(targets: BoardTargetsBody): boolean {
 
 /**
  * The hostel board, the office's side: a new post for the hostels this person looks after
- * (every hostel, or "All hostels", for head wardens and admins), and what is on the board for
- * them. Wardens, head wardens and admins only: a developer as themselves gets a 404 (they never
- * post), and while viewing as a role the page is read-only. ?draft=<rule set id> (the rules
- * page's "Announce this change") starts the form with the hostels following that rule set and
- * their outing rules written out.
+ * (every hostel, or "All hostels", for head wardens, admins and developers), and what is on the
+ * board for them. The whole office, developers included; while a developer views as a role the
+ * page is read-only. ?draft=<rule set id> (the rules page's "Announce this change") starts the
+ * form with the hostels following that rule set and their outing rules written out.
  */
 export default async function BoardPage({ searchParams }: PageProps): Promise<ReactNode> {
   const { token, user, viewingAs } = await requireStaff();

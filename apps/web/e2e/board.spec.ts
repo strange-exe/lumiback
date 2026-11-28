@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { expect, test, type Browser, type Page } from "./fixtures";
 
-import { ADMIN_STATE, HEAD_WARDEN_STATE, WARDEN_STATE } from "../playwright.config";
+import {
+  ADMIN_STATE,
+  DEVELOPER_STATE,
+  HEAD_WARDEN_STATE,
+  WARDEN_STATE,
+} from "../playwright.config";
 import { API, checkOut, designMatrix, ensureIn, watchForErrors } from "./helpers";
 
 /**
@@ -18,6 +23,7 @@ const NL = String.fromCodePoint(0x0a);
 const XSS = "<img src=x onerror=alert(1)>";
 const WARDEN_TITLE = "Hostel 3 laundry closed Monday";
 const ALL_TITLE = "Water off on Saturday morning";
+const DEV_TITLE = "Lift serviced on Sunday";
 
 /** An access token from a session the setup project saved. */
 function tokenFrom(file: string): string {
@@ -227,6 +233,50 @@ test("what is typed while the outing rules are written out is kept, and asked ab
   );
   expect(errors).toEqual([]);
   await head.context().close();
+});
+
+test("a developer has the board as an admin does, and none of it while viewing as", async ({
+  browser,
+  page,
+}) => {
+  // Owner, 2026-11-27: a developer has everything any role has, the board included.
+  const dev = await open(browser, DEVELOPER_STATE, "/admin");
+  const errors = watchForErrors(dev);
+  const nav = dev.getByRole("navigation", { name: "Hostel office" });
+  await nav.getByRole("link", { name: "Hostel board" }).click();
+  await expect(dev).toHaveURL(/\/admin\/board$/);
+  await expect(dev.getByRole("heading", { name: "Hostel board", level: 1 })).toBeVisible();
+  await dev.getByRole("checkbox", { name: "All hostels, and students without a hostel" }).check();
+  await expect(dev.locator("p[aria-live][data-state]")).toHaveAttribute("data-state", "ready");
+  await post(dev, DEV_TITLE, "The lift is serviced all Sunday.");
+  await expect(boardRow(dev, DEV_TITLE).getByText("General, for All hostels")).toBeVisible();
+
+  // Students read it from the office, never from "a developer".
+  await page.goto("/board");
+  const read = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: DEV_TITLE }) });
+  await expect(read.getByText("From Campus office")).toBeVisible();
+
+  // Viewing as a role stays read-only: the same page, nothing to post or take down.
+  await nav.getByRole("button", { name: "View as" }).click();
+  await dev.getByRole("menuitemradio", { name: "Admin", exact: true }).click();
+  // The choice is saved before the page moves on: wait for the banner, then open the board.
+  const viewing = dev.getByRole("region", { name: "Viewing as" });
+  await expect(viewing).toContainText("Viewing as Admin. Read-only.");
+  await dev.goto("/admin/board");
+  await expect(dev.getByText("Read-only while viewing as Admin", { exact: false })).toBeVisible();
+  await expect(dev.getByRole("button", { name: "Review and post" })).toBeDisabled();
+  await expect(dev.getByRole("button", { name: `Withdraw: ${DEV_TITLE}` })).toHaveCount(0);
+  await dev.context().close();
+
+  // As themselves, they take it down (as any every-hostel staff may).
+  const again = await open(browser, DEVELOPER_STATE, "/admin/board");
+  await again.getByRole("button", { name: `Withdraw: ${DEV_TITLE}` }).click();
+  await again.getByRole("dialog").getByRole("button", { name: "Take it down" }).click();
+  await expect(boardRow(again, DEV_TITLE)).toHaveAttribute("data-status", "Withdrawn");
+  expect(errors).toEqual([]);
+  await again.context().close();
 });
 
 test("the old notice is now 'Message students who are out'", async ({ browser }) => {

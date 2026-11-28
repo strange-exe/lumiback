@@ -209,12 +209,12 @@ describe("dayLine: the fixture shared with the backend's board drafts", () => {
 });
 
 describe("canPostToBoard (the hostel board)", () => {
-  it("is wardens, head wardens and admins; never a developer or a student", () => {
+  it("is the whole office, developers included; never a student", () => {
     expect(canPostToBoard("warden")).toBe(true);
     expect(canPostToBoard("head_warden")).toBe(true);
     expect(canPostToBoard("admin")).toBe(true);
-    // Developers have every admin power except this one (owner's list).
-    expect(canPostToBoard("developer")).toBe(false);
+    // A developer has everything any role has (owner, 2026-11-27).
+    expect(canPostToBoard("developer")).toBe(true);
     expect(canPostToBoard("student")).toBe(false);
     expect(canPostToBoard(undefined)).toBe(false);
   });
